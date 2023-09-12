@@ -53,7 +53,7 @@ rank_map = {
     'Nothosubspecies', 37: 'Variety', 38: 'Subvariety', 39: 'Nothovariety', 40: 'Form', 41: 'Subform', 42: 'Special Form', 43: 'Race', 44: 'Stirp', 45: 'Morph', 46: 'Aberration', 47: 'Hybrid Formula'}
 
 
-
+# TODO portal & datahub兩邊還是會互相影響 有可能用另外的方法嗎
 conn = psycopg2.connect(**portal_db_settings)
 
 cur = conn.cursor()
@@ -369,7 +369,7 @@ for group in group_list:
                         where "group" = '{}' limit {} offset {}""".format(group, limit, offset))
             resultset = conn.execute(qry)
             results = resultset.mappings().all()
-        if len(results) == limit:
+        if len(results):
             now = datetime.now()
             df = pd.DataFrame(results)
             df['group'] = group
@@ -419,7 +419,7 @@ for group in group_list:
                 with db.begin() as conn:
                     a = conn.execute(sa.text(stmt), values)
             offset += limit
-        else:
+        if len(results) < limit:
             has_more_data = False
 
 
