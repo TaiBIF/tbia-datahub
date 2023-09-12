@@ -1,0 +1,8 @@
+sqlalchemy
+psycopg2-binary
+python-dotenv
+alembic
+pandas
+requests
+bson
+flask
