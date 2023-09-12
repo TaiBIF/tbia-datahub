@@ -177,7 +177,7 @@ def match_namecode_tbn(matching_namecode,sci_name,original_name,original_taxonuu
     # TODO 這邊回傳的資料有修改
     if name_res.status_code == 200:
         if name_data := name_res.json().get('data'):
-            taxon_data = [d['taxon'] for d in name_data if d['usage_status']!='misapplied']
+            taxon_data = [d['taxon'] for d in name_data if d.get('usage_status') !='misapplied']
             # if len(syns) == 1:
             #     taxon_name_id = name_data[0].get('name_id')
     # if taxon_name_id:
