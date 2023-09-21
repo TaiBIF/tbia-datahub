@@ -249,8 +249,8 @@ for group in group_list:
             df = df.merge(sci_names)
             df = df.replace({nan: None, '': None})
             match_log = df[['occurrenceID','tbiaID','sourceScientificName','taxonID','parentTaxonID','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','group']]
-            match_log.loc[match_log.taxonID=='','is_matched'] = False
-            match_log.loc[(match_log.taxonID!='')|(match_log.parentTaxonID!=''),'is_matched'] = True
+            match_log['is_matched'] = False
+            match_log.loc[match_log.taxonID.notnull(),'is_matched'] = True
             match_log['match_stage'] = match_log['match_stage'].apply(lambda x: int(x) if x else x)
             match_log['stage_1'] = match_log['stage_1'].apply(lambda x: issue_map[x] if x else x)
             match_log['stage_2'] = match_log['stage_2'].apply(lambda x: issue_map[x] if x else x)
@@ -261,6 +261,7 @@ for group in group_list:
             match_log['modified'] = now
             # TODO 未來match_log要改成用更新的
             match_log.to_sql('match_log', db, if_exists='append',index=False)
+            match_log.to_csv(f'/portal/media/match_log/{group}_{offset}.csv',index=None)
             # 更新records table, 用tbiaID可以確定是唯一的
             df = df.replace({None: ''})
             df = df[(df.taxonID!=df.old_taxon_id)|(df.parentTaxonID!=df.old_parent_taxon_id)]
