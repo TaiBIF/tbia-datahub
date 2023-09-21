@@ -37,6 +37,7 @@ import urllib
 import numpy as np
 from datetime import datetime, timedelta
 
+import sqlalchemy as sa
 
 issue_map = {
     1: 'higherrank',
