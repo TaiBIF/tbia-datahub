@@ -164,7 +164,8 @@ for group in group_list:
             df = df.rename({'id':'tbiaID'})
             df['group'] = group
             df = df.replace({nan: '', None: ''})
-            sci_names = df[['sourceScientificName','sourceVernacularName','sourceTaxonID','scientificNameID']].drop_duplicates().reset_index(drop=True)
+            sci_names = df[['sourceScientificName','sourceVernacularName']].drop_duplicates().reset_index(drop=True)
+            # sci_names = df[['sourceScientificName','sourceVernacularName','sourceTaxonID','scientificNameID']].drop_duplicates().reset_index(drop=True)
             # sci_names['sourceScientificName'] = sci_names['scientificName']
             sci_names['taxonID'] = ''
             sci_names['parentTaxonID'] = ''
