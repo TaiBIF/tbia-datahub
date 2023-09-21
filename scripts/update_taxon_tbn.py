@@ -53,16 +53,14 @@ rank_map = {
     'Nothosubspecies', 37: 'Variety', 38: 'Subvariety', 39: 'Nothovariety', 40: 'Form', 41: 'Subform', 42: 'Special Form', 43: 'Race', 44: 'Stirp', 45: 'Morph', 46: 'Aberration', 47: 'Hybrid Formula'}
 
 
-# TODO portal & datahub兩邊還是會互相影響 有可能用另外的方法嗎
-conn = psycopg2.connect(**portal_db_settings)
 
-cur = conn.cursor()
-cur.execute('SELECT * FROM data_taxon')
-taxon = cur.fetchall()
-colnames = [desc[0] for desc in cur.description]
-taxon = pd.DataFrame(taxon, columns=colnames)
-sub_col = [c for c in colnames if c not in ['id', 'iucn', 'redlist', 'protected', 'sensitive', 'cites']]
-taxon = taxon[sub_col]
+with db.begin() as conn:
+    qry = sa.text("select * from taxon")
+    resultset = conn.execute(qry)
+    taxon = resultset.mappings().all()
+
+taxon = pd.DataFrame(taxon)
+taxon = taxon.drop(columns=['scientificNameID','id'])
 
 
 # sci_names = pd.DataFrame()
@@ -367,15 +365,23 @@ for group in group_list:
     # print(group)
     while has_more_data:
         print(group, offset)
-        with db.begin() as conn:
-            qry = sa.text("""select "tbiaID", "occurrenceID", "sourceScientificName","sourceVernacularName", "originalScientificName", "sourceTaxonID", "scientificNameID", 
-                        "datasetName", "taxonID" as old_taxon_id, "parentTaxonID" as old_parent_taxon_id from records 
-                        where "group" = '{}' limit {} offset {}""".format(group, limit, offset))
-            resultset = conn.execute(qry)
-            results = resultset.mappings().all()
+        # with db.begin() as conn:
+        #     qry = sa.text("""select "tbiaID", "occurrenceID", "sourceScientificName","sourceVernacularName", "originalScientificName", "sourceTaxonID", "scientificNameID", 
+        #                 "datasetName", "taxonID" as old_taxon_id, "parentTaxonID" as old_parent_taxon_id from records 
+        #                 where "group" = '{}' limit {} offset {}""".format(group, limit, offset))
+        #     resultset = conn.execute(qry)
+        #     results = resultset.mappings().all()
+        if group == 'tbri':
+            solr_url = f"http://solr:8983/solr/tbia_records/select?indent=true&rows=10000&start={offset}&q.op=OR&q=group:tesri"
+        else:
+            solr_url = f"http://solr:8983/solr/tbia_records/select?indent=true&rows=10000&start={offset}&q.op=OR&q=group:{group}"
+        resp = requests.get(solr_url)
+        resp = resp.json()
+        results = resp['response']['docs']
         if len(results):
             now = datetime.now()
             df = pd.DataFrame(results)
+            df = df.rename({'id':'tbiaID'})
             df['group'] = group
             df = df.replace({nan: '', None: ''})
             sci_names = df[['sourceScientificName','originalScientificName','sourceTaxonID','scientificNameID']].drop_duplicates().reset_index(drop=True)

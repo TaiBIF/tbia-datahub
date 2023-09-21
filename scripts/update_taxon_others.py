@@ -148,15 +148,20 @@ for group in group_list:
     # print(group)
     while has_more_data:
         print(group, offset)
-        with db.begin() as conn:
-            qry = sa.text("""select "tbiaID", "occurrenceID", "sourceScientificName","sourceVernacularName", "originalScientificName", "sourceTaxonID", "scientificNameID", 
-                        "datasetName", "taxonID" as old_taxon_id, "parentTaxonID" as old_parent_taxon_id from records 
-                        where "group" = '{}' limit {} offset {}""".format(group, limit, offset))
-            resultset = conn.execute(qry)
-            results = resultset.mappings().all()
+        # with db.begin() as conn:
+        #     qry = sa.text("""select "tbiaID", "occurrenceID", "sourceScientificName","sourceVernacularName", "originalScientificName", "sourceTaxonID", "scientificNameID", 
+        #                 "datasetName", "taxonID" as old_taxon_id, "parentTaxonID" as old_parent_taxon_id from records 
+        #                 where "group" = '{}' limit {} offset {}""".format(group, limit, offset))
+        #     resultset = conn.execute(qry)
+        #     results = resultset.mappings().all()
+        solr_url = f"http://solr:8983/solr/tbia_records/select?indent=true&rows=10000&start={offset}&q.op=OR&q=group:{group}"
+        resp = requests.get(solr_url)
+        resp = resp.json()
+        results = resp['response']['docs']
         if len(results):
             now = datetime.now()
             df = pd.DataFrame(results)
+            df = df.rename({'id':'tbiaID'})
             df['group'] = group
             df = df.replace({nan: '', None: ''})
             sci_names = df[['sourceScientificName','sourceVernacularName','sourceTaxonID','scientificNameID']].drop_duplicates().reset_index(drop=True)

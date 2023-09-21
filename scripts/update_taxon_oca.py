@@ -170,10 +170,6 @@ oca_df = oca_df.reset_index(drop=True)
 mmm = pd.DataFrame()
 while has_more_data:
     print(offset)
-    solr_url = f"http://solr:8983/solr/tbia_records/select?indent=true&rows=10000&start={offset}&q.op=OR&q=group:{group}"
-    resp = requests.get(solr_url)
-    resp = resp.json()
-    results = resp['response']['docs']
     # with db.begin() as conn:
     #     # 可能要改從solr query?
     #     qry = sa.text("""select "tbiaID", "occurrenceID", "sourceScientificName","sourceVernacularName", "scientificNameID", 
@@ -181,9 +177,14 @@ while has_more_data:
     #                 where "group" = '{}' limit {} offset {}""".format(group, limit, offset))
     #     resultset = conn.execute(qry)
     #     results = resultset.mappings().all()
+    solr_url = f"http://solr:8983/solr/tbia_records/select?indent=true&rows=10000&start={offset}&q.op=OR&q=group:{group}"
+    resp = requests.get(solr_url)
+    resp = resp.json()
+    results = resp['response']['docs']
     if len(results):
         now = datetime.now()
         df = pd.DataFrame(results)
+        df = df.rename({'id':'tbiaID'})
         df['group'] = group
         df = df.replace({nan: '', None: ''})
         df = df.merge(oca_df, how='left')
