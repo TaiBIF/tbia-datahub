@@ -11,6 +11,7 @@ services:
     volumes:
       - .:/code
       - ../tbia-volumes/datahub_bucket:/bucket
+      - ../tbia-volumes/bucket:/portal/bucket
     depends_on:
       - postgres
     env_file:
@@ -27,6 +28,7 @@ services:
     volumes:
       - ../tbia-volumes/datahub_pgdata:/var/lib/postgresql/data/pgdata
       - ../tbia-volumes/datahub_bucket:/bucket
+      - ../tbia-volumes/bucket:/portal/bucket
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=example
@@ -48,5 +50,7 @@ services:
     command:
       - solr-precreate
       - tbia_records
+    environment:
+      - SOLR_JAVA_MEM=-Xms4g -Xmx4g
 
 
