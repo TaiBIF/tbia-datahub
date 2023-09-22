@@ -29,8 +29,8 @@ taxon = pd.DataFrame(taxon)
 taxon = taxon.drop(columns=['scientificNameID','id'])
 
 
-group_list = ['brcas','brmas','cpami','fact','forest','ntm','oca','taif','tcd','tbri','wra'] 
-# gbif 另外處理
+group_list = ['brcas','brmas','cpami','fact','forest','ntm','oca','taif','tcd','wra'] 
+# gbif tbri 另外處理
 
 # 要join taxon的表
 
@@ -49,7 +49,7 @@ for group in group_list:
         results = []
         with db.begin() as conn:
             qry = sa.text("""select * from records  
-                          where "group" = '{}' limit {} offset {}  """.format(group, limit, offset)) 
+                          where "group" = '{}' order by id limit {} offset {}  """.format(group, limit, offset)) 
             resultset = conn.execute(qry)
             results = resultset.mappings().all()
         if len(results):
