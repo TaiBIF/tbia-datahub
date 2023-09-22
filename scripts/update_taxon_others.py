@@ -137,11 +137,9 @@ group_list = ['forest','cpami','taif','tcd','fact','brmas']
 
 # 一次處理10000筆
 
-# TODO is_matched的部分要再確認
-
 # 19031165
 
-subsetting_list = ['id',"occurrenceID", "sourceScientificName","sourceVernacularName", "datasetName", "taxonID", "parentTaxonID"]
+# subsetting_list = ['id',"occurrenceID", "sourceScientificName","sourceVernacularName", "datasetName", "taxonID", "parentTaxonID"]
 
 for group in group_list:
     limit = 10000
@@ -150,24 +148,24 @@ for group in group_list:
     # print(group)
     while has_more_data:
         print(group, offset)
-        # with db.begin() as conn:
-        #     qry = sa.text("""select "tbiaID", "occurrenceID", "sourceScientificName","sourceVernacularName", "originalScientificName", "sourceTaxonID", "scientificNameID", 
-        #                 "datasetName", "taxonID" as old_taxon_id, "parentTaxonID" as old_parent_taxon_id from records 
-        #                 where "group" = '{}' limit {} offset {}""".format(group, limit, offset))
-        #     resultset = conn.execute(qry)
-        #     results = resultset.mappings().all()
-        solr_url = f"http://solr:8983/solr/tbia_records/select?indent=true&rows=10000&start={offset}&q.op=OR&q=group:{group}"
-        resp = requests.get(solr_url)
-        resp = resp.json()
-        results = resp['response']['docs']
+        with db.begin() as conn:
+            qry = sa.text("""select "tbiaID", "occurrenceID", "sourceScientificName","sourceVernacularName", "originalScientificName", "sourceTaxonID", "scientificNameID", 
+                        "datasetName", "taxonID" as old_taxon_id, "parentTaxonID" as old_parent_taxon_id from records 
+                        where "group" = '{}' order by id limit {} offset {}""".format(group, limit, offset))
+            resultset = conn.execute(qry)
+            results = resultset.mappings().all()
+        # solr_url = f"http://solr:8983/solr/tbia_records/select?indent=true&rows=10000&start={offset}&q.op=OR&q=group:{group}"
+        # resp = requests.get(solr_url)
+        # resp = resp.json()
+        # results = resp['response']['docs']
         if len(results):
             now = datetime.now()
             df = pd.DataFrame(results)
-            df = df[[k for k in df.keys() if k in subsetting_list]]
-            for sl in subsetting_list:
-                if sl not in df.keys():
-                    df[sl] = None
-            df = df.rename(columns={'id':'tbiaID','parentTaxonID':'old_parent_taxon_id','taxonID':'old_taxon_id'})
+            # df = df[[k for k in df.keys() if k in subsetting_list]]
+            # for sl in subsetting_list:
+            #     if sl not in df.keys():
+            #         df[sl] = None
+            # df = df.rename(columns={'id':'tbiaID','parentTaxonID':'old_parent_taxon_id','taxonID':'old_taxon_id'})
             df['group'] = group
             df = df.replace({nan: '', None: ''})
             sci_names = df[['sourceScientificName','sourceVernacularName']].drop_duplicates().reset_index(drop=True)
