@@ -129,9 +129,9 @@ def matching_flow(sci_names):
 # "fact",175183,
 # "brmas",126480,
 
-# group_list = ['forest','cpami','taif','tcd','fact','brmas']
+group_list = ['forest','cpami','taif','tcd','fact','brmas']
 
-group_list = ['brmas'] 
+# group_list = ['brmas'] 
 
 
 
@@ -140,6 +140,8 @@ group_list = ['brmas']
 # TODO is_matched的部分要再確認
 
 # 19031165
+
+subsetting_list = ['id',"occurrenceID", "sourceScientificName","sourceVernacularName", "datasetName", "taxonID", "parentTaxonID"]
 
 for group in group_list:
     limit = 10000
@@ -161,7 +163,11 @@ for group in group_list:
         if len(results):
             now = datetime.now()
             df = pd.DataFrame(results)
-            df = df.rename({'id':'tbiaID'})
+            df = df[[k for k in df.keys() if k in subsetting_list]]
+            for sl in subsetting_list:
+                if sl not in df.keys():
+                    df[sl] = None
+            df = df.rename(columns={'id':'tbiaID','parentTaxonID':'old_parent_taxon_id','taxonID':'old_taxon_id'})
             df['group'] = group
             df = df.replace({nan: '', None: ''})
             sci_names = df[['sourceScientificName','sourceVernacularName']].drop_duplicates().reset_index(drop=True)
