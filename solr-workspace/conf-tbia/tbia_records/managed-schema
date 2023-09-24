@@ -493,6 +493,7 @@
   <field name="standardOrganismQuantity" type="pdoubles"/>
   <field name="taxonID" type="string"/>
   <field name="parentTaxonID" type="string"/>
+  <field name="sourceTaxonID" type="string"/>
   <field name="typeStatus" type="string"/>
   <field name="verbatimCoordinateSystem" type="string"/>
   <field name="verbatimLatitude" type="string"/>
