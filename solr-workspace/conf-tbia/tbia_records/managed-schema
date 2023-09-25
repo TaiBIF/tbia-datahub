@@ -733,6 +733,7 @@
   <!-- taxa -->
   <copyField source="taxonRank" dest="_text_"/>
   <copyField source="scientificName" dest="_text_"/>
+  <copyField source="nothosubspecies" dest="_text_"/>
   <copyField source="synonyms" dest="_text_"/>
   <copyField source="misapplied" dest="_text_"/>
   <copyField source="common_name_c" dest="_text_"/>
@@ -770,8 +771,7 @@
   <copyField source="misapplied" dest="_text_"/>
   <copyField source="morph" dest="_text_"/>
   <copyField source="morph_c" dest="_text_"/>
-  <copyField source="source_author" dest="_text_"/>
-  <copyField source="nothosubspecies" dest="_text_"/>
+  <copyField source="name_author" dest="_text_"/>
   <copyField source="nothosubspecies_c" dest="_text_"/>
   <copyField source="nothovariety" dest="_text_"/>
   <copyField source="nothovariety_c" dest="_text_"/>
