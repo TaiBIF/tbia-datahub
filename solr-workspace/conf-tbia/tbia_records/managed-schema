@@ -505,6 +505,7 @@
 
     <!-- taxa fields start -->
     <field name="aberration" type="string"/>
+    <field name="aberration_c" type="string"/>
     <field name="alternative_name_c" type="string"/>
     <field name="class" type="string"/>
     <field name="class_c" type="string"/>
@@ -539,9 +540,11 @@
     <field name="formatted_synonyms" type="string"/>
     <field name="formatted_misapplied" type="string"/>
     <field name="form" type="string"/>
+    <field name="form_c" type="string"/>
     <field name="genus" type="string"/>
     <field name="genus_c" type="string"/>
     <field name="hybridformula" type="string"/>
+    <field name="hybridformula_c" type="string"/>
     <field name="infraclass" type="string"/>
     <field name="infraclass_c" type="string"/>
     <field name="infradivision" type="string"/>
@@ -558,9 +561,12 @@
     <field name="microphylum_c" type="string"/>
     <field name="misapplied" type="string"/>
     <field name="morph" type="string"/>
+    <field name="morph_c" type="string"/>
     <field name="name_author" type="string"/>
     <field name="nothosubspecies" type="string"/>
+    <field name="nothosubspecies_c" type="string"/>
     <field name="nothovariety" type="string"/>
+    <field name="nothovariety_c" type="string"/>
     <field name="order" type="string"/>
     <field name="order_c" type="string"/>
     <field name="parvdivision" type="string"/>
@@ -570,14 +576,17 @@
     <field name="phylum" type="string"/>
     <field name="phylum_c" type="string"/>
     <field name="race" type="string"/>
+    <field name="race_c" type="string"/>
     <field name="scientificName" type="string" docValues="true"/>
     <field name="scientificNameID" type="string"/>
     <field name="section" type="string"/>
     <field name="section_c" type="string"/>
     <field name="specialform" type="string"/>
+    <field name="specialform_c" type="string"/>
     <field name="species" type="string"/>
     <field name="species_c" type="string"/>
     <field name="stirp" type="string"/>
+    <field name="stirp_c" type="string"/>
     <field name="subclass" type="string"/>
     <field name="subclass_c" type="string"/>
     <field name="subdivision" type="string"/>
@@ -585,6 +594,7 @@
     <field name="subfamily" type="string"/>
     <field name="subfamily_c" type="string"/>
     <field name="subform" type="string"/>
+    <field name="subform_c" type="string"/>
     <field name="subgenus" type="string"/>
     <field name="subgenus_c" type="string"/>
     <field name="subkingdom" type="string"/>
@@ -596,9 +606,11 @@
     <field name="subsection" type="string"/>
     <field name="subsection_c" type="string"/>
     <field name="subspecies" type="string"/>
+    <field name="subspecies_c" type="string"/>
     <field name="subtribe" type="string"/>
     <field name="subtribe_c" type="string"/>
     <field name="subvariety" type="string"/>
+    <field name="subvariety_c" type="string"/>
     <field name="superclass" type="string"/>
     <field name="superclass_c" type="string"/>
     <field name="superdivision" type="string"/>
@@ -616,6 +628,7 @@
     <field name="tribe" type="string"/>
     <field name="tribe_c" type="string"/>
     <field name="variety" type="string"/>
+    <field name="variety_c" type="string"/>
     <!-- taxa fields end -->
     <!-- map -->
 
@@ -724,85 +737,101 @@
   <copyField source="misapplied" dest="_text_"/>
   <copyField source="common_name_c" dest="_text_"/>
   <copyField source="alternative_name_c" dest="_text_"/>
-  <copyField source="domain" dest="_text_"/>
-  <copyField source="superkingdom" dest="_text_"/>
-  <copyField source="kingdom" dest="_text_"/>
-  <copyField source="subkingdom" dest="_text_"/>
-  <copyField source="infrakingdom" dest="_text_"/>
-  <copyField source="superdivision" dest="_text_"/>
-  <copyField source="division" dest="_text_"/>
-  <copyField source="subdivision" dest="_text_"/>
-  <copyField source="infradivision" dest="_text_"/>
-  <copyField source="parvdivision" dest="_text_"/>
-  <copyField source="superphylum" dest="_text_"/>
-  <copyField source="phylum" dest="_text_"/>
-  <copyField source="subphylum" dest="_text_"/>
-  <copyField source="infraphylum" dest="_text_"/>
-  <copyField source="microphylum" dest="_text_"/>
-  <copyField source="parvphylum" dest="_text_"/>
-  <copyField source="superclass" dest="_text_"/>
+  <copyField source="aberration" dest="_text_"/>
+  <copyField source="aberration_c" dest="_text_"/>
   <copyField source="class" dest="_text_"/>
-  <copyField source="subclass" dest="_text_"/>
-  <copyField source="infraclass" dest="_text_"/>
-  <copyField source="superorder" dest="_text_"/>
-  <copyField source="order" dest="_text_"/>
-  <copyField source="suborder" dest="_text_"/>
-  <copyField source="infraorder" dest="_text_"/>
-  <copyField source="superfamily" dest="_text_"/>
+  <copyField source="class_c" dest="_text_"/>
+  <copyField source="division" dest="_text_"/>
+  <copyField source="division_c" dest="_text_"/>
+  <copyField source="domain" dest="_text_"/>
+  <copyField source="domain_c" dest="_text_"/>
   <copyField source="family" dest="_text_"/>
-  <copyField source="subfamily" dest="_text_"/>
-  <copyField source="tribe" dest="_text_"/>
-  <copyField source="subtribe" dest="_text_"/>
+  <copyField source="family_c" dest="_text_"/>
+  <copyField source="form" dest="_text_"/>
+  <copyField source="form_c" dest="_text_"/>
   <copyField source="genus" dest="_text_"/>
-  <copyField source="subgenus" dest="_text_"/>
+  <copyField source="genus_c" dest="_text_"/>
+  <copyField source="hybridformula" dest="_text_"/>
+  <copyField source="hybridformula_c" dest="_text_"/>
+  <copyField source="infraclass" dest="_text_"/>
+  <copyField source="infraclass_c" dest="_text_"/>
+  <copyField source="infradivision" dest="_text_"/>
+  <copyField source="infradivision_c" dest="_text_"/>
+  <copyField source="infrakingdom" dest="_text_"/>
+  <copyField source="infrakingdom_c" dest="_text_"/>
+  <copyField source="infraorder" dest="_text_"/>
+  <copyField source="infraorder_c" dest="_text_"/>
+  <copyField source="infraphylum" dest="_text_"/>
+  <copyField source="infraphylum_c" dest="_text_"/>
+  <copyField source="kingdom" dest="_text_"/>
+  <copyField source="kingdom_c" dest="_text_"/>
+  <copyField source="microphylum" dest="_text_"/>
+  <copyField source="microphylum_c" dest="_text_"/>
+  <copyField source="misapplied" dest="_text_"/>
+  <copyField source="morph" dest="_text_"/>
+  <copyField source="morph_c" dest="_text_"/>
+  <copyField source="source_author" dest="_text_"/>
+  <copyField source="nothosubspecies" dest="_text_"/>
+  <copyField source="nothosubspecies_c" dest="_text_"/>
+  <copyField source="nothovariety" dest="_text_"/>
+  <copyField source="nothovariety_c" dest="_text_"/>
+  <copyField source="order" dest="_text_"/>
+  <copyField source="order_c" dest="_text_"/>
+  <copyField source="parvdivision" dest="_text_"/>
+  <copyField source="parvdivision_c" dest="_text_"/>
+  <copyField source="parvphylum" dest="_text_"/>
+  <copyField source="parvphylum_c" dest="_text_"/>
+  <copyField source="phylum" dest="_text_"/>
+  <copyField source="phylum_c" dest="_text_"/>
+  <copyField source="race" dest="_text_"/>
+  <copyField source="race_c" dest="_text_"/>
   <copyField source="section" dest="_text_"/>
-  <copyField source="subsection" dest="_text_"/>
+  <copyField source="section_c" dest="_text_"/>
+  <copyField source="specialform" dest="_text_"/>
+  <copyField source="specialform_c" dest="_text_"/>
   <copyField source="species" dest="_text_"/>
   <copyField source="species_c" dest="_text_"/>
-  <copyField source="domain_c" dest="_text_"/>
-  <copyField source="superkingdom_c" dest="_text_"/>
-  <copyField source="kingdom_c" dest="_text_"/>
-  <copyField source="subkingdom_c" dest="_text_"/>
-  <copyField source="infrakingdom_c" dest="_text_"/>
-  <copyField source="superdivision_c" dest="_text_"/>
-  <copyField source="division_c" dest="_text_"/>
-  <copyField source="subdivision_c" dest="_text_"/>
-  <copyField source="infradivision_c" dest="_text_"/>
-  <copyField source="parvdivision_c" dest="_text_"/>
-  <copyField source="superphylum_c" dest="_text_"/>
-  <copyField source="phylum_c" dest="_text_"/>
-  <copyField source="subphylum_c" dest="_text_"/>
-  <copyField source="infraphylum_c" dest="_text_"/>
-  <copyField source="microphylum_c" dest="_text_"/>
-  <copyField source="parvphylum_c" dest="_text_"/>
-  <copyField source="superclass_c" dest="_text_"/>
-  <copyField source="class_c" dest="_text_"/>
+  <copyField source="stirp" dest="_text_"/>
+  <copyField source="stirp_c" dest="_text_"/>
+  <copyField source="subclass" dest="_text_"/>
   <copyField source="subclass_c" dest="_text_"/>
-  <copyField source="infraclass_c" dest="_text_"/>
-  <copyField source="superorder_c" dest="_text_"/>
-  <copyField source="order_c" dest="_text_"/>
-  <copyField source="suborder_c" dest="_text_"/>
-  <copyField source="infraorder_c" dest="_text_"/>
-  <copyField source="superfamily_c" dest="_text_"/>
-  <copyField source="family_c" dest="_text_"/>
+  <copyField source="subdivision" dest="_text_"/>
+  <copyField source="subdivision_c" dest="_text_"/>
+  <copyField source="subfamily" dest="_text_"/>
   <copyField source="subfamily_c" dest="_text_"/>
-  <copyField source="tribe_c" dest="_text_"/>
-  <copyField source="subtribe_c" dest="_text_"/>
-  <copyField source="genus_c" dest="_text_"/>
+  <copyField source="subform" dest="_text_"/>
+  <copyField source="subform_c" dest="_text_"/>
+  <copyField source="subgenus" dest="_text_"/>
   <copyField source="subgenus_c" dest="_text_"/>
-  <copyField source="section_c" dest="_text_"/>
+  <copyField source="subkingdom" dest="_text_"/>
+  <copyField source="subkingdom_c" dest="_text_"/>
+  <copyField source="suborder" dest="_text_"/>
+  <copyField source="suborder_c" dest="_text_"/>
+  <copyField source="subphylum" dest="_text_"/>
+  <copyField source="subphylum_c" dest="_text_"/>
+  <copyField source="subsection" dest="_text_"/>
   <copyField source="subsection_c" dest="_text_"/>
   <copyField source="subspecies" dest="_text_"/>
-  <copyField source="nothosubspecies" dest="_text_"/>
-  <copyField source="variety" dest="_text_"/>
+  <copyField source="subspecies_c" dest="_text_"/>
+  <copyField source="subtribe" dest="_text_"/>
+  <copyField source="subtribe_c" dest="_text_"/>
   <copyField source="subvariety" dest="_text_"/>
-  <copyField source="nothovariety" dest="_text_"/>
-  <copyField source="form" dest="_text_"/>
-  <copyField source="subform" dest="_text_"/>
-  <copyField source="specialform" dest="_text_"/>
-  <copyField source="race" dest="_text_"/>
-  <copyField source="stirp" dest="_text_"/>
-  <copyField source="morph" dest="_text_"/>
-  <copyField source="aberration" dest="_text_"/>
-  <copyField source="hybridformula" dest="_text_"/>
+  <copyField source="subvariety_c" dest="_text_"/>
+  <copyField source="superclass" dest="_text_"/>
+  <copyField source="superclass_c" dest="_text_"/>
+  <copyField source="superdivision" dest="_text_"/>
+  <copyField source="superdivision_c" dest="_text_"/>
+  <copyField source="superfamily" dest="_text_"/>
+  <copyField source="superfamily_c" dest="_text_"/>
+  <copyField source="superkingdom" dest="_text_"/>
+  <copyField source="superkingdom_c" dest="_text_"/>
+  <copyField source="superorder" dest="_text_"/>
+  <copyField source="superorder_c" dest="_text_"/>
+  <copyField source="superphylum" dest="_text_"/>
+  <copyField source="superphylum_c" dest="_text_"/>
+  <copyField source="tribe" dest="_text_"/>
+  <copyField source="tribe_c" dest="_text_"/>
+  <copyField source="variety" dest="_text_"/>
+  <copyField source="variety_c" dest="_text_"/>
+
 </schema>
