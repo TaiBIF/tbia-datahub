@@ -453,7 +453,8 @@
   <field name="_version_" type="plong" indexed="false" stored="false"/>
   <field name="associatedMedia" type="string"/>
   <field name="basisOfRecord" type="string"/>
-  <field name="collectionID" type="string"/>
+  <!-- <field name="collectionID" type="string"/> -->
+  <field name="catalogNumber" type="string"/>
   <field name="coordinatePrecision" type="string"/>
   <field name="coordinateUncertaintyInMeters" type="string"/>
   <field name="created" type="pdates"/>
@@ -636,6 +637,7 @@
     <field name="grid_5" type="string"/>
     <field name="grid_10" type="string"/>
     <field name="grid_100" type="string"/>
+    <!-- 
     <field name="grid_x_1" type="pint" uninvertible="false" docValues="true" indexed="true" stored="true"/>
     <field name="grid_y_1" type="pint" uninvertible="false" docValues="true" indexed="true" stored="true"/>
     <field name="grid_x_5" type="pint" uninvertible="false" docValues="true" indexed="true" stored="true"/>
@@ -643,7 +645,8 @@
     <field name="grid_x_10" type="pint" uninvertible="false" docValues="true" indexed="true" stored="true"/>
     <field name="grid_y_10" type="pint" uninvertible="false" docValues="true" indexed="true" stored="true"/>
     <field name="grid_x_100" type="pint" uninvertible="false" docValues="true" indexed="true" stored="true"/>
-    <field name="grid_y_100" type="pint" uninvertible="false" docValues="true" indexed="true" stored="true"/>
+    <field name="grid_y_100" type="pint" uninvertible="false" docValues="true" indexed="true" stored="true"/> 
+    -->
 
   <dynamicField name="*_txt_en_split_tight" type="text_en_splitting_tight" indexed="true" stored="true"/>
   <dynamicField name="*_descendent_path" type="descendent_path" indexed="true" stored="true"/>

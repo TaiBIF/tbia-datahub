@@ -47,7 +47,7 @@ class Records(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     associatedMedia: Mapped[Optional[str]] = mapped_column(String(10000))
     basisOfRecord: Mapped[Optional[str]] = mapped_column(String(1000))
-    collectionID: Mapped[Optional[str]] = mapped_column(String(10000))
+    catalogNumber: Mapped[Optional[str]] = mapped_column(String(10000))
     coordinatePrecision: Mapped[Optional[str]] = mapped_column(String(1000))
     coordinateUncertaintyInMeters: Mapped[Optional[str]] = mapped_column(String(1000))
     created: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
