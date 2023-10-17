@@ -1,6 +1,6 @@
 from typing import List
 from typing import Optional
-from sqlalchemy import ForeignKey
+from sqlalchemy import UniqueConstraint
 from sqlalchemy import String, DateTime
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import Mapped
@@ -19,6 +19,7 @@ class MatchLog(Base):
     occurrenceID: Mapped[Optional[str]] = mapped_column(String(1000), index=True)
     tbiaID: Mapped[str] = mapped_column(String(50), index=True)
     group: Mapped[str] = mapped_column(String(50), index=True)
+    rights_holder:  Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     sourceScientificName: Mapped[Optional[str]] = mapped_column(String(1000))
     is_matched: Mapped[bool]
 
@@ -33,6 +34,11 @@ class MatchLog(Base):
     stage_5: Mapped[Optional[str]] = mapped_column(String(20), index=True)
     created: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     modified: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    
+    __table_args__ = (
+        UniqueConstraint('tbiaID', name='tbiaID_unique'),
+    )
+
 
 
 class Records(Base):
@@ -95,6 +101,21 @@ class Records(Base):
     scientificNameID: Mapped[Optional[str]] = mapped_column(String(1000), index=True)
     # 為了因應某些單位有自己的學名系統 如TBN taxonUUID
     sourceTaxonID: Mapped[Optional[str]] = mapped_column(String(1000), index=True)
+    # 為了GBIF的資料從TaiBIF取得，留存TaiBIF的OccurrenceID於此，供更新使用
+    sourceOccurrenceID: Mapped[Optional[str]] = mapped_column(String(1000), index=True)
+    # 保留未來學名比對使用
+    sourceTaxonRank: Mapped[Optional[str]] = mapped_column(String(1000), index=True)
+    # 日期改存年月日
+    standardYear: Mapped[Optional[float]]
+    standardMonth: Mapped[Optional[float]]
+    standardDay: Mapped[Optional[float]]
+    year: Mapped[Optional[str]] = mapped_column(String(50))
+    month: Mapped[Optional[str]] = mapped_column(String(50))
+    day: Mapped[Optional[str]] = mapped_column(String(50))
+    # 資料是否刪除
+    is_deleted: Mapped[bool] = mapped_column(server_default='f', index=True)
+
+
 
 
 # class Taxon(models.Model):
