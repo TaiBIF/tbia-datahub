@@ -253,6 +253,7 @@ class Taxon(Base):
     redlist: Mapped[Optional[str]] = mapped_column(String(10000))
     protected: Mapped[Optional[str]] = mapped_column(String(10000))
     sensitive: Mapped[Optional[str]] = mapped_column(String(10000))
+    alien_type: Mapped[Optional[str]] = mapped_column(String(10000))
 
 
 
