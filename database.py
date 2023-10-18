@@ -40,6 +40,7 @@ class MatchLog(Base):
     )
 
 
+# !! 注意 如果修改欄位名稱的話 會讓原本的欄位移除 新的欄位會是空值
 
 class Records(Base):
     __tablename__ = "records"
@@ -104,7 +105,9 @@ class Records(Base):
     # 為了GBIF的資料從TaiBIF取得，留存TaiBIF的OccurrenceID於此，供更新使用
     sourceOccurrenceID: Mapped[Optional[str]] = mapped_column(String(1000), index=True)
     # 保留未來學名比對使用
-    sourceTaxonRank: Mapped[Optional[str]] = mapped_column(String(1000), index=True)
+    sourceTaxonRank: Mapped[Optional[str]] = mapped_column(String(1000))
+    sourceFamily: Mapped[Optional[str]] = mapped_column(String(1000))
+    sourceClass: Mapped[Optional[str]] = mapped_column(String(1000))
     # 日期改存年月日
     standardYear: Mapped[Optional[float]]
     standardMonth: Mapped[Optional[float]]
