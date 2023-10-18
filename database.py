@@ -248,11 +248,11 @@ class Taxon(Base):
     tribe_c: Mapped[Optional[str]] = mapped_column(String(10000))
     variety: Mapped[Optional[str]] = mapped_column(String(10000))
     variety_c: Mapped[Optional[str]] = mapped_column(String(10000))
-    # cites = models.CharField(blank=True, null=True, max_length=100)
-    # iucn = models.CharField(blank=True, null=True, max_length=100)
-    # redlist = models.CharField(blank=True, null=True, max_length=100)
-    # protected = models.CharField(blank=True, null=True, max_length=100)
-    # sensitive = models.CharField(blank=True, null=True, max_length=100)
+    cites: Mapped[Optional[str]] = mapped_column(String(10000))
+    iucn: Mapped[Optional[str]] = mapped_column(String(10000))
+    redlist: Mapped[Optional[str]] = mapped_column(String(10000))
+    protected: Mapped[Optional[str]] = mapped_column(String(10000))
+    sensitive: Mapped[Optional[str]] = mapped_column(String(10000))
 
 
 
