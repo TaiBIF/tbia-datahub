@@ -107,6 +107,7 @@ class Records(Base):
     # 保留未來學名比對使用
     sourceTaxonRank: Mapped[Optional[str]] = mapped_column(String(1000))
     sourceFamily: Mapped[Optional[str]] = mapped_column(String(1000))
+    sourceOrder: Mapped[Optional[str]] = mapped_column(String(1000))
     sourceClass: Mapped[Optional[str]] = mapped_column(String(1000))
     # 日期改存年月日
     standardYear: Mapped[Optional[float]]
