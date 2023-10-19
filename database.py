@@ -258,7 +258,7 @@ class Taxon(Base):
     protected: Mapped[Optional[str]] = mapped_column(String(10000))
     sensitive: Mapped[Optional[str]] = mapped_column(String(10000))
     alien_type: Mapped[Optional[str]] = mapped_column(String(10000))
-
+    is_endemic: Mapped[Optional[bool]]
 
 
 
