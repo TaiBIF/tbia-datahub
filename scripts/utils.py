@@ -3,10 +3,11 @@ from datetime import datetime, timedelta
 import numpy as np
 import bisect
 import re
-from app import portal_db_settings, db
+from app import portal_db_settings, db, db_settings
 import psycopg2
 import sqlalchemy as sa
 import requests
+from sqlalchemy.dialects.postgresql import insert
 
 issue_map = {
     1: 'higherrank',
@@ -150,35 +151,8 @@ def update_dataset_key(ds_name, rights_holder):
         cur.execute(query, (rights_holder,r['datasetName'],r['recordType'],False,False))
         conn.commit()
     conn.close()
-        # existed = cur.fetchone()
-        # if DatasetKey.objects.filter(group=group,name=r['datasetName'],record_type=r['recordType']).exists():
-        #     # 更新
-        #     dk = DatasetKey.objects.get(group=group,name=r['datasetName'],record_type=r['recordType'])
-        #     dk.deprecated = False
-        #     dk.save()
-        # else:
-        #     # 新建
-        #     DatasetKey.objects.create(
-        #         name = r['datasetName'],
-        #         record_type = r['recordType'],
-        #         group = group,
-        #     )
-
-# match_log = df[['occurrenceID','tbiaID','sourceScientificName','taxonID','parentTaxonID','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','group']]
 
 
-# def postgres_upsert(table, conn, keys, data_iter):
-
-#     data = [dict(zip(keys, row)) for row in data_iter]
-
-#     insert_statement = insert(table.table).values(data)
-#     upsert_statement = insert_statement.on_conflict_do_update(
-#         constraint=f"{table.table.name}_pkey",
-#         set_={c.key: c for c in insert_statement.excluded},
-#     )
-#     conn.execute(upsert_statement)
-
-from sqlalchemy.dialects.postgresql import insert
 
 
 def matchlog_upsert(table, conn, keys, data_iter):
@@ -197,7 +171,8 @@ def matchlog_upsert(table, conn, keys, data_iter):
 def update_match_log(match_log, now):
     match_log['is_matched'] = False
     match_log.loc[match_log.taxonID.notnull(),'is_matched'] = True
-    match_log['match_stage'] = match_log['match_stage'].apply(lambda x: int(x) if x else x)
+    match_log = match_log.replace({np.nan: None})
+    match_log['match_stage'] = match_log['match_stage'].apply(lambda x: int(x) if x else None)
     match_log['stage_1'] = match_log['stage_1'].apply(lambda x: issue_map[x] if x else x)
     match_log['stage_2'] = match_log['stage_2'].apply(lambda x: issue_map[x] if x else x)
     match_log['stage_3'] = match_log['stage_3'].apply(lambda x: issue_map[x] if x else x)
@@ -205,10 +180,12 @@ def update_match_log(match_log, now):
     match_log['stage_5'] = match_log['stage_5'].apply(lambda x: issue_map[x] if x else x)
     match_log['created'] = now
     match_log['modified'] = now
+    match_log = match_log.rename(columns={'id': 'tbiaID','rightsHolder':'rights_holder'})
     match_log.to_sql('match_log', db, # schema='my_schema',
               if_exists='append',
               index=False,
               method=matchlog_upsert)  
+    return match_log
 
 
 def get_records(group, min_id, limit=10000):
@@ -230,4 +207,50 @@ def get_gbif_id(gbifDatasetID, gbifOccurrenceID):
         gbifID = gbif_res.get('gbifID')
     return gbifID
 
+
+
+# 更新資料庫內的records
+
+def records_upsert(table, conn, keys, data_iter):
+    data = [dict(zip(keys, row)) for row in data_iter]
+    # 如果重複的時候，不要update的欄位
+    not_set_list = ['created', 'tbiaID']
+    insert_statement = insert(table.table).values(data)
+    upsert_statement = insert_statement.on_conflict_do_update(
+        constraint=f"records_unique",
+        set_={c.key: c for c in insert_statement.excluded if c.key not in not_set_list},
+    )
+    conn.execute(upsert_statement)
+
+import subprocess
+
+def zip_match_log(group, info_id):
+    zip_file_path = f'/portal/media/match_log/{group}_{info_id}_match_log.zip'
+    csv_file_path = f'{group}_{info_id}_*.csv'
+    commands = f"cd /portal/media/match_log/; zip -j {zip_file_path} {csv_file_path}; rm {csv_file_path}"
+    process = subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # 等待檔案完成
+    a = process.communicate()
+    return a
+
+
+def delete_records(rights_holder,group):
+    # 刪除is_deleted的records & match_log
+    query = """
+                WITH moved_rows AS (
+                    DELETE FROM records a
+                    WHERE a.is_deleted = 't' and a."rightsHolder" = '{}' and a."group" = '{}'
+                    RETURNING a."tbiaID", a."occurrenceID", a."rightsHolder", a."group"
+                ), delete_match_log AS (
+                    DELETE FROM match_log 
+                    WHERE "tbiaID" IN (select "tbiaID" from moved_rows)
+                )
+                INSERT INTO deleted_records ("tbiaID", "occurrenceID", "rights_holder", "group", "deleted")
+                SELECT *, NOW() as deleted FROM moved_rows;
+                """.format(rights_holder, group)
+    conn = psycopg2.connect(**db_settings)
+    with conn.cursor() as cursor:
+        execute_line = cursor.execute(query)
+        conn.commit()
+    return execute_line
 
