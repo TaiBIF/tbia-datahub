@@ -119,6 +119,10 @@ class Records(Base):
     # 資料是否刪除
     is_deleted: Mapped[bool] = mapped_column(server_default='f', index=True)
 
+    __table_args__ = (
+        UniqueConstraint('tbiaID',name='records_unique'),
+    )
+
 
 
 
