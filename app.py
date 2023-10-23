@@ -14,7 +14,7 @@ db_settings = {
     "port": int(os.getenv('POSTGRES_PORT')),
     "user": os.getenv('POSTGRES_USER'),
     "password": os.getenv('POSTGRES_PASSWORD'),
-    "db": os.getenv('POSTGRES_DB'),
+    "database": os.getenv('POSTGRES_DB'),
 }
 
 portal_db_settings = {
@@ -26,7 +26,7 @@ portal_db_settings = {
 }
 
 # connect to the database
-db_string = 'postgresql://{}:{}@{}:{}/{}'.format(db_settings.get('user'), db_settings.get('password'), db_settings.get('host'), db_settings.get('port'), db_settings.get('db'))
+db_string = 'postgresql://{}:{}@{}:{}/{}'.format(db_settings.get('user'), db_settings.get('password'), db_settings.get('host'), db_settings.get('port'), db_settings.get('database'))
 db = create_engine(db_string)
 
 
