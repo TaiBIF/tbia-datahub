@@ -19,7 +19,7 @@ issue_map = {
 
 date_formats = ['%Y/%m/%d','%Y%m%d','%Y-%m-%d','%Y/%m/%d %H:%M:%S','%Y-%m-%d %H:%M',
                 '%Y/%m/%d %H:%M','%Y-%m-%d %H:%M:%S','%Y/%m/%d %H:%M:%S',
-                '%Y/%m/%d %p %I:%M:%S']
+                '%Y/%m/%d %p %I:%M:%S', '%Y/%m/%d %H', '%Y-%m-%d %H']
 
 def convert_date(date):
     formatted_date = None
@@ -188,10 +188,10 @@ def update_match_log(match_log, now):
     return match_log
 
 
-def get_records(group, min_id, limit=10000):
+def get_records(rights_holder, min_id, limit=10000):
     with db.begin() as conn:
         qry = sa.text("""select * from records  
-                        where "group" = '{}' AND id > {} order by id limit {}  """.format(group, min_id, limit)) 
+                        where "rightsHolder" = '{}' AND id > {} order by id limit {}  """.format(rights_holder, min_id, limit)) 
         resultset = conn.execute(qry)
         results = resultset.mappings().all()
         return results
