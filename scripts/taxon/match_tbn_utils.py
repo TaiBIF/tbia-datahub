@@ -4,7 +4,6 @@ from app import db
 import pandas as pd
 
 # 取得taxon資料
-import psycopg2
 import requests
 import re
 import urllib
@@ -37,8 +36,6 @@ with db.begin() as conn:
 taxon = pd.DataFrame(taxon)
 taxon = taxon.drop(columns=['scientificNameID','id'])
 
-
-# sci_names = pd.DataFrame()
 
 def match_name(matching_name, sci_name, original_name, is_parent, match_stage, sci_names, source_family, source_class, source_order, sci_index):
     if matching_name:
@@ -188,13 +185,13 @@ def matching_flow(sci_names):
     sci_names['sci_index'] = sci_names.index
     sci_names['taxonID'] = ''
     sci_names['parentTaxonID'] = ''
-    sci_names['match_stage'] = 1
+    sci_names['match_stage'] = 0
     # 各階段的issue default是沒有對到
-    sci_names['stage_1'] = 2
-    sci_names['stage_2'] = 2
-    sci_names['stage_3'] = 2
-    sci_names['stage_4'] = 2
-    sci_names['stage_5'] = 2
+    sci_names['stage_1'] = None
+    sci_names['stage_2'] = None
+    sci_names['stage_3'] = None
+    sci_names['stage_4'] = None
+    sci_names['stage_5'] = None
     # 優先採用TaiCOL taxonID (若原資料庫有提供)
     ## 第一階段比對 - sourceScientificName
     no_taxon = sci_names[(sci_names.taxonID=='')]
@@ -327,6 +324,6 @@ def matching_flow(sci_names):
     for i in stage_list[:4]:
         for stg in stage_list[stage_list.index(i)+1:]:
             sci_names.loc[sci_names.match_stage==i,f'stage_{stg}'] = None
-    sci_names.loc[(sci_names.match_stage==5)&(sci_names.taxonID==''),'match_stage'] = None
+    sci_names.loc[(sci_names.match_stage==5)&(sci_names.taxonID=='')&(sci_names.parentTaxonID==''),'match_stage'] = None
     return sci_names
 

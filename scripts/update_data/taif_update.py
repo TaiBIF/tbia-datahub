@@ -27,8 +27,8 @@ df_sci_cols = [s for s in sci_cols if s != 'taxonID']
 psql_records_key = [k for k in taxon.keys() if k != 'taxonID']
 
 # 單位資訊
-group = 'fact'
-rights_holder = '林業試驗所昆蟲標本館'
+group = 'taif'
+rights_holder = '林業試驗所植物標本資料庫'
 
 # 在portal.Partner.info裡面的id
 info_id = 0
@@ -38,36 +38,38 @@ with db.begin() as conn:
     qry = sa.text("""update records set is_deleted = 't' where "rightsHolder" = '{}' and "group" = '{}';""".format(rights_holder, group))
     resultset = conn.execute(qry)
 
-
-url = f"https://fact.tfri.gov.tw/api/1/occurrence/?token={os.getenv('FACT_KEY')}&page=1&per_page=1000"
+url = f"https://taifdb.tfri.gov.tw/apis/data.php?limit=1"
 response = requests.get(url, verify=False)
-
+c = 0
 if response.status_code == 200:
     result = response.json()
-    total = result['meta']['total']
-    total_page = math.ceil(total / 1000)
+    total_count = response.json()['total_count'] # 393809
+    total_page = math.ceil(total_count/300)
 
 now = datetime.now()
 
 for p in range(0,total_page,10):
+# for p in [0]:
     print(p)
     data = []
     c = p
     while c < p + 10 and c < total_page:
-        c+=1
-        print('page:',c)
-        time.sleep(5)
-        url = f"https://fact.tfri.gov.tw/api/1/occurrence/?token={os.getenv('FACT_KEY')}&page={c}&per_page=1000"
+        offset = c*300
+        print('offset:',offset)
+        # time.sleep(30)
+        url = f"https://taifdb.tfri.gov.tw/apis/data.php?limit=300&offset={offset}"
         response = requests.get(url, verify=False)
         if response.status_code == 200:
             result = response.json()
             data += result.get('data')
+        c += 1
     df = pd.DataFrame(data)
     df = df[~(df.isPreferredName.isin([nan,'',None])&df.scientificName.isin([nan,'',None]))]
     if len(df):
-        df = df.rename(columns={'created': 'sourceCreated', 'modified': 'sourceModified', 'scientificName': 'sourceScientificName', 
-        'permanentLink': 'references', 'isPreferredName': 'sourceVernacularName', 'collectionID': 'catalogNumber', 'taxonRank': 'sourceTaxonRank'})
-        df = df.replace({nan: ''})
+        df = df.reset_index(drop=True)
+        df = df.replace({np.nan: '', 'NA': ''})
+        df = df.rename(columns={'modified': 'sourceModified', 'scientificName': 'sourceScientificName',
+                                'isPreferredName': 'sourceVernacularName', 'taxonRank': 'sourceTaxonRank'})
         sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
         sci_names = matching_flow(sci_names)
         df = df.drop(columns=['taxonID'], errors='ignore')
@@ -88,7 +90,6 @@ for p in range(0,total_page,10):
             df[df_sci_cols] = df[df_sci_cols].replace({'': '-999999',None:'-999999'})
             df = df.merge(match_taxon_id, on=df_sci_cols, how='left')
             df[sci_cols] = df[sci_cols].replace({'-999999': ''})
-        df['sourceCreated'] = df['sourceCreated'].apply(lambda x: convert_date(x))
         df['sourceModified'] = df['sourceModified'].apply(lambda x: convert_date(x))
         df['group'] = group
         df['rightsHolder'] = rights_holder
@@ -111,16 +112,10 @@ for p in range(0,total_page,10):
         df['standardLongitude'] = None
         df['standardLatitude'] = None
         df['location_rpt'] = None
-        df['mediaLicense'] = None
         for i in df.index:
             # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
             df.loc[i,'id'] = str(bson.objectid.ObjectId())
             row = df.loc[i]
-            # associatedMedia
-            associatedMedia = ';'.join([am['url'] for am in row.associatedMedia])
-            mediaLicense = ';'.join([am['licence'] for am in row.associatedMedia])
-            df.loc[i, 'associatedMedia'] = associatedMedia
-            df.loc[i, 'mediaLicense'] = mediaLicense
             standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
             if standardLon and standardLat:
                 df.loc[i,'standardLongitude'] = standardLon
@@ -174,9 +169,10 @@ for p in range(0,total_page,10):
                 index=False,
                 method=records_upsert)
 
+
 # 刪除is_deleted的records & match_log
 delete_records(rights_holder=rights_holder,group=group)
-    
+
 # 打包match_log
 zip_match_log(group=group,info_id=info_id)
 

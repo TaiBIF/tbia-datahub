@@ -27,11 +27,14 @@ df_sci_cols = [s for s in sci_cols if s != 'taxonID']
 psql_records_key = [k for k in taxon.keys() if k != 'taxonID']
 
 # 單位資訊
-group = 'fact'
-rights_holder = '林業試驗所昆蟲標本館'
+group = 'forest'
+rights_holder = '生態調查資料庫系統'
 
 # 在portal.Partner.info裡面的id
 info_id = 0
+
+# 排除重複資料集
+duplicated_dataset_list = ['102年度臺灣兩棲類資源調查與教育宣導推廣計畫','103年度台灣兩棲類資源調查與教育推廣計畫','104年度台灣兩棲類資源調查與教育推廣計畫','105年度台灣兩棲類資源調查與教育推廣計畫']
 
 # 先將records設為is_deleted='t'
 with db.begin() as conn:
@@ -39,35 +42,38 @@ with db.begin() as conn:
     resultset = conn.execute(qry)
 
 
-url = f"https://fact.tfri.gov.tw/api/1/occurrence/?token={os.getenv('FACT_KEY')}&page=1&per_page=1000"
-response = requests.get(url, verify=False)
-
+url = f"https://ecollect.forest.gov.tw/EcologicalTBiAOpenApi/api/Data/Get?Token={os.getenv('FOREST_KEY')}"
+response = requests.get(url)
 if response.status_code == 200:
     result = response.json()
-    total = result['meta']['total']
-    total_page = math.ceil(total / 1000)
+    total_page = result['Meta']['TotalPages']
 
 now = datetime.now()
 
 for p in range(0,total_page,10):
+# for p in [0]:
     print(p)
     data = []
     c = p
     while c < p + 10 and c < total_page:
         c+=1
         print('page:',c)
-        time.sleep(5)
-        url = f"https://fact.tfri.gov.tw/api/1/occurrence/?token={os.getenv('FACT_KEY')}&page={c}&per_page=1000"
-        response = requests.get(url, verify=False)
+        # time.sleep(30)
+        url = f"https://ecollect.forest.gov.tw/EcologicalTBiAOpenApi/api/Data/Get?Token={os.getenv('FOREST_KEY')}&Page={c}"
+        response = requests.get(url)
         if response.status_code == 200:
             result = response.json()
-            data += result.get('data')
+            total_page = result['Meta']['TotalPages']
+            data += result.get('Data')
     df = pd.DataFrame(data)
     df = df[~(df.isPreferredName.isin([nan,'',None])&df.scientificName.isin([nan,'',None]))]
+    # 排除重複資料集
+    df = df[~df.datasetName.isin([duplicated_dataset_list])]
     if len(df):
-        df = df.rename(columns={'created': 'sourceCreated', 'modified': 'sourceModified', 'scientificName': 'sourceScientificName', 
-        'permanentLink': 'references', 'isPreferredName': 'sourceVernacularName', 'collectionID': 'catalogNumber', 'taxonRank': 'sourceTaxonRank'})
-        df = df.replace({nan: ''})
+        df = df.reset_index(drop=True)
+        df = df.replace({np.nan: '', 'NA': ''})
+        df = df.rename(columns={'created': 'sourceCreated', 'modified': 'sourceModified', 'scientificName': 'sourceScientificName',
+                                'isPreferredName': 'sourceVernacularName', 'taxonRank': 'sourceTaxonRank'})
         sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
         sci_names = matching_flow(sci_names)
         df = df.drop(columns=['taxonID'], errors='ignore')
@@ -94,14 +100,15 @@ for p in range(0,total_page,10):
         df['rightsHolder'] = rights_holder
         df['created'] = now
         df['modified'] = now
-        df['recordType'] = 'col'
         # 日期
         df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))
-        # 數量 
-        if 'organismQuantity' in df.keys():
-            df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
-        # basisOfRecord 無資料
-        # dataGeneralizations 無資料
+        # 數量
+        df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
+        # basisOfRecord
+        df['recordType'] = df.apply(lambda x: 'col' if '標本' in x.basisOfRecord else 'occ', axis=1)
+        df['basisOfRecord'] = df['basisOfRecord'].apply(lambda x: control_basis_of_record(x))
+        # dataGeneralizations
+        df['dataGeneralizations'] = df['dataGeneralizations'].replace({'N': False, 'Y': True})
         # 經緯度
         df['grid_1'] = '-1_-1'
         df['grid_5'] = '-1_-1'
@@ -111,16 +118,32 @@ for p in range(0,total_page,10):
         df['standardLongitude'] = None
         df['standardLatitude'] = None
         df['location_rpt'] = None
-        df['mediaLicense'] = None
         for i in df.index:
             # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
             df.loc[i,'id'] = str(bson.objectid.ObjectId())
             row = df.loc[i]
-            # associatedMedia
-            associatedMedia = ';'.join([am['url'] for am in row.associatedMedia])
-            mediaLicense = ';'.join([am['licence'] for am in row.associatedMedia])
-            df.loc[i, 'associatedMedia'] = associatedMedia
-            df.loc[i, 'mediaLicense'] = mediaLicense
+            # 2023-05-24 改成直接回傳未模糊化座標
+            try:
+                coordinatePrecision = float(row.coordinatePrecision)
+            except:
+                coordinatePrecision = None
+            if row.dataGeneralizations and coordinatePrecision:
+                standardRawLon, standardRawLat, raw_location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
+                if standardRawLon and standardRawLat:
+                    # 座標模糊化
+                    ten_times = math.pow(10, len(str(coordinatePrecision).split('.')[-1]))
+                    fuzzy_lon = math.floor(float(row.verbatimLongitude)*ten_times)/ten_times
+                    fuzzy_lat = math.floor(float(row.verbatimLatitude)*ten_times)/ten_times
+                    df.loc[i, 'coordinatePrecision'] = coordinatePrecision
+                    # 原始資料改存Raw
+                    df.loc[i, 'verbatimRawLatitude'] = float(row.verbatimLatitude)
+                    df.loc[i, 'verbatimRawLongitude'] = float(row.verbatimLongitude)
+                    df.loc[i, 'raw_location_rpt'] = raw_location_rpt
+                    df.loc[i, 'standardRawLongitude'] = standardRawLon
+                    df.loc[i, 'standardRawLatitude'] = standardRawLat
+                    df.loc[i, 'verbatimLongitude'] = fuzzy_lon
+                    df.loc[i, 'verbatimLatitude'] = fuzzy_lat    
+                    row = df.loc[i]
             standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
             if standardLon and standardLat:
                 df.loc[i,'standardLongitude'] = standardLon
@@ -174,10 +197,13 @@ for p in range(0,total_page,10):
                 index=False,
                 method=records_upsert)
 
+
 # 刪除is_deleted的records & match_log
 delete_records(rights_holder=rights_holder,group=group)
-    
+
 # 打包match_log
 zip_match_log(group=group,info_id=info_id)
 
 print('done!')
+
+

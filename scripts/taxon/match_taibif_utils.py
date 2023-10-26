@@ -4,7 +4,6 @@ from app import db
 import pandas as pd
 
 # # 取得taxon資料
-# import psycopg2
 import requests
 import re
 import urllib
@@ -38,21 +37,6 @@ taxon = pd.DataFrame(taxon)
 taxon = taxon.drop(columns=['scientificNameID','id'])
 
 
-
-
-
-# #  portal & datahub兩邊還是會互相影響 有可能用另外的方法嗎
-# conn = psycopg2.connect(**portal_db_settings)
-
-# cur = conn.cursor()
-# cur.execute('SELECT * FROM data_taxon')
-# taxon = cur.fetchall()
-# colnames = [desc[0] for desc in cur.description]
-# taxon = pd.DataFrame(taxon, columns=colnames)
-# sub_col = [c for c in colnames if c not in ['id', 'iucn', 'redlist', 'protected', 'sensitive', 'cites']]
-# taxon = taxon[sub_col]
-
-
 def match_name(matching_name, sci_name, original_name, is_parent, match_stage, sci_names, source_family, source_class, source_order, sci_index):
     if matching_name:
         request_url = f"http://host.docker.internal:8080/api.php?names={urllib.parse.quote(matching_name)}&format=json&source=taicol"
@@ -64,11 +48,20 @@ def match_name(matching_name, sci_name, original_name, is_parent, match_stage, s
                 match_score = result['data'][0][0].get('score')
                 if match_score == 'N/A': #有對到但無法計算分數
                     match_score = 0 
-                filtered_rs = [rs for rs in result['data'][0][0]['results'] if rs['name_status'] != 'misapplied']
+                # filtered_rs = [rs for rs in result['data'][0][0]['results'] if rs['name_status'] != 'misapplied']
+                filtered_rs = result['data'][0][0]['results'] # 不用排除誤用，但優先序為 有效 -> 無效 -> 誤用
                 filtered_rss = []
                 if len(filtered_rs):
                     # 排除掉同個taxonID但有不同name的情況
-                    filtered_rs = pd.DataFrame(filtered_rs)[['accepted_namecode','family','order','class']].drop_duplicates().to_dict(orient='records')
+                    filtered_rs = pd.DataFrame(filtered_rs)[['accepted_namecode','family','order','class','name_status']].drop_duplicates()
+                    # 如果有accepted，僅考慮accepted
+                    if len(filtered_rs[filtered_rs.name_status=='accepted']):
+                        filtered_rs = filtered_rs[filtered_rs.name_status=='accepted']
+                    # 如果沒有accepted，但有not-accepted，僅考慮not-accepted
+                    elif len(filtered_rs[filtered_rs.name_status=='not-accepted']):
+                        filtered_rs = filtered_rs[filtered_rs.name_status=='not-accepted']
+                    filtered_rs = filtered_rs.drop(columns=['name_status'])
+                    filtered_rs = filtered_rs.to_dict(orient='records')
                     # NomenMatch 有比對到有效taxon
                     # sci_names.loc[((sci_names.scientificName==sci_name)&(sci_names.sourceVernacularName==original_name)),'has_nm_result'] = True
                     # 是否有上階層資訊
@@ -163,10 +156,20 @@ def match_namecode(matching_namecode, sci_name, match_stage, sci_names, sci_inde
             # for d in name_data:
             #     print(d)
             # tmp = [d['taxon'] for d in name_data if d.get('usage_status') !='misapplied']
-            for n in name_data:
-                for tt in n.get('taxon'):
-                    if tt.get('usage_status') != 'misapplied':
-                        taxon_data.append(tt.get('taxon_id'))
+            name_data = name_data[0] # 一個 namecode 對應一個 taxon_name_id
+            taxon_data = pd.DataFrame(name_data.get('taxon'), columns=['taxon_id','usage_status'])
+            # 不用排除誤用，但優先序為 有效 -> 無效 -> 誤用
+            # 如果有accepted，僅考慮accepted
+            if len(taxon_data[taxon_data.usage_status=='accepted']):
+                taxon_data = taxon_data[taxon_data.usage_status=='accepted']
+            # 如果沒有accepted，但有not-accepted，僅考慮not-accepted
+            elif len(taxon_data[taxon_data.usage_status=='not-accepted']):
+                taxon_data = taxon_data[taxon_data.usage_status=='not-accepted']
+            taxon_data = taxon_data.taxon_id.to_list()
+            # for n in name_data:
+            #     for tt in n.get('taxon'):
+            #         if tt.get('usage_status') != 'misapplied':
+            #             taxon_data.append(tt.get('taxon_id'))
             if len(taxon_data) == 1:
                 sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = taxon_data[0]
                 sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = None
@@ -177,6 +180,16 @@ def match_namecode(matching_namecode, sci_name, match_stage, sci_names, sci_inde
 
 # (matching_name,sci_name,original_name,original_gbifid,is_parent,match_stage):
 def matching_flow(sci_names):
+    sci_names['sci_index'] = sci_names.index
+    sci_names['taxonID'] = ''
+    sci_names['parentTaxonID'] = ''
+    sci_names['match_stage'] = 0
+    # 各階段的issue default是沒有對到
+    sci_names['stage_1'] = None
+    sci_names['stage_2'] = None
+    sci_names['stage_3'] = None
+    sci_names['stage_4'] = None
+    sci_names['stage_5'] = None
     # 優先採用TaiCOL taxonID (若原資料庫有提供)
     ## 第一階段比對 - scientificName
     no_taxon = sci_names[(sci_names.taxonID=='')]
@@ -253,7 +266,6 @@ def matching_flow(sci_names):
     for i in stage_list[:4]:
         for stg in stage_list[stage_list.index(i)+1:]:
             sci_names.loc[sci_names.match_stage==i,f'stage_{stg}'] = None
-    # 忽略到比對parentTaxonID的資料 但或許不用改?
-    sci_names.loc[(sci_names.match_stage==4)&(sci_names.taxonID==''),'match_stage'] = None
+    sci_names.loc[(sci_names.match_stage==4)&(sci_names.taxonID=='')&(sci_names.parentTaxonID==''),'match_stage'] = None
     return sci_names
 

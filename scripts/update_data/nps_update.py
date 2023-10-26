@@ -27,11 +27,31 @@ df_sci_cols = [s for s in sci_cols if s != 'taxonID']
 psql_records_key = [k for k in taxon.keys() if k != 'taxonID']
 
 # 單位資訊
-group = 'fact'
-rights_holder = '林業試驗所昆蟲標本館'
+group = 'nps'
+rights_holder = '臺灣國家公園生物多樣性資料庫'
 
 # 在portal.Partner.info裡面的id
 info_id = 0
+
+# 排除重複資料集
+duplicated_dataset_list = ['臺灣林業試驗所植物標本館','國立臺灣博物館典藏數位化計畫']
+
+locality_map = {
+    'YMS': '陽明山國家公園',
+    'TRK': '太魯閣國家公園',
+    'SP': '雪霸國家公園',
+    'ES': '玉山國家公園',
+    'KT': '墾丁國家公園',
+    'KM': '金門國家公園',
+    'DS': '東沙環礁國家公園',
+    'TJ': '台江國家公園',
+    'SNNP': '壽山國家自然公園',
+    'SSNP': '壽山國家自然公園',
+    'SPM': '澎湖南方四島國家公園',
+    'TCMP': '台中都會公園',
+    'KCMP': '高雄都會公園',
+}
+
 
 # 先將records設為is_deleted='t'
 with db.begin() as conn:
@@ -39,35 +59,37 @@ with db.begin() as conn:
     resultset = conn.execute(qry)
 
 
-url = f"https://fact.tfri.gov.tw/api/1/occurrence/?token={os.getenv('FACT_KEY')}&page=1&per_page=1000"
-response = requests.get(url, verify=False)
-
+url = f"https://npgis.cpami.gov.tw//TBiAOpenApi/api/Data/Get?Token={os.getenv('CPAMI_KEY')}"
+response = requests.get(url)
 if response.status_code == 200:
     result = response.json()
-    total = result['meta']['total']
-    total_page = math.ceil(total / 1000)
+    total_page = result['Meta']['TotalPages'] # 2611 
 
 now = datetime.now()
 
 for p in range(0,total_page,10):
+# for p in [0]:
     print(p)
     data = []
     c = p
     while c < p + 10 and c < total_page:
         c+=1
         print('page:',c)
-        time.sleep(5)
-        url = f"https://fact.tfri.gov.tw/api/1/occurrence/?token={os.getenv('FACT_KEY')}&page={c}&per_page=1000"
-        response = requests.get(url, verify=False)
+        # time.sleep(60)
+        url = f"https://npgis.cpami.gov.tw//TBiAOpenApi/api/Data/Get?Token={env('CPAMI_KEY')}&Page={c}"
+        response = requests.get(url)
         if response.status_code == 200:
             result = response.json()
-            data += result.get('data')
+            data += result.get('Data')
     df = pd.DataFrame(data)
     df = df[~(df.isPreferredName.isin([nan,'',None])&df.scientificName.isin([nan,'',None]))]
+    # 排除重複資料集
+    df = df[~df.datasetName.isin([duplicated_dataset_list])]
     if len(df):
-        df = df.rename(columns={'created': 'sourceCreated', 'modified': 'sourceModified', 'scientificName': 'sourceScientificName', 
-        'permanentLink': 'references', 'isPreferredName': 'sourceVernacularName', 'collectionID': 'catalogNumber', 'taxonRank': 'sourceTaxonRank'})
-        df = df.replace({nan: ''})
+        df = df.reset_index(drop=True)
+        df = df.replace({np.nan: '', 'NA': ''})
+        df = df.rename(columns={'basicOfRecord': 'basisOfRecord', 'created': 'sourceCreated', 'modified': 'sourceModified', 'scientificName': 'sourceScientificName',
+                                'isPreferredName': 'sourceVernacularName', 'taxonRank': 'sourceTaxonRank'})
         sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
         sci_names = matching_flow(sci_names)
         df = df.drop(columns=['taxonID'], errors='ignore')
@@ -94,14 +116,18 @@ for p in range(0,total_page,10):
         df['rightsHolder'] = rights_holder
         df['created'] = now
         df['modified'] = now
-        df['recordType'] = 'col'
+        # 地點
+        df['locality'] = df['locality'].apply(lambda x: locality_map[x] if x in locality_map.keys() else x)
         # 日期
         df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))
         # 數量 
-        if 'organismQuantity' in df.keys():
-            df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
-        # basisOfRecord 無資料
-        # dataGeneralizations 無資料
+        df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
+        # basisOfRecord
+        df['recordType'] = df.apply(lambda x: 'col' if '標本' in x.basisOfRecord else 'occ', axis=1)
+        df['basisOfRecord'] = df['basisOfRecord'].apply(lambda x: control_basis_of_record(x))
+        # dataGeneralizations 已標準化
+        # 敏感層級
+        df['sensitiveCategory'] = df['sensitiveCategory'].replace({'物種不開放': '分類群不開放'})
         # 經緯度
         df['grid_1'] = '-1_-1'
         df['grid_5'] = '-1_-1'
@@ -111,16 +137,10 @@ for p in range(0,total_page,10):
         df['standardLongitude'] = None
         df['standardLatitude'] = None
         df['location_rpt'] = None
-        df['mediaLicense'] = None
         for i in df.index:
             # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
             df.loc[i,'id'] = str(bson.objectid.ObjectId())
             row = df.loc[i]
-            # associatedMedia
-            associatedMedia = ';'.join([am['url'] for am in row.associatedMedia])
-            mediaLicense = ';'.join([am['licence'] for am in row.associatedMedia])
-            df.loc[i, 'associatedMedia'] = associatedMedia
-            df.loc[i, 'mediaLicense'] = mediaLicense
             standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
             if standardLon and standardLat:
                 df.loc[i,'standardLongitude'] = standardLon
@@ -174,9 +194,10 @@ for p in range(0,total_page,10):
                 index=False,
                 method=records_upsert)
 
+
 # 刪除is_deleted的records & match_log
 delete_records(rights_holder=rights_holder,group=group)
-    
+
 # 打包match_log
 zip_match_log(group=group,info_id=info_id)
 

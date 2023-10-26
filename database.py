@@ -100,9 +100,9 @@ class Records(Base):
     grid_10: Mapped[Optional[str]] = mapped_column(String(50))
     grid_100: Mapped[Optional[str]] = mapped_column(String(50))
     scientificNameID: Mapped[Optional[str]] = mapped_column(String(1000), index=True)
-    # 為了因應某些單位有自己的學名系統 如TBN taxonUUID
+    # 為了因應某些單位有自己的學名系統 如TBN taxonUUID or TaiBIF的gbifAcceptedID
     sourceTaxonID: Mapped[Optional[str]] = mapped_column(String(1000), index=True)
-    # 為了GBIF的資料從TaiBIF取得，留存TaiBIF的OccurrenceID於此，供更新使用
+    # 為了GBIF的資料從TaiBIF取得，留存TaiBIF的OccurrenceID於此，供更新使用(包含台博館&水利署)
     sourceOccurrenceID: Mapped[Optional[str]] = mapped_column(String(1000), index=True)
     # 保留未來學名比對使用
     sourceTaxonRank: Mapped[Optional[str]] = mapped_column(String(1000))
