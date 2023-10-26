@@ -168,6 +168,8 @@ for url in url_list:
                 except:
                     coordinatePrecision = None
                 if (row.dataGeneralizations and coordinatePrecision) or row.sensitiveCategory in ['輕度','重度','縣市','座標不開放','物種不開放']:
+                    fuzzy_lon = None
+                    fuzzy_lat = None
                     standardRawLon, standardRawLat, raw_location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
                     if standardRawLon and standardRawLat:
                         df.loc[i, 'verbatimRawLatitude'] = float(row.verbatimLatitude)
@@ -179,14 +181,16 @@ for url in url_list:
                         coordinatePrecision = 0.01
                     elif not coordinatePrecision and row.sensitiveCategory == '重度':
                         coordinatePrecision = 0.1
-                    if coordinatePrecision:
+                    if coordinatePrecision and row.sensitiveCategory not in ['縣市','座標不開放','物種不開放']:
                         ten_times = math.pow(10, len(str(coordinatePrecision).split('.')[-1]))
-                        fuzzy_lon = math.floor(float(row.verbatimLongitude)*ten_times)/ten_times
-                        fuzzy_lat = math.floor(float(row.verbatimLatitude)*ten_times)/ten_times
+                        if row.verbatimLongitude:
+                            fuzzy_lon = math.floor(float(row.verbatimLongitude)*ten_times)/ten_times
+                        if row.verbatimLatitude:
+                            fuzzy_lat = math.floor(float(row.verbatimLatitude)*ten_times)/ten_times
                         df.loc[i, 'coordinatePrecision'] = coordinatePrecision
-                    elif row.sensitiveCategory in ['縣市','座標不開放','物種不開放']:
-                        fuzzy_lon = None
-                        fuzzy_lat = None
+                    # elif row.sensitiveCategory in ['縣市','座標不開放','物種不開放']:
+                    #     fuzzy_lon = None
+                    #     fuzzy_lat = None
                     df.loc[i, 'verbatimLongitude'] = fuzzy_lon
                     df.loc[i, 'verbatimLatitude'] = fuzzy_lat  
                     row = df.loc[i]
