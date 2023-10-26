@@ -58,9 +58,12 @@ for url in url_list:
         data = []
         c = p
         while c < p + 10 and c < total_page:
+            # print(c, url)
+            time.sleep(1)
+            if f"&apikey={os.getenv('TBN_KEY')}&limit=1000" not in url:
+                url = url + f"&apikey={os.getenv('TBN_KEY')}&limit=1000"
             print(c, url)
-            # time.sleep(30)
-            response = requests.get(url + f"&apikey={os.getenv('TBN_KEY')}&limit=1000")
+            response = requests.get(url)
             if response.status_code == 200:
                 result = response.json()
                 # len_of_data = data['meta']['total'] 
