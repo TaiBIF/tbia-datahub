@@ -16,11 +16,11 @@ class MatchLog(Base):
     __tablename__ = "match_log"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    occurrenceID: Mapped[Optional[str]] = mapped_column(String(1000), index=True)
+    occurrenceID: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     tbiaID: Mapped[str] = mapped_column(String(50), index=True)
     group: Mapped[str] = mapped_column(String(50), index=True)
     rights_holder:  Mapped[Optional[str]] = mapped_column(String(10000), index=True)
-    sourceScientificName: Mapped[Optional[str]] = mapped_column(String(1000))
+    sourceScientificName: Mapped[Optional[str]] = mapped_column(String(10000))
     is_matched: Mapped[bool]
 
     taxonID: Mapped[Optional[str]] = mapped_column(String(10), index=True)
@@ -47,14 +47,14 @@ class Records(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     associatedMedia: Mapped[Optional[str]] = mapped_column(String(10000))
-    basisOfRecord: Mapped[Optional[str]] = mapped_column(String(1000))
+    basisOfRecord: Mapped[Optional[str]] = mapped_column(String(10000))
     catalogNumber: Mapped[Optional[str]] = mapped_column(String(10000))
-    coordinatePrecision: Mapped[Optional[str]] = mapped_column(String(1000))
-    coordinateUncertaintyInMeters: Mapped[Optional[str]] = mapped_column(String(1000))
+    coordinatePrecision: Mapped[Optional[str]] = mapped_column(String(10000))
+    coordinateUncertaintyInMeters: Mapped[Optional[str]] = mapped_column(String(10000))
     created: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     dataGeneralizations: Mapped[Optional[bool]]
     datasetName: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
-    eventDate: Mapped[Optional[str]] = mapped_column(String(1000))
+    eventDate: Mapped[Optional[str]] = mapped_column(String(10000))
     group: Mapped[str] = mapped_column(String(50), index=True)
     tbiaID: Mapped[str] = mapped_column(String(50), index=True)
     vars()['license']: Mapped[Optional[str]] = mapped_column(String(10000))
@@ -64,8 +64,8 @@ class Records(Base):
     mediaLicense: Mapped[Optional[str]] = mapped_column(String(10000))
     modified: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
     occurrenceID: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
-    organismQuantity: Mapped[Optional[str]] = mapped_column(String(1000))
-    organismQuantityType: Mapped[Optional[str]] = mapped_column(String(1000))
+    organismQuantity: Mapped[Optional[str]] = mapped_column(String(10000))
+    organismQuantityType: Mapped[Optional[str]] = mapped_column(String(10000))
     originalScientificName: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     preservation: Mapped[Optional[str]] = mapped_column(String(10000))
     recordedBy: Mapped[Optional[str]] = mapped_column(String(10000))
@@ -99,16 +99,16 @@ class Records(Base):
     grid_5: Mapped[Optional[str]] = mapped_column(String(50))
     grid_10: Mapped[Optional[str]] = mapped_column(String(50))
     grid_100: Mapped[Optional[str]] = mapped_column(String(50))
-    scientificNameID: Mapped[Optional[str]] = mapped_column(String(1000), index=True)
+    scientificNameID: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     # 為了因應某些單位有自己的學名系統 如TBN taxonUUID or TaiBIF的gbifAcceptedID
-    sourceTaxonID: Mapped[Optional[str]] = mapped_column(String(1000), index=True)
+    sourceTaxonID: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     # 為了GBIF的資料從TaiBIF取得，留存TaiBIF的OccurrenceID於此，供更新使用(包含台博館&水利署)
-    sourceOccurrenceID: Mapped[Optional[str]] = mapped_column(String(1000), index=True)
+    sourceOccurrenceID: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     # 保留未來學名比對使用
-    sourceTaxonRank: Mapped[Optional[str]] = mapped_column(String(1000))
-    sourceFamily: Mapped[Optional[str]] = mapped_column(String(1000))
-    sourceOrder: Mapped[Optional[str]] = mapped_column(String(1000))
-    sourceClass: Mapped[Optional[str]] = mapped_column(String(1000))
+    sourceTaxonRank: Mapped[Optional[str]] = mapped_column(String(10000))
+    sourceFamily: Mapped[Optional[str]] = mapped_column(String(10000))
+    sourceOrder: Mapped[Optional[str]] = mapped_column(String(10000))
+    sourceClass: Mapped[Optional[str]] = mapped_column(String(10000))
     # 日期改存年月日
     standardYear: Mapped[Optional[float]]
     standardMonth: Mapped[Optional[float]]
@@ -276,5 +276,5 @@ class DeletedRecords(Base):
     tbiaID: Mapped[str] = mapped_column(String(50), index=True)
     group: Mapped[str] = mapped_column(String(50), index=True)
     rights_holder:  Mapped[Optional[str]] = mapped_column(String(10000), index=True)
-    occurrenceID: Mapped[Optional[str]] = mapped_column(String(1000), index=True)
+    occurrenceID: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     deleted: Mapped[datetime] = mapped_column(DateTime(timezone=True)) # 刪除時間
