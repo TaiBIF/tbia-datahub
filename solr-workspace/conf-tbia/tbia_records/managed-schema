@@ -503,6 +503,17 @@
   <field name="verbatimRawLongitude" type="string"/>
   <field name="verbatimSRS" type="string"/>
 
+  <!-- 202310新增 -->
+  <field name="sourceOccurrenceID" type="string"/>
+  <field name="sourceTaxonRank" type="string"/>
+  <field name="sourceFamily" type="string"/>
+  <field name="sourceOrder" type="string"/>
+  <field name="sourceClass" type="string"/>
+  <field name="year" type="string"/>
+  <field name="month" type="string"/>
+  <field name="day" type="string"/>
+  <field name="is_deleted" type="boolean"/>
+
 
     <!-- taxa fields start -->
     <field name="aberration" type="string"/>
