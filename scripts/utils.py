@@ -23,8 +23,8 @@ date_formats = ['%Y/%m/%d','%Y%m%d','%Y-%m-%d','%Y/%m/%d %H:%M:%S','%Y-%m-%d %H:
 
 def convert_date(date):
     formatted_date = None
-    date = date.replace('上午','AM').replace('下午','PM')
     if date != '' and date is not None:
+        date = date.replace('上午','AM').replace('下午','PM')
         for ff in date_formats:
             try:
                 formatted_date = datetime.strptime(date, ff)
@@ -70,15 +70,22 @@ def convert_coor_to_grid(x, y, grid):
 
 
 # N, S, W, E
-def convert_to_decimal(coor):
+def convert_to_decimal(lon, lat):
     try:
-        deg, minutes, seconds =  re.split('[°\']', coor)
+        deg, minutes, seconds =  re.split('[°\']', lat)
         seconds = seconds[:-1]
         direction = seconds[-1]
-        converted_coord = (float(deg) + float(minutes)/60 + float(seconds)/(60*60)) * (-1 if direction in ['W', 'S'] else 1)
+        lat = (float(deg) + float(minutes)/60 + float(seconds)/(60*60)) * (-1 if direction in ['W', 'S'] else 1)
     except:
-        converted_coord = None
-    return converted_coord
+        lat = None
+    try:
+        deg, minutes, seconds =  re.split('[°\']', lon)
+        seconds = seconds[:-1]
+        direction = seconds[-1]
+        lon = (float(deg) + float(minutes)/60 + float(seconds)/(60*60)) * (-1 if direction in ['W', 'S'] else 1)
+    except:
+        lon = None
+    return lon, lat
 
 
 def standardize_coor(lon,lat):
@@ -172,7 +179,7 @@ def update_match_log(match_log, now):
     match_log['is_matched'] = False
     match_log.loc[match_log.taxonID.notnull(),'is_matched'] = True
     match_log = match_log.replace({np.nan: None})
-    match_log['match_stage'] = match_log['match_stage'].apply(lambda x: int(x) if x else None)
+    match_log['match_stage'] = match_log['match_stage'].apply(lambda x: int(x) if x or x == 0 else None)
     match_log['stage_1'] = match_log['stage_1'].apply(lambda x: issue_map[x] if x else x)
     match_log['stage_2'] = match_log['stage_2'].apply(lambda x: issue_map[x] if x else x)
     match_log['stage_3'] = match_log['stage_3'].apply(lambda x: issue_map[x] if x else x)
@@ -197,8 +204,8 @@ def get_records(rights_holder, min_id, limit=10000):
         return results
     
 
-def get_gbif_id(gbifDatasetID, gbifOccurrenceID):
-    gbif_url = f"https://api.gbif.org/v1/occurrence/{gbifDatasetID}/{gbifOccurrenceID}"
+def get_gbif_id(gbifDatasetID, ocurrenceID):
+    gbif_url = f"https://api.gbif.org/v1/occurrence/{gbifDatasetID}/{ocurrenceID}"
     gbif_resp = requests.get(gbif_url)
     gbifID = None
     if gbif_resp.status_code == 200:
@@ -226,7 +233,7 @@ import subprocess
 
 def zip_match_log(group, info_id):
     zip_file_path = f'/portal/media/match_log/{group}_{info_id}_match_log.zip'
-    csv_file_path = f'{group}_{info_id}_*.csv'
+    csv_file_path = f'{group}_{info_id}*.csv'
     commands = f"cd /portal/media/match_log/; zip -j {zip_file_path} {csv_file_path}; rm {csv_file_path}"
     process = subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     # 等待檔案完成
