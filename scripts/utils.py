@@ -24,6 +24,7 @@ date_formats = ['%Y/%m/%d','%Y%m%d','%Y-%m-%d','%Y/%m/%d %H:%M:%S','%Y-%m-%d %H:
 def convert_date(date):
     formatted_date = None
     if date != '' and date is not None:
+        date = str(date)
         date = date.replace('上午','AM').replace('下午','PM')
         for ff in date_formats:
             try:
