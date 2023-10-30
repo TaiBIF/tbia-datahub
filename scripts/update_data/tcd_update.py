@@ -44,13 +44,14 @@ with db.begin() as conn:
 
 now = datetime.now()
 
+total_len = len(spe_list)
 
-for p in range(0,len(spe_list),10):
+for p in range(0,total_len,10):
     data = []
-    if p+10 < len(spe_list):
+    if p+10 < total_len:
         end_p = p+10
     else:
-        end_p = len(spe_list)
+        end_p = total_len
     print(p, end_p)
     for spe_name in spe_list.SCIENTIFICNAME.unique()[p:end_p]: # 3824
         # time.sleep(60)
@@ -157,7 +158,7 @@ for p in range(0,len(spe_list),10):
         df = df.replace({nan: None, '': None})
         # 更新match_log
         # 更新資料
-        if 'occurrenceID' in df.keys():
+        if len(df[df.occurrenceID!='']):
             df['occurrenceID'] = df['occurrenceID'].astype('str')
             with db.begin() as conn:
                 qry = sa.text("""select "tbiaID", "occurrenceID", "created" from records  
