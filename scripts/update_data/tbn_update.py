@@ -60,25 +60,19 @@ for url in url_list:
         while c < p + 10 and c < total_page:
             # print(c, url)
             time.sleep(1)
-            if f"&apikey={os.getenv('TBN_KEY')}&limit=1000" not in url:
-                url = url + f"&apikey={os.getenv('TBN_KEY')}&limit=1000"
+            if url.find('limit=1000') < 0:
+                url += '&limit=1000'
+            if url.find(f"apikey={os.getenv('TBN_KEY')}") < 0:
+                url += f"&apikey={os.getenv('TBN_KEY')}"
+            # if f"&apikey={os.getenv('TBN_KEY')}&limit=1000" not in url:
+            #     url = url + f"&apikey={os.getenv('TBN_KEY')}&limit=1000"
             print(c, url)
             response = requests.get(url)
             if response.status_code == 200:
                 result = response.json()
-                # len_of_data = data['meta']['total'] 
-                # j = 0
                 url = result['links']['next']
                 data += result["data"]
             c += 1
-            # while data['links']['next'] != "" and j < 10:
-            #     print('page:', c, ',',j, url)
-            #     url = data['links']['next']
-            #     response = requests.get(url)
-            #     data = response.json()
-            #     total_data += data["data"]
-            #     j += 1
-        # print(url)
         df = pd.DataFrame(data)
         df = df[~(df.originalVernacularName.isin([nan,'',None])&df.scientificName.isin([nan,'',None]))]
         if len(df):

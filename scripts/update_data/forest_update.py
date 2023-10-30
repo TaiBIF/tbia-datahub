@@ -4,7 +4,6 @@ import requests
 import pandas as pd
 import bson
 import time
-import os
 from datetime import datetime
 
 import math 

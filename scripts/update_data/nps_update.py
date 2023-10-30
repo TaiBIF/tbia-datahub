@@ -76,7 +76,7 @@ for p in range(0,total_page,10):
         c+=1
         print('page:',c)
         # time.sleep(60)
-        url = f"https://npgis.cpami.gov.tw//TBiAOpenApi/api/Data/Get?Token={env('CPAMI_KEY')}&Page={c}"
+        url = f"https://npgis.cpami.gov.tw//TBiAOpenApi/api/Data/Get?Token={os.getenv('CPAMI_KEY')}&Page={c}"
         response = requests.get(url)
         if response.status_code == 200:
             result = response.json()
