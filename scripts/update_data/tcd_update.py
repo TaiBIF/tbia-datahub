@@ -112,7 +112,7 @@ for p in range(0,total_len,10):
             df[sci_cols] = df[sci_cols].replace({'-999999': ''})
         df = df.reset_index(drop=True)
         df['group'] = group
-        df['occurrenceID'] = ''
+        # df['occurrenceID'] = ''
         df['rightsHolder'] = rights_holder
         df['created'] = now
         df['modified'] = now
@@ -158,7 +158,7 @@ for p in range(0,total_len,10):
         df = df.replace({nan: None, '': None})
         # 更新match_log
         # 更新資料
-        if len(df[df.occurrenceID!='']):
+        if 'occurrenceID' in df.keys():
             df['occurrenceID'] = df['occurrenceID'].astype('str')
             with db.begin() as conn:
                 qry = sa.text("""select "tbiaID", "occurrenceID", "created" from records  
