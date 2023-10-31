@@ -149,7 +149,7 @@ def control_basis_of_record(basisOfRecord):
 def update_dataset_key(ds_name, rights_holder):
     conn = psycopg2.connect(**db_settings)
     query = """
-            INSERT INTO datasetkey ("rights_holder", "name", "record_type", "deprecated")
+            INSERT INTO dataset ("rights_holder", "name", "record_type", "deprecated")
             VALUES (%s, %s, %s, %s)
             ON CONFLICT ("name", "record_type","rights_holder") DO UPDATE SET deprecated = %s;
             """
