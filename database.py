@@ -278,3 +278,20 @@ class DeletedRecords(Base):
     rights_holder:  Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     occurrenceID: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     deleted: Mapped[datetime] = mapped_column(DateTime(timezone=True)) # 刪除時間
+
+
+
+class Dataset(Base):
+    __tablename__ = "dataset"
+    
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(10000), index=True)
+    record_type: Mapped[str] = mapped_column(String(20), index=True)
+    rights_holder:  Mapped[Optional[str]] = mapped_column(String(10000), index=True)
+    deprecated: Mapped[bool] = mapped_column(server_default='f', index=True)
+
+    __table_args__ = (
+        UniqueConstraint('name','record_type','rights_holder', name='dataset_unique'),
+    )
+
+

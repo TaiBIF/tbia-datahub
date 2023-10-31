@@ -147,10 +147,9 @@ def control_basis_of_record(basisOfRecord):
 
 # ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
 def update_dataset_key(ds_name, rights_holder):
-    # 存在portal的資料庫中
-    conn = psycopg2.connect(**portal_db_settings)
+    conn = psycopg2.connect(**db_settings)
     query = """
-            INSERT INTO data_datasetkey ("rights_holder", "name", "record_type", "deprecated")
+            INSERT INTO datasetkey ("rights_holder", "name", "record_type", "deprecated")
             VALUES (%s, %s, %s, %s)
             ON CONFLICT ("name", "record_type","rights_holder") DO UPDATE SET deprecated = %s;
             """
