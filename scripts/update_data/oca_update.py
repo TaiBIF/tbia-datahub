@@ -56,14 +56,14 @@ if r.status_code == 200:
     for rr in x[2:-1] :
         rows.append([ '{}'.format(x) for x in list(csv.reader([rr], delimiter=',', quotechar='"'))[0] ])
     df = pd.DataFrame(rows, columns=header)
-    df = df.map(lambda x: x.replace('"', ''))
+    # df = df.map(lambda x: x.replace('"', ''))
     df = df.drop(columns=['OCA_Sightings_Type'])
-    df = df.rename(columns={'Common_Name': 'sourceVernacularName', 'Name_Code': 'scientificNameID', 'Sightings_Time': 'eventDate',
-       'Sightings_Count': 'organismQuantity', 'WGS84X': 'verbatimLongitude', 'WGS84Y': 'verbatimLatitude'})
+    df = df.rename(columns={'ID': 'occurrenceID' ,'Species_Name': 'sourceVernacularName', 'Name_Code': 'scientificNameID', 
+                            'Sightings_Time': 'eventDate', 'Sightings_Count': 'organismQuantity', 
+                            'WGS84X': 'verbatimLongitude', 'WGS84Y': 'verbatimLatitude', 'Update_Time': 'sourceModified'})
     df = df[~(df.sourceVernacularName.isin([nan,'',None]))]
     df['datasetName'] = 'iOcean海洋生物目擊回報'
     final_df = pd.concat([df,final_df])
-
 
 
 # iocean 垂釣回報
@@ -78,14 +78,20 @@ if r.status_code == 200:
     for rr in x[2:-1] :
         rows.append([ '{}'.format(x) for x in list(csv.reader([rr], delimiter=',', quotechar='"'))[0] ])
     df = pd.DataFrame(rows, columns=header)
-    df = df.map(lambda x: x.replace('"', ''))
+    # df = df.map(lambda x: x.replace('"', ''))
     df = df.drop(columns=['Type_Name', 'People_Count','Fishing_Length'])
-    df = df.rename(columns={'Fishing_Time': 'eventDate', 'WGS84X': 'verbatimLatitude', 'WGS84Y': 'verbatimLongitude',
-       'Species_Name': 'sourceVernacularName', 'Name_Code': 'scientificNameID', 'Fishing_Count': 'organismQuantity'})
+    df = df.rename(columns={'ID': 'occurrenceID', 'Fishing_Time': 'eventDate', 
+                            'WGS84X': 'verbatimLongitude', 'WGS84Y': 'verbatimLatitude',
+                            'Species_Name': 'sourceVernacularName', 'Name_Code': 'scientificNameID', 
+                            'Fishing_Count': 'organismQuantity', 'UpdataTime': 'sourceModified'})
     df = df[~(df.sourceVernacularName.isin([nan,'',None]))]
     df['datasetName'] = 'iOcean垂釣回報'
     final_df = pd.concat([df,final_df])
 
+
+# ['ID', 'Type_Name', 'Fishing_Time', 'People_Count', 'WGS84X', 'WGS84Y',
+#        'UpdataTime', 'Species_Name', 'Name_Code', 'Fishing_Count',
+#        'Fishing_Length']
 
 # MARN鯨豚擱淺資料
 # 時間格式 2020/1/4 下午 04:39:00 
@@ -100,10 +106,11 @@ if r.status_code == 200:
     for rr in x[2:-1] :
         rows.append([ '{}'.format(x) for x in list(csv.reader([rr], delimiter=',', quotechar='"'))[0] ])
     df = pd.DataFrame(rows, columns=header)
-    df = df.map(lambda x: x.replace('"', ''))
-    df = df.drop(columns=['status', 'isGroup', 'Body_Length', 'Handle'])
-    df = df.rename(columns={'Event_Date': 'eventDate', 'County_Co': 'locality', 'WGS84X': 'verbatimLatitude', 'WGS84Y': 'verbatimLongitude', 
-                            'Name_Code': 'sourceVernacularName', 'appName': 'recordedBy'})
+    # df = df.map(lambda x: x.replace('"', ''))
+    df = df.drop(columns=['Status', 'isGroup', 'Length', 'Handle'])
+    df = df.rename(columns={'Event_Date': 'eventDate', 'County_Co': 'locality', 
+                            'WGS84X': 'verbatimLongitude', 'WGS84Y': 'verbatimLatitude',
+                            'Species_Name': 'sourceVernacularName', 'appName': 'recordedBy'})
     df = df[~(df.sourceVernacularName.isin([nan,'',None]))]
     df['datasetName'] = 'MARN鯨豚擱淺資料'
     final_df = pd.concat([df,final_df])
@@ -121,10 +128,11 @@ if r.status_code == 200:
     for rr in x[2:-1] :
         rows.append([ '{}'.format(x) for x in list(csv.reader([rr], delimiter=',', quotechar='"'))[0] ])
     df = pd.DataFrame(rows, columns=header)
-    df = df.map(lambda x: x.replace('"', ''))
-    df = df.drop(columns=['catch','status', 'length', 'width', 'handle',])
-    df = df.rename(columns={'Event_Date': 'eventDate', 'County_Co': 'locality', 'WGS84X': 'verbatimLatitude', 'WGS84Y': 'verbatimLongitude', 
-                            'Name_Code': 'sourceVernacularName', 'appAgency': 'recordedBy'})
+    # df = df.map(lambda x: x.replace('"', ''))
+    df = df.drop(columns=['Cause','Status', 'Length', 'Width', 'Handle',])
+    df = df.rename(columns={'Event_Date': 'eventDate', 'County_Co': 'locality', 
+                            'WGS84X': 'verbatimLongitude', 'WGS84Y': 'verbatimLatitude', 
+                            'Species_Name': 'sourceVernacularName', 'appName': 'recordedBy'})
     df = df[~(df.sourceVernacularName.isin([nan,'',None]))]
     df['datasetName'] = 'MARN海龜擱淺資料'
     final_df = pd.concat([df,final_df])
@@ -144,7 +152,7 @@ d_ids = ["553522f0-e39c-46a0-bf78-78e12135d647","4e891143-b14f-4702-928d-bfe9ec3
 
 ocas = pd.DataFrame({'d_name': d_names, 'd_id': d_ids})
 
-unused_keys = ['界中文名','門中文名','綱中文名','目中文名','科中文名','屬中文名', '計畫/案件名稱','調查方法','所處位置', '備註', '界2','物種俗名','界','門','屬','屬 (Genus)']
+unused_keys = ['界中文名','門中文名','綱中文名','目中文名','科中文名','屬中文名','\ufeff計畫/案件名稱','計畫/案件名稱','調查方法','所處位置', '備註', '界2','物種俗名','界','門','屬','屬 (Genus)']
 
 for i in ocas.index:
     print(i)
@@ -160,7 +168,7 @@ for i in ocas.index:
         for rr in x[1:-1] :
             rows.append([ '{}'.format(x) for x in list(csv.reader([rr], delimiter=',', quotechar='"'))[0] ])
         df = pd.DataFrame(rows, columns=header)
-        df = df.map(lambda x: x.replace('"', ''))
+        # df = df.map(lambda x: x.replace('"', ''))
         df = df.replace({nan: None, '#N/A': None})
         df = df.rename(columns={'經度': 'verbatimLongitude', '緯度': 'verbatimLatitude', 
                                 '直轄市或省轄縣市': 'locality', '縣市': 'locality',
@@ -173,6 +181,9 @@ for i in ocas.index:
                                 '科': 'sourceFamily', '科 (Family)': 'sourceFamily',
                                 # '屬':'genus', '屬 (Genus)': 'genus',
                                 '西元年': 'year', '月': 'month', '日': 'day'})
+        # print(df.keys(), i)
+        # if '計畫/案件名稱' in df.keys():
+        #     print(df['計畫/案件名稱'].unique())
         if '物種俗名' in df.keys():
             df['sourceVernacularName'] = df.apply(lambda x: x.sourceVernacularName + ';' + x.物種俗名 if x.物種俗名 else x.sourceVernacularName, axis=1)
         df['eventDate'] = df.apply(lambda x: f"{x.year}-{x.month}-{x.day}", axis=1) 
@@ -180,6 +191,7 @@ for i in ocas.index:
         df = df[~(df.sourceVernacularName.isin([nan,'',None])&df.sourceScientificName.isin([nan,'',None]))] 
         drop_keys = [k for k in df.keys() if k in unused_keys]
         df = df.drop(columns=drop_keys)
+        df = df.drop(columns=['drop'], errors='ignore')
         final_df = pd.concat([df,final_df])
 
 

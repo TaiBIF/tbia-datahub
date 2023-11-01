@@ -72,7 +72,8 @@ for d in dataset_list:
         test_count += len(data)
         if len(data):
             df = pd.DataFrame(data)
-            df = df.rename(columns= {'taibifOccurrenceID': 'sourceOccurrenceID',
+            df = df.rename(columns= {'occurrenceID': 'sourceOccurrenceID', # 為了避免有些occurrenceID是空值 採用TaiBIF occurrenceID
+                                    'taibifOccurrenceID': 'occurrenceID',
                                     'scientificName': 'sourceScientificName',
                                     'taxonRank': 'sourceTaxonRank',
                                     'isPreferredName': 'sourceVernacularName',
@@ -139,7 +140,7 @@ for d in dataset_list:
                     # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
                     df.loc[i,'id'] = str(bson.objectid.ObjectId())
                     row = df.loc[i]
-                    gbif_id = get_gbif_id(row.gbifDatasetID, row.occurrenceID)
+                    gbif_id = get_gbif_id(row.gbifDatasetID, row.sourceOccurrenceID)
                     if gbif_id:
                         df.loc[i, 'references'] = f"https://www.gbif.org/occurrence/{gbif_id}" 
                     # 如果有mediaLicense才放associatedMedia
