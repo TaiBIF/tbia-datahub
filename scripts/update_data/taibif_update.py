@@ -55,13 +55,13 @@ duplicated_dataset_list = ['Database of Native Plants in Taiwan',
                             'The Fish Database of Taiwan',
                             'A dataset from bottom trawl survey around Taiwan',
                             'National Museum of Natural Science',
-                            'taijiang_national_park_beamtrawling_2016-2018',
+                            # 'taijiang_national_park_beamtrawling_2016-2018', 確認後不排除
                             '珊瑚健康指標之建立與保護區管理應用: 以墾丁國家公園珊瑚礁生態系為例 ',
                             '國家公園生物多樣性資料流通(2015)',
                             '國家公園生物資訊流通(2014)',
                             '國家公園資料集',
                             'national_parts_taiwan-2016',
-                            'National vegetation diversity inventory and mapping plan',
+                            # 'National vegetation diversity inventory and mapping plan',  確認後不排除
                             'National Taiwan Museum']
 
 # 單位內
