@@ -29,7 +29,7 @@ taxon = pd.DataFrame(taxon)
 taxon = taxon.drop(columns=['scientificNameID','id'])
 
 
-group_list = ['brcas','brmas','cpami','fact','forest','ntm','oca','taif','tcd','wra'] 
+# group_list = ['brcas','brmas','cpami','fact','forest','ntm','oca','taif','tcd','wra'] 
 # gbif tbri 另外處理
 
 # 要join taxon的表
@@ -38,22 +38,29 @@ group_list = ['brcas','brmas','cpami','fact','forest','ntm','oca','taif','tcd','
 # parentTaxonID
 # null
 
-# group_list = ['ntm']
+group_list = ['nps']
+import time
 
 # taxonID
+
 for group in group_list:
     limit = 10000
     offset = 0
+    min_id = 1
     has_more_data = True
     while has_more_data:
+        s = time.time()
         results = []
         with db.begin() as conn:
             qry = sa.text("""select * from records  
-                          where "group" = '{}' order by id limit {} offset {}  """.format(group, limit, offset)) 
+                          where "group" = '{}' AND id > {} order by id limit {}  """.format(group, min_id, limit)) 
             resultset = conn.execute(qry)
             results = resultset.mappings().all()
+        print(time.time()-s, group, offset, min_id)        
         if len(results):
             df = pd.DataFrame(results)
+            # 下一次query最小的id
+            min_id = df.id.max()
             df = df.drop(columns=['id'])
             df = df.rename(columns={'tbiaID': 'id'})
             # taxonID
@@ -68,4 +75,3 @@ for group in group_list:
             offset += limit
         if len(results) < limit:
             has_more_data = False
-

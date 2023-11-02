@@ -1,0 +1,6 @@
+solr_export/
+.DS_Store
+__pycache__/
+.env
+
+data_prep/
