@@ -54,8 +54,7 @@ d_list_index = 0
 for d in dataset_list:
     d_list_index += 1
     test_count = 0
-    # total_count = d[1]
-    total_count = 10000
+    total_count = d[1]
     total_page = math.ceil (total_count / 1000)
     for p in range(0,total_page,10):
         data = []
