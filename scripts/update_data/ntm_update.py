@@ -139,9 +139,9 @@ for d in dataset_list:
                     # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
                     df.loc[i,'id'] = str(bson.objectid.ObjectId())
                     row = df.loc[i]
-                    gbif_id = get_gbif_id(row.gbifDatasetID, row.occurrenceID)
-                    if gbif_id:
-                        df.loc[i, 'references'] = f"https://www.gbif.org/occurrence/{gbif_id}" 
+                    # gbif_id = get_gbif_id(row.gbifDatasetID, row.occurrenceID)
+                    # if gbif_id:
+                    #     df.loc[i, 'references'] = f"https://www.gbif.org/occurrence/{gbif_id}" 
                     # 如果有mediaLicense才放associatedMedia
                     if not row.mediaLicense:
                         df.loc[i,'associatedMedia'] = None            
@@ -165,7 +165,7 @@ for d in dataset_list:
                 # 更新資料
                 df['occurrenceID'] = df['occurrenceID'].astype('str')
                 with db.begin() as conn:
-                    qry = sa.text("""select "tbiaID", "occurrenceID", "created" from records  
+                    qry = sa.text("""select "tbiaID", "occurrenceID", "created", "references" from records  
                                     where "rightsHolder" = '{}' AND "occurrenceID" IN {}  """.format(rights_holder, str(df.occurrenceID.to_list()).replace('[','(').replace(']',')')) )
                     resultset = conn.execute(qry)
                     results = resultset.mappings().all()
@@ -178,6 +178,14 @@ for d in dataset_list:
                     # 如果已存在，取存在的建立日期
                     df['created'] = df.apply(lambda x: x.created_y if x.tbiaID else now, axis=1)
                     df = df.drop(columns=['tbiaID','created_y','created_x'])
+                # 如果是新的records 再更新GBIF ID
+                for i in df.index:
+                    row = df.loc[i]
+                    if row.created == now:
+                        print(i)
+                        gbif_id = get_gbif_id(row.gbifDatasetID, row.occurrenceID)
+                        if gbif_id:
+                            df.loc[i, 'references'] = f"https://www.gbif.org/occurrence/{gbif_id}" 
                 # match_log要用更新的
                 match_log = df[['occurrenceID','id','sourceScientificName','taxonID','parentTaxonID','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','group','rightsHolder','created','modified']]
                 match_log = match_log.reset_index(drop=True)
