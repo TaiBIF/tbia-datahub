@@ -16,12 +16,13 @@ with db.begin() as conn:
 import math
 import json
 
-total_page = math.ceil(len(results) / 1000)
-limit = 1000
+total_page = math.ceil(len(results) / 100)
+limit = 100
 
+print('total_page', total_page)
 for p in range(0,total_page):
     print(p)
-    deleting_rs = results[p*limit:(p+1)*1000]
+    deleting_rs = results[p*limit:(p+1)*limit]
     deleting_ids = [d['tbiaID'] for d in deleting_rs]
     deleting_str = ' OR '.join(deleting_ids)
     commands = f''' curl http://solr:8983/solr/tbia_records/update/?commit=true -H "Content-Type: text/xml" --data-binary '<delete><query>id:({deleting_str})</query></delete>'; ''' 
@@ -32,7 +33,7 @@ for p in range(0,total_page):
     deleting_df['deleted'] = deleting_df['deleted'].dt.strftime('%Y-%m-%d %H:%M:%S')
     deleting_dict = deleting_df.to_dict('records')
     deleting_dict = json.dumps(deleting_dict)
-    commands = f''' curl http://solr:8983/solr/tbia_records/update/?commit=true -H "Content-Type: application/json" --data-binary '{deleting_dict}'; ''' 
+    commands = f''' curl http://solr:8983/solr/deleted_records/update/?commit=true -H "Content-Type: application/json" --data-binary '{deleting_dict}'; ''' 
     process = subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     a = process.communicate()
 
