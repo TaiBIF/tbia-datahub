@@ -43,6 +43,9 @@ import time
 # taxonID
 
 # for group in group_list:
+
+total_count = 0
+
 limit = 10000
 offset = 0
 min_id = 1
@@ -57,6 +60,7 @@ while has_more_data:
         results = resultset.mappings().all()
     print(time.time()-s, offset, min_id)        
     if len(results):
+        total_count += len(results)
         df = pd.DataFrame(results)
         # 下一次query最小的id
         min_id = df.id.max()
@@ -74,3 +78,5 @@ while has_more_data:
         offset += limit
     if len(results) < limit:
         has_more_data = False
+
+print('total_count', total_count)
