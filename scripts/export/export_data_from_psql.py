@@ -22,6 +22,7 @@ import urllib
 import numpy as np
 from datetime import datetime, timedelta
 import sqlalchemy as sa
+import time
 
 
 with db.begin() as conn:
@@ -43,7 +44,6 @@ taxon = taxon.drop(columns=['scientificNameID','id'])
 # null
 
 # group_list = ['nps']
-import time
 
 # taxonID
 r_index = 0
@@ -71,16 +71,22 @@ for r in rights_list:
             min_id = df.id.max()
             df = df.drop(columns=['id'])
             df = df.rename(columns={'tbiaID': 'id'})
+            df[['taxonID','parentTaxonID']] = df[['taxonID','parentTaxonID']].replace({'':None, nan:None})
             # taxonID
             a = df[df.taxonID.notnull()].merge(taxon,on='taxonID')
             # parentTaxonID
-            b = df[df.parentTaxonID.notnull()].drop(columns=['taxonID']).merge(taxon, left_on='parentTaxonID', right_on='taxonID')
+            # b = df[df.taxonID.isnull()&df.parentTaxonID.notnull()].drop(columns=['taxonID']).merge(taxon, left_on='parentTaxonID', right_on='taxonID') 
+            b = df[df.parentTaxonID.notnull()].drop(columns=['taxonID']).merge(taxon, left_on='parentTaxonID', right_on='taxonID') 
             b['taxonID'] = None
             # null
             c = df[(df.taxonID.isnull()&df.parentTaxonID.isnull())]
             final_df = pd.concat([a,b,c],ignore_index=True)
+            if len(results) != len(final_df):
+                print('error', r, min_id)
             final_df.to_csv(f'/solr/csvs/export/{r_index}_{offset}.csv', index=None)
             offset += limit
         if len(results) < limit:
             has_more_data = False
-    print(r, r_count)
+    print('total', r, r_count, len(final_df))
+
+
