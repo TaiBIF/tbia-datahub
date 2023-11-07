@@ -1,7 +1,7 @@
 from typing import List
 from typing import Optional
 from sqlalchemy import UniqueConstraint
-from sqlalchemy import String, DateTime
+from sqlalchemy import String, DateTime, JSON
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
@@ -295,3 +295,17 @@ class Dataset(Base):
     )
 
 
+# 串TaiEOL 取得物種照片
+class SpeciesImages(Base):
+    __tablename__ = "species_images"
+    
+    id: Mapped[int] = mapped_column(primary_key=True)
+    taxon_name_id: Mapped[Optional[str]] = mapped_column(String(1000))
+    namecode: Mapped[Optional[str]] = mapped_column(String(1000))
+    taieol_id: Mapped[Optional[str]] = mapped_column(String(1000))
+    images: Mapped[Optional[str]] = mapped_column(JSON)
+    modified: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint('namecode','taxon_name_id', name='namecode'),
+    )

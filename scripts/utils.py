@@ -130,13 +130,16 @@ def standardize_quantity(organismQuantity, individualCount=None):
 
 basis_dict = {
     "人為觀測": "HumanObservation",
-    "出現紀錄": "Occurrence",
     "機器觀測": "MachineObservation",
     "保存標本": "PreservedSpecimen",
-    "組織樣本": "MaterialSample",
+    "材料樣本": "MaterialSample",
     "活體標本": "LivingSpecimen",
     "化石標本": "FossilSpecimen",
-    "": "MaterialCitation"
+    "文獻紀錄": "MaterialCitation",
+    "材料實體": "MaterialEntity",
+    "分類群": "Taxon",
+    "出現紀錄": "Occurrence",
+    "調查活動": "Event"
 }
 
 def control_basis_of_record(basisOfRecord):
