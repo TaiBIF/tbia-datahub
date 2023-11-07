@@ -263,7 +263,11 @@ class Taxon(Base):
     sensitive: Mapped[Optional[str]] = mapped_column(String(10000))
     alien_type: Mapped[Optional[str]] = mapped_column(String(10000))
     is_endemic: Mapped[Optional[bool]]
-
+    is_fossil: Mapped[Optional[bool]]
+    is_terrestrial: Mapped[Optional[bool]]
+    is_freshwater: Mapped[Optional[bool]]
+    is_brackish: Mapped[Optional[bool]]
+    is_marine: Mapped[Optional[bool]]
 
 
 # \copy data_taxon ("taxonID", "scientificNameID", "scientificName", "name_author", "formatted_name", "common_name_c", "alternative_name_c", "synonyms", "formatted_synonyms", "misapplied", "formatted_misapplied", "kingdom", "kingdom_c", "subkingdom", "subkingdom_c", "infrakingdom", "infrakingdom_c", "superphylum", "superphylum_c", "phylum", "phylum_c", "subphylum", "subphylum_c", "infraphylum", "infraphylum_c", "superclass", "superclass_c", "class", "class_c", "subclass", "subclass_c", "superorder", "superorder_c", "order", "order_c", "family", "family_c", "genus", "genus_c", "formatted_genus", "subfamily", "subfamily_c", "infraclass", "infraclass_c", "superfamily", "superfamily_c", "species", "species_c", "formatted_species", "subspecies", "subspecies_c", "formatted_subspecies", "infraorder", "infraorder_c", "tribe", "tribe_c", "subgenus", "subgenus_c", "formatted_subgenus", "subtribe", "subtribe_c", "section", "section_c", "formatted_section", "subsection", "subsection_c", "formatted_subsection", "variety", "variety_c", "formatted_variety", "taxonRank") FROM '/tbia-volumes/bucket/source_taicol_for_tbia_20230904.csv' csv header;
