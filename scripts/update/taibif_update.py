@@ -49,9 +49,9 @@ partners = ['Taiwan Forestry Bureau',
 # 排除重複資料集
 # 單位間
 duplicated_dataset_list = ['Database of Native Plants in Taiwan',
-                            'Digital Archives of Taiwan Malacofauna Database',
-                            'ntou_db',
-                            'nthu_db',
+                            # 'Digital Archives of Taiwan Malacofauna Database',
+                            # 'ntou_db',
+                            # 'nthu_db',
                             'The Fish Database of Taiwan',
                             'A dataset from bottom trawl survey around Taiwan',
                             'National Museum of Natural Science',
