@@ -5,7 +5,7 @@ import pandas as pd
 import bson
 import time
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import math 
 
@@ -87,7 +87,7 @@ if response.status_code == 200:
     dataset = dataset[~dataset.datasetName.isin(duplicated_dataset_list)]
     dataset_list = dataset[['taibifDatasetID','numberOccurrence']].to_dict('tight')['data']
 
-now = datetime.now()
+now = datetime.now() + timedelta(hours=8)
 
 d_list_index = 0
 

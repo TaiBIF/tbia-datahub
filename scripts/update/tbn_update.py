@@ -5,7 +5,7 @@ import pandas as pd
 import bson
 import time
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import math 
 
@@ -42,7 +42,7 @@ with db.begin() as conn:
 # 自產資料 + eBird
 url_list = ['https://www.tbn.org.tw/api/v25/occurrence?selfProduced=y', 'https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=4fa7b334-ce0d-4e88-aaae-2e0c138d049e']
 
-now = datetime.now()
+now = datetime.now() + timedelta(hours=8)
 
 url_index = 0
 for url in url_list:

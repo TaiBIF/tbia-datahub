@@ -5,7 +5,7 @@ import pandas as pd
 import bson
 import time
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import math 
 
@@ -47,7 +47,7 @@ if response.status_code == 200:
     data = response.json()
     dataset_list = [[d['taibifDatasetID'],d['numberOccurrence']] for d in data if d['core'] in (['OCCURRENCE','SAMPLINGEVENT'])]
 
-now = datetime.now()
+now = datetime.now() + timedelta(hours=8)
 
 d_list_index = 0
 

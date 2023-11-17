@@ -4,7 +4,7 @@ import requests
 import pandas as pd
 import bson
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import math 
 
@@ -47,7 +47,7 @@ if response.status_code == 200:
     result = response.json()
     total_page = result['Meta']['TotalPages']
 
-now = datetime.now()
+now = datetime.now() + timedelta(hours=8)
 
 for p in range(0,total_page,10):
 # for p in [0]:

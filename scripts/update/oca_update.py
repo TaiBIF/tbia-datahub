@@ -36,7 +36,7 @@ with db.begin() as conn:
     qry = sa.text("""update records set is_deleted = 't' where "rightsHolder" = '{}' and "group" = '{}';""".format(rights_holder, group))
     resultset = conn.execute(qry)
 
-now = datetime.now()
+now = datetime.now() + timedelta(hours=8)
 
 payload = {'API-KEY': os.getenv('OCA_KEY')}
 headers = {'content-type': 'application/json'}

@@ -5,7 +5,7 @@ import pandas as pd
 import bson
 import time
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import math 
 
@@ -47,7 +47,7 @@ if response.status_code == 200:
     total = result['meta']['total']
     total_page = math.ceil(total / 1000)
 
-now = datetime.now()
+now = datetime.now() + timedelta(hours=8)
 
 for p in range(0,total_page,10):
     print(p)
