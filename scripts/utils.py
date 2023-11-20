@@ -182,6 +182,7 @@ def update_match_log(match_log, now):
     match_log['is_matched'] = False
     match_log.loc[match_log.taxonID.notnull(),'is_matched'] = True
     match_log = match_log.replace({np.nan: None})
+    match_log['match_higher_taxon'] = match_log['match_higher_taxon'].replace({None: False, np.nan: False, '': False})
     match_log['match_stage'] = match_log['match_stage'].apply(lambda x: int(x) if x or x == 0 else None)
     match_log['stage_1'] = match_log['stage_1'].apply(lambda x: issue_map[x] if x else x)
     match_log['stage_2'] = match_log['stage_2'].apply(lambda x: issue_map[x] if x else x)
