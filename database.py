@@ -24,7 +24,8 @@ class MatchLog(Base):
     is_matched: Mapped[bool]
 
     taxonID: Mapped[Optional[str]] = mapped_column(String(10), index=True)
-    parentTaxonID: Mapped[Optional[str]] = mapped_column(String(10), index=True)
+    # parentTaxonID: Mapped[Optional[str]] = mapped_column(String(10), index=True)
+    match_higher_taxon: Mapped[bool] = mapped_column(server_default='f')
 
     match_stage: Mapped[Optional[int]]
     stage_1: Mapped[Optional[str]] = mapped_column(String(20), index=True)
@@ -46,6 +47,7 @@ class Records(Base):
     __tablename__ = "records"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    match_higher_taxon: Mapped[bool] = mapped_column(server_default='f')
     associatedMedia: Mapped[Optional[str]] = mapped_column(String(10000))
     basisOfRecord: Mapped[Optional[str]] = mapped_column(String(10000))
     catalogNumber: Mapped[Optional[str]] = mapped_column(String(10000))
@@ -87,7 +89,7 @@ class Records(Base):
     standardRawLongitude: Mapped[Optional[float]]
     standardOrganismQuantity: Mapped[Optional[float]]
     taxonID: Mapped[Optional[str]] = mapped_column(String(10), index=True)
-    parentTaxonID: Mapped[Optional[str]] = mapped_column(String(10), index=True)
+    # parentTaxonID: Mapped[Optional[str]] = mapped_column(String(10), index=True)
     typeStatus: Mapped[Optional[str]] = mapped_column(String(10000))
     verbatimCoordinateSystem: Mapped[Optional[str]] = mapped_column(String(10000))
     verbatimLatitude: Mapped[Optional[str]] = mapped_column(String(10000))
@@ -99,7 +101,7 @@ class Records(Base):
     grid_5: Mapped[Optional[str]] = mapped_column(String(50))
     grid_10: Mapped[Optional[str]] = mapped_column(String(50))
     grid_100: Mapped[Optional[str]] = mapped_column(String(50))
-    scientificNameID: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
+    scientificNameID: Mapped[Optional[str]] = mapped_column(String(10000), index=True) # 原始資料提供
     # 為了因應某些單位有自己的學名系統 如TBN taxonUUID or TaiBIF的gbifAcceptedID
     sourceTaxonID: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     # 為了GBIF的資料從TaiBIF取得，留存TaiBIF的OccurrenceID於此，供更新使用(包含台博館&水利署)

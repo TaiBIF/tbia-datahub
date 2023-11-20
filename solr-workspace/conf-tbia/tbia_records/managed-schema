@@ -493,7 +493,8 @@
   <field name="standardRawLongitude" type="pdoubles"/>
   <field name="standardOrganismQuantity" type="pdoubles"/>
   <field name="taxonID" type="string"/>
-  <field name="parentTaxonID" type="string"/>
+  <field name="match_higher_taxon" type="string"/>
+  <!-- <field name="parentTaxonID" type="string"/> -->
   <field name="sourceTaxonID" type="string"/>
   <field name="typeStatus" type="string"/>
   <field name="verbatimCoordinateSystem" type="string"/>
@@ -520,7 +521,13 @@
   <field name="sensitive" type="string"/>
   <field name="alien_type" type="string"/>
   <field name="is_endemic" type="boolean"/>
-
+  <field name="is_fossil" type="boolean"/>
+  <field name="is_terrestrial" type="boolean"/>
+  <field name="is_freshwater" type="boolean"/>
+  <field name="is_brackish" type="boolean"/>
+  <field name="is_marine" type="boolean"/>
+  <field name="is_in_taiwan" type="boolean"/>
+  
     <!-- taxa fields start -->
     <field name="aberration" type="string"/>
     <field name="aberration_c" type="string"/>

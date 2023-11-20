@@ -28,13 +28,20 @@ rank_map = {
 
 
 
-with db.begin() as conn:
-    qry = sa.text("select * from taxon")
-    resultset = conn.execute(qry)
-    taxon = resultset.mappings().all()
+url = "http://solr:8983/solr/taxa/select?indent=true&q.op=OR&q=*%3A*&rows=2147483647"
+resp = requests.get(url)
+taxon = resp.json()['response']['docs']
+
+
+# with db.begin() as conn:
+#     qry = sa.text("select * from taxon")
+#     resultset = conn.execute(qry)
+#     taxon = resultset.mappings().all()
 
 taxon = pd.DataFrame(taxon)
-taxon = taxon.drop(columns=['scientificNameID','id'])
+taxon = taxon.rename(columns={'id': 'taxonID'})
+taxon = taxon.drop(columns=['taxon_name_id','_version_'])
+taxon = taxon.replace({nan:None})
 
 
 def match_name(matching_name, sci_name, original_name, is_parent, match_stage, sci_names, source_family, source_class, source_order, sci_index):
@@ -95,7 +102,9 @@ def match_name(matching_name, sci_name, original_name, is_parent, match_stage, s
                             if len(filtered_rss) == 1:
                                 if is_parent:
                                     sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 1
-                                    sci_names.loc[sci_names.sci_index==sci_index,'parentTaxonID'] = filtered_rss[0]['accepted_namecode']
+                                    # sci_names.loc[sci_names.sci_index==sci_index,'parentTaxonID'] = filtered_rss[0]['accepted_namecode']
+                                    sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rss[0]['accepted_namecode']
+                                    sci_names.loc[sci_names.sci_index==sci_index,'match_higher_taxon'] = True
                                 else:
                                     # 根據NomenMatch給的score確認名字是不是完全一樣
                                     if match_score < 1:
@@ -111,7 +120,9 @@ def match_name(matching_name, sci_name, original_name, is_parent, match_stage, s
                             if len(filtered_rs) == 1:
                                 if is_parent:
                                     sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 1
-                                    sci_names.loc[sci_names.sci_index==sci_index,'parentTaxonID'] = filtered_rs[0]['accepted_namecode']
+                                    # sci_names.loc[sci_names.sci_index==sci_index,'parentTaxonID'] = filtered_rs[0]['accepted_namecode']
+                                    sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rs[0]['accepted_namecode']
+                                    sci_names.loc[sci_names.sci_index==sci_index,'match_higher_taxon'] = True
                                 else:
                                     if match_score < 1:
                                         sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 3
@@ -126,7 +137,9 @@ def match_name(matching_name, sci_name, original_name, is_parent, match_stage, s
                         if len(filtered_rs) == 1:
                             if is_parent:
                                 sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 1
-                                sci_names.loc[sci_names.sci_index==sci_index,'parentTaxonID'] = filtered_rs[0]['accepted_namecode']
+                                # sci_names.loc[sci_names.sci_index==sci_index,'parentTaxonID'] = filtered_rs[0]['accepted_namecode']
+                                sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rs[0]['accepted_namecode']
+                                sci_names.loc[sci_names.sci_index==sci_index,'match_higher_taxon'] = True
                             else:
                                 if match_score < 1:
                                     sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 3
@@ -182,8 +195,9 @@ def match_namecode(matching_namecode, sci_name, match_stage, sci_names, sci_inde
 def matching_flow(sci_names):
     sci_names['sci_index'] = sci_names.index
     sci_names['taxonID'] = ''
-    sci_names['parentTaxonID'] = ''
+    # sci_names['parentTaxonID'] = ''
     sci_names['match_stage'] = 0
+    sci_names['match_higher_taxon'] = False
     # 各階段的issue default是沒有對到
     sci_names['stage_1'] = None
     sci_names['stage_2'] = None
@@ -266,6 +280,6 @@ def matching_flow(sci_names):
     for i in stage_list[:4]:
         for stg in stage_list[stage_list.index(i)+1:]:
             sci_names.loc[sci_names.match_stage==i,f'stage_{stg}'] = None
-    sci_names.loc[(sci_names.match_stage==4)&(sci_names.taxonID=='')&(sci_names.parentTaxonID==''),'match_stage'] = None
+    sci_names.loc[(sci_names.match_stage==4)&(sci_names.taxonID==''),'match_stage'] = None
     return sci_names
 

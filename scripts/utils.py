@@ -167,7 +167,7 @@ def update_dataset_key(ds_name, rights_holder):
 
 def matchlog_upsert(table, conn, keys, data_iter):
     data = [dict(zip(keys, row)) for row in data_iter]
-    set_list = ['sourceScientificName','is_matched','taxonID','parentTaxonID','match_stage',
+    set_list = ['sourceScientificName','is_matched','taxonID','match_higher_taxon','match_stage',
                 'stage_1','stage_2','stage_3','stage_4','stage_5','modified']
     insert_statement = insert(table.table).values(data)
     upsert_statement = insert_statement.on_conflict_do_update(

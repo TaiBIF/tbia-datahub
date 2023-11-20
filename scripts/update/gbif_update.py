@@ -16,7 +16,6 @@ load_dotenv(override=True)
 from scripts.taxon.match_taibif_utils import matching_flow, taxon
 from scripts.utils import *
 
-
 # 比對學名時使用的欄位
 sci_cols = ['taxonID','sourceVernacularName', 'sourceScientificName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily']
 
@@ -27,8 +26,8 @@ df_sci_cols = [s for s in sci_cols if s != 'taxonID']
 psql_records_key = [k for k in taxon.keys() if k != 'taxonID']
 
 # 單位資訊
-group = 'ntm'
-rights_holder = '國立臺灣博物館典藏'
+group = 'gbif'
+rights_holder = 'GBIF'
 
 # 在portal.Partner.info裡面的id
 info_id = 0
@@ -38,20 +37,65 @@ with db.begin() as conn:
     qry = sa.text("""update records set is_deleted = 't' where "rightsHolder" = '{}' and "group" = '{}';""".format(rights_holder, group))
     resultset = conn.execute(qry)
 
-# 取得台博館發布資料集
-publisher_id = 'c57cd401-ff9e-43bd-9403-089b88a97dea'
+# 排除夥伴單位
+partners = ['Taiwan Forestry Bureau', 
+            # 'Taiwan Endemic Species Research Institute', 
+            'Taiwan Forestry Research Institute',
+            'Marine National Park Headquarters', 
+            'Yushan National Park Headquarters', 
+            'National Taiwan Museum', 
+            'Water Resources Agency,Ministry of Economic Affairs']
 
-url = f"https://portal.taibif.tw/api/v2/dataset?publisherID={publisher_id}"
+# 排除重複資料集
+# 單位間
+duplicated_dataset_list = [
+    '78fc169f-cef0-4054-88ec-9b694bcbf6e4',
+    '50c9509d-22c7-4a22-a47d-8c48425ef4a7',
+    '4fa7b334-ce0d-4e88-aaae-2e0c138d049e',
+    'af97275b-4603-4b87-9054-c83c71c45143',
+    '471511f5-beca-425f-9a8a-e802b3960906',
+    'bc76c690-60a3-11de-a447-b8a03c50a862',
+    'a0998d3b-4a7f-4add-8044-299092d9c63f',
+    'a9d518d1-f0f3-477b-a7a3-aa9f61eb1e54',
+    'ea9608d2-7101-4d46-a7d0-9add260cd28c',
+    'e34125ac-b4fd-4ad4-9647-3423cdd9b8a2',
+    'b6fccb11-dc9a-4cf6-9994-b46fbac5759f',
+    '19c3400b-b7bb-425f-b8c5-f222648b86b2',
+    '2de58bfe-1bf1-4318-97a3-d97efc269a4f',
+    '9e6bf53c-8dba-470a-9142-3607dfe21c41',
+    'd4919a44-090f-4cc6-8643-4c5f7906117f',
+    '6bd0551c-f4e9-4e85-9cec-6cefae343234']
+
+# 單位內
+# duplicated_dataset_list += ['tad_db']
+
+# 取得所有台灣發布者
+url = "https://portal.taibif.tw/api/v2/publisher?countryCode=TW"
 response = requests.get(url)
 if response.status_code == 200:
     data = response.json()
-    dataset_list = [[d['taibifDatasetID'],d['numberOccurrence']] for d in data if d['core'] in (['OCCURRENCE','SAMPLINGEVENT'])]
+    pub = pd.DataFrame(data)
+
+dataset_list = []
+
+# 取得所有資料集
+url = "https://portal.taibif.tw/api/v2/dataset"
+response = requests.get(url)
+if response.status_code == 200:
+    data = response.json()
+    dataset = pd.DataFrame(data)
+    dataset = dataset[dataset.source=='GBIF']
+
+    dataset = dataset[dataset.core.isin(['OCCURRENCE','SAMPLINGEVENT'])]
+    dataset = dataset[dataset.publisherID.isin(pub[~pub.publisherName.isin(partners)].publisherID.to_list())]
+    dataset = dataset[~dataset.gbifDatasetID.isin(duplicated_dataset_list)]
+    dataset_list = dataset[['taibifDatasetID','numberOccurrence']].to_dict('tight')['data']
 
 now = datetime.now() + timedelta(hours=8)
 
 d_list_index = 0
 
-for d in dataset_list:
+for d in dataset_list: # 20
     d_list_index += 1
     test_count = 0
     total_count = d[1]
@@ -60,8 +104,9 @@ for d in dataset_list:
         data = []
         c = p
         while c < p + 10 and c < total_page:
+            time.sleep(1)
             offset = 1000 * c
-            print('page:',c , ' , offset:', offset)
+            print(d[0], 'page:',c , ' , offset:', offset)
             # time.sleep(1)
             url = f"https://portal.taibif.tw/api/v2/occurrence/detail_occ?taibifDatasetID={d[0]}&rows=1000&offset={offset}"
             response = requests.get(url)
@@ -72,7 +117,9 @@ for d in dataset_list:
         test_count += len(data)
         if len(data):
             df = pd.DataFrame(data)
-            df = df.rename(columns= {'taibifOccurrenceID': 'sourceOccurrenceID',
+            df = df.rename(columns= {
+                                    'occurrenceID': 'sourceOccurrenceID',
+                                    'taibifOccurrenceID': 'occurrenceID', # 使用TaiBIF給的id, 避免空值
                                     'scientificName': 'sourceScientificName',
                                     'taxonRank': 'sourceTaxonRank',
                                     'isPreferredName': 'sourceVernacularName',
@@ -96,7 +143,7 @@ for d in dataset_list:
                 sci_names = matching_flow(sci_names)
                 df = df.drop(columns=['taxonID'], errors='ignore')
                 # taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique()) + list(sci_names[sci_names.parentTaxonID!=''].parentTaxonID.unique())
-                taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique())
+                taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique()) 
                 final_taxon = taxon[taxon.taxonID.isin(taxon_list)]
                 final_taxon = pd.DataFrame(final_taxon)
                 if len(final_taxon):
@@ -123,8 +170,6 @@ for d in dataset_list:
                 df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))
                 # 數量 
                 df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
-                # basisOfRecord
-                df['recordType'] = df.apply(lambda x: 'col' if 'Specimen' in x.basisOfRecord else 'occ', axis=1)
                 # dataGeneralizations
                 df['dataGeneralizations'] = df['dataGeneralizations'].apply(lambda x: True if x else None)
                 # 經緯度
@@ -140,9 +185,15 @@ for d in dataset_list:
                     # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
                     df.loc[i,'id'] = str(bson.objectid.ObjectId())
                     row = df.loc[i]
-                    # gbif_id = get_gbif_id(row.gbifDatasetID, row.occurrenceID)
-                    # if gbif_id:
-                    #     df.loc[i, 'references'] = f"https://www.gbif.org/occurrence/{gbif_id}" 
+                    # basisOfRecord 有可能是空值
+                    if row.basisOfRecord:
+                        if 'Specimen' in row.basisOfRecord:
+                            df['recordType'] = 'col'
+                        else:
+                            df['recordType'] = 'occ'
+                    else:
+                        df['recordType'] = 'occ'
+                    df.loc[i,'references'] = f"https://portal.taibif.tw/occurrence/{row.occurrenceID}" if row.occurrenceID else None
                     # 如果有mediaLicense才放associatedMedia
                     if not row.mediaLicense:
                         df.loc[i,'associatedMedia'] = None            
@@ -166,7 +217,7 @@ for d in dataset_list:
                 # 更新資料
                 df['occurrenceID'] = df['occurrenceID'].astype('str')
                 with db.begin() as conn:
-                    qry = sa.text("""select "tbiaID", "occurrenceID", "created", "references" from records  
+                    qry = sa.text("""select "tbiaID", "occurrenceID", "created" from records  
                                     where "rightsHolder" = '{}' AND "occurrenceID" IN {}  """.format(rights_holder, str(df.occurrenceID.to_list()).replace('[','(').replace(']',')')) )
                     resultset = conn.execute(qry)
                     results = resultset.mappings().all()
@@ -179,14 +230,6 @@ for d in dataset_list:
                     # 如果已存在，取存在的建立日期
                     df['created'] = df.apply(lambda x: x.created_y if x.tbiaID else now, axis=1)
                     df = df.drop(columns=['tbiaID','created_y','created_x'])
-                # 如果是新的records 再更新GBIF ID
-                for i in df.index:
-                    row = df.loc[i]
-                    if row.created == now:
-                        print(i)
-                        gbif_id = get_gbif_id(row.gbifDatasetID, row.occurrenceID)
-                        if gbif_id:
-                            df.loc[i, 'references'] = f"https://www.gbif.org/occurrence/{gbif_id}" 
                 # match_log要用更新的
                 match_log = df[['occurrenceID','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','group','rightsHolder','created','modified']]
                 match_log = match_log.reset_index(drop=True)

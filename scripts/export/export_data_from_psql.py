@@ -25,13 +25,28 @@ import sqlalchemy as sa
 import time
 
 
-with db.begin() as conn:
-    qry = sa.text("select * from taxon")
-    resultset = conn.execute(qry)
-    taxon = resultset.mappings().all()
+# with db.begin() as conn:
+#     qry = sa.text("select * from taxon")
+#     resultset = conn.execute(qry)
+#     taxon = resultset.mappings().all()
+
+# taxon = pd.DataFrame(taxon)
+# taxon = taxon.drop(columns=['scientificNameID','id'])
+
+url = "http://solr:8983/solr/taxa/select?indent=true&q.op=OR&q=*%3A*&rows=2147483647"
+resp = requests.get(url)
+taxon = resp.json()['response']['docs']
+
+
+# with db.begin() as conn:
+#     qry = sa.text("select * from taxon")
+#     resultset = conn.execute(qry)
+#     taxon = resultset.mappings().all()
 
 taxon = pd.DataFrame(taxon)
-taxon = taxon.drop(columns=['scientificNameID','id'])
+taxon = taxon.rename(columns={'id': 'taxonID'})
+taxon = taxon.drop(columns=['taxon_name_id','_version_'])
+taxon = taxon.replace({nan:None})
 
 
 # group_list = ['brcas','brmas','cpami','fact','forest','ntm','oca','taif','tcd','wra'] 
@@ -71,16 +86,18 @@ for r in rights_list:
             min_id = df.id.max()
             df = df.drop(columns=['id'])
             df = df.rename(columns={'tbiaID': 'id'})
-            df[['taxonID','parentTaxonID']] = df[['taxonID','parentTaxonID']].replace({'':None, nan:None})
-            # taxonID
-            a = df[df.taxonID.notnull()].merge(taxon,on='taxonID')
-            # parentTaxonID
-            # b = df[df.taxonID.isnull()&df.parentTaxonID.notnull()].drop(columns=['taxonID']).merge(taxon, left_on='parentTaxonID', right_on='taxonID') 
-            b = df[df.parentTaxonID.notnull()].drop(columns=['taxonID']).merge(taxon, left_on='parentTaxonID', right_on='taxonID') 
-            b['taxonID'] = None
-            # null
-            c = df[(df.taxonID.isnull()&df.parentTaxonID.isnull())]
-            final_df = pd.concat([a,b,c],ignore_index=True)
+            df[['taxonID']] = df[['taxonID']].replace({'':None, nan:None})
+            final_df = df.merge(taxon,on='taxonID',how='left')
+            # df[['taxonID','parentTaxonID']] = df[['taxonID','parentTaxonID']].replace({'':None, nan:None})
+            # # taxonID
+            # a = df[df.taxonID.notnull()].merge(taxon,on='taxonID')
+            # # parentTaxonID
+            # # b = df[df.taxonID.isnull()&df.parentTaxonID.notnull()].drop(columns=['taxonID']).merge(taxon, left_on='parentTaxonID', right_on='taxonID') 
+            # b = df[df.parentTaxonID.notnull()].drop(columns=['taxonID']).merge(taxon, left_on='parentTaxonID', right_on='taxonID') 
+            # b['taxonID'] = None
+            # # null
+            # c = df[(df.taxonID.isnull()&df.parentTaxonID.isnull())]
+            # final_df = pd.concat([a,b,c],ignore_index=True)
             if len(results) != len(final_df):
                 print('error', r, min_id)
             final_df.to_csv(f'/solr/csvs/export/{r_index}_{offset}.csv', index=None)

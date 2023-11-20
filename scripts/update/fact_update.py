@@ -71,15 +71,16 @@ for p in range(0,total_page,10):
         sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
         sci_names = matching_flow(sci_names)
         df = df.drop(columns=['taxonID'], errors='ignore')
-        taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique()) + list(sci_names[sci_names.parentTaxonID!=''].parentTaxonID.unique())
+        # taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique()) + list(sci_names[sci_names.parentTaxonID!=''].parentTaxonID.unique())
+        taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique()) 
         final_taxon = taxon[taxon.taxonID.isin(taxon_list)]
         final_taxon = pd.DataFrame(final_taxon)
         if len(final_taxon):
             match_taxon_id = sci_names.merge(final_taxon)
             # 若沒有taxonID的 改以parentTaxonID串
-            match_parent_taxon_id = sci_names.drop(columns=['taxonID']).merge(final_taxon,left_on='parentTaxonID',right_on='taxonID')
-            match_parent_taxon_id['taxonID'] = ''
-            match_taxon_id = pd.concat([match_taxon_id, match_parent_taxon_id], ignore_index=True)
+            # match_parent_taxon_id = sci_names.drop(columns=['taxonID']).merge(final_taxon,left_on='parentTaxonID',right_on='taxonID')
+            # match_parent_taxon_id['taxonID'] = ''
+            # match_taxon_id = pd.concat([match_taxon_id, match_parent_taxon_id], ignore_index=True)
             # 如果都沒有對到 要再加回來
             match_taxon_id = pd.concat([match_taxon_id,sci_names[~sci_names.sci_index.isin(match_taxon_id.sci_index.to_list())]], ignore_index=True)
             match_taxon_id = match_taxon_id.replace({nan: ''})
@@ -155,7 +156,7 @@ for p in range(0,total_page,10):
             df['created'] = df.apply(lambda x: x.created_y if x.tbiaID else now, axis=1)
             df = df.drop(columns=['tbiaID','created_y','created_x'])
         # match_log要用更新的
-        match_log = df[['occurrenceID','id','sourceScientificName','taxonID','parentTaxonID','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','group','rightsHolder','created','modified']]
+        match_log = df[['occurrenceID','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','group','rightsHolder','created','modified']]
         match_log = match_log.reset_index(drop=True)
         match_log = update_match_log(match_log=match_log, now=now)
         match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{p}.csv',index=None)
