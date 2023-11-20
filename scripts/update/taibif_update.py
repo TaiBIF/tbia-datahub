@@ -38,34 +38,58 @@ with db.begin() as conn:
     resultset = conn.execute(qry)
 
 # 排除夥伴單位
-partners = ['Taiwan Forestry Bureau', 
-            'Taiwan Endemic Species Research Institute', 
-            'Taiwan Forestry Research Institute',
-            'Marine National Park Headquarters', 
-            'Yushan National Park Headquarters', 
-            'National Taiwan Museum', 
-            'Water Resources Agency,Ministry of Economic Affairs']
+# TODO 改用id
+# partners = ['Taiwan Forestry Bureau', 
+#             'Taiwan Endemic Species Research Institute', 
+#             'Taiwan Forestry Research Institute',
+#             'Marine National Park Headquarters', 
+#             'Yushan National Park Headquarters', 
+#             'National Taiwan Museum', 
+#             'Water Resources Agency,Ministry of Economic Affairs']
+
+partners = ['6ddd1cf5-0655-44ac-a572-cb581a054992', 
+            '7c07cec1-2925-443c-81f1-333e4187bdea', 
+            '898ba450-1627-11df-bd84-b8a03c50a862', 
+            '7f2ff82e-193e-48eb-8fb5-bad64c84782a', 
+            'f40c7fe5-e64a-450c-b229-21d674ef3c28', 
+            'c57cd401-ff9e-43bd-9403-089b88a97dea', 
+            'b6b89e2d-e881-41f3-bc57-213815cb9742']
 
 # 排除重複資料集
 # 單位間
-duplicated_dataset_list = ['Database of Native Plants in Taiwan',
-                            # 'Digital Archives of Taiwan Malacofauna Database',
-                            # 'ntou_db',
-                            # 'nthu_db',
-                            'The Fish Database of Taiwan',
-                            'A dataset from bottom trawl survey around Taiwan',
-                            'National Museum of Natural Science',
-                            # 'taijiang_national_park_beamtrawling_2016-2018', 確認後不排除
-                            '珊瑚健康指標之建立與保護區管理應用: 以墾丁國家公園珊瑚礁生態系為例 ',
-                            '國家公園生物多樣性資料流通(2015)',
-                            '國家公園生物資訊流通(2014)',
-                            '國家公園資料集',
-                            'national_parts_taiwan-2016',
-                            # 'National vegetation diversity inventory and mapping plan',  確認後不排除
-                            'National Taiwan Museum']
+# 改用id
+# duplicated_dataset_list = ['Database of Native Plants in Taiwan',
+#                             # 'Digital Archives of Taiwan Malacofauna Database',
+#                             # 'ntou_db',
+#                             # 'nthu_db',
+#                             'The Fish Database of Taiwan',
+#                             'A dataset from bottom trawl survey around Taiwan',
+#                             'National Museum of Natural Science',
+#                             # 'taijiang_national_park_beamtrawling_2016-2018', 確認後不排除
+#                             '珊瑚健康指標之建立與保護區管理應用: 以墾丁國家公園珊瑚礁生態系為例 ',
+#                             '國家公園生物多樣性資料流通(2015)',
+#                             '國家公園生物資訊流通(2014)',
+#                             '國家公園資料集',
+#                             'national_parts_taiwan-2016',
+#                             # 'National vegetation diversity inventory and mapping plan',  確認後不排除
+#                             'National Taiwan Museum']
+
+duplicated_dataset_list = [
+    '36c38933-a03b-4f8b-9ba3-6987e5528179',
+    '489b921b-88fe-40ca-9efc-dbb3270bfa9e',
+    'ec70c946-482c-4e10-ab56-9e190c9d40f9',
+    'fddbabb3-7386-4a1c-a086-f12bbabe9eb6',
+    '44a761b5-5adf-4b67-adad-c5ae04637fb9',
+    '06b55da4-bfb9-453d-be18-a1d1ae68ed5d',
+    '836a5bd1-d440-4ebd-bb1e-0d83f91bd21a',
+    'af48a08e-f523-443d-9d4d-505a01be11a4',
+    '07b06590-6ecc-489e-a565-73c1f2081a02',
+    '73f63477-81be-4661-8d71-003597a701c0'
+]
 
 # 單位內
-duplicated_dataset_list += ['tad_db']
+# duplicated_dataset_list += ['tad_db']
+duplicated_dataset_list += ['6e54a298-6358-4994-ae50-df9a8dd4efc6']
 
 # 取得所有台灣發布者
 url = "https://portal.taibif.tw/api/v2/publisher?countryCode=TW"
@@ -73,6 +97,7 @@ response = requests.get(url)
 if response.status_code == 200:
     data = response.json()
     pub = pd.DataFrame(data)
+    pub = pub[~pub.publisherID.isin(partners)]
 
 dataset_list = []
 
@@ -82,9 +107,11 @@ response = requests.get(url)
 if response.status_code == 200:
     data = response.json()
     dataset = pd.DataFrame(data)
+    dataset = dataset[dataset.source!='GBIF']
     dataset = dataset[dataset.core.isin(['OCCURRENCE','SAMPLINGEVENT'])]
-    dataset = dataset[dataset.publisherID.isin(pub[~pub.publisherName.isin(partners)].publisherID.to_list())]
-    dataset = dataset[~dataset.datasetName.isin(duplicated_dataset_list)]
+    # dataset = dataset[~dataset.publisherID.isin(pub[pub.publisherName.isin(partners)].publisherID.to_list())]
+    dataset = dataset[dataset.publisherID.isin(pub.publisherID.to_list())]
+    dataset = dataset[~dataset.taibifDatasetID.isin(duplicated_dataset_list)]
     dataset_list = dataset[['taibifDatasetID','numberOccurrence']].to_dict('tight')['data']
 
 now = datetime.now() + timedelta(hours=8)

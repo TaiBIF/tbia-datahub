@@ -38,13 +38,20 @@ with db.begin() as conn:
     resultset = conn.execute(qry)
 
 # 排除夥伴單位
-partners = ['Taiwan Forestry Bureau', 
-            # 'Taiwan Endemic Species Research Institute', # GBIF不直接排除生多所的資料
-            'Taiwan Forestry Research Institute',
-            'Marine National Park Headquarters', 
-            'Yushan National Park Headquarters', 
-            'National Taiwan Museum', 
-            'Water Resources Agency,Ministry of Economic Affairs']
+# partners = ['Taiwan Forestry Bureau', 
+#             # 'Taiwan Endemic Species Research Institute', # GBIF不直接排除生多所的資料
+#             'Taiwan Forestry Research Institute',
+#             'Marine National Park Headquarters', 
+#             'Yushan National Park Headquarters', 
+#             'National Taiwan Museum', 
+#             'Water Resources Agency,Ministry of Economic Affairs']
+
+partners = ['6ddd1cf5-0655-44ac-a572-cb581a054992', 
+            '898ba450-1627-11df-bd84-b8a03c50a862', 
+            '7f2ff82e-193e-48eb-8fb5-bad64c84782a', 
+            'f40c7fe5-e64a-450c-b229-21d674ef3c28', 
+            'c57cd401-ff9e-43bd-9403-089b88a97dea', 
+            'b6b89e2d-e881-41f3-bc57-213815cb9742']
 
 # 排除重複資料集
 # 單位間
@@ -71,11 +78,11 @@ duplicated_dataset_list = [
 # duplicated_dataset_list += ['tad_db']
 
 # 取得所有台灣發布者
-url = "https://portal.taibif.tw/api/v2/publisher?countryCode=TW"
-response = requests.get(url)
-if response.status_code == 200:
-    data = response.json()
-    pub = pd.DataFrame(data)
+# url = "https://portal.taibif.tw/api/v2/publisher?countryCode=TW"
+# response = requests.get(url)
+# if response.status_code == 200:
+#     data = response.json()
+#     pub = pd.DataFrame(data)
 
 dataset_list = []
 
@@ -86,9 +93,8 @@ if response.status_code == 200:
     data = response.json()
     dataset = pd.DataFrame(data)
     dataset = dataset[dataset.source=='GBIF']
-
     dataset = dataset[dataset.core.isin(['OCCURRENCE','SAMPLINGEVENT'])]
-    dataset = dataset[dataset.publisherID.isin(pub[~pub.publisherName.isin(partners)].publisherID.to_list())]
+    dataset = dataset[~dataset.publisherID.isin(partners)]
     dataset = dataset[~dataset.gbifDatasetID.isin(duplicated_dataset_list)]
     dataset_list = dataset[['taibifDatasetID','numberOccurrence']].to_dict('tight')['data']
 
@@ -144,6 +150,7 @@ for d in dataset_list: # 20
                 sci_names = matching_flow(sci_names)
                 df = df.drop(columns=['taxonID'], errors='ignore')
                 # taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique()) + list(sci_names[sci_names.parentTaxonID!=''].parentTaxonID.unique())
+                # TODO 是不是不需要merge taxon, 因為在records中沒有存相關內容？
                 taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique()) 
                 final_taxon = taxon[taxon.taxonID.isin(taxon_list)]
                 final_taxon = pd.DataFrame(final_taxon)
