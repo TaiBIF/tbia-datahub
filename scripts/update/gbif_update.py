@@ -39,7 +39,7 @@ with db.begin() as conn:
 
 # 排除夥伴單位
 partners = ['Taiwan Forestry Bureau', 
-            # 'Taiwan Endemic Species Research Institute', 
+            # 'Taiwan Endemic Species Research Institute', # GBIF不直接排除生多所的資料
             'Taiwan Forestry Research Institute',
             'Marine National Park Headquarters', 
             'Yushan National Park Headquarters', 
@@ -48,9 +48,8 @@ partners = ['Taiwan Forestry Bureau',
 
 # 排除重複資料集
 # 單位間
+# GBIF 需要排除的生多所資料
 duplicated_dataset_list = [
-    '78fc169f-cef0-4054-88ec-9b694bcbf6e4',
-    '50c9509d-22c7-4a22-a47d-8c48425ef4a7',
     '4fa7b334-ce0d-4e88-aaae-2e0c138d049e',
     'af97275b-4603-4b87-9054-c83c71c45143',
     '471511f5-beca-425f-9a8a-e802b3960906',
@@ -64,7 +63,9 @@ duplicated_dataset_list = [
     '2de58bfe-1bf1-4318-97a3-d97efc269a4f',
     '9e6bf53c-8dba-470a-9142-3607dfe21c41',
     'd4919a44-090f-4cc6-8643-4c5f7906117f',
-    '6bd0551c-f4e9-4e85-9cec-6cefae343234']
+    '6bd0551c-f4e9-4e85-9cec-6cefae343234'
+]
+
 
 # 單位內
 # duplicated_dataset_list += ['tad_db']
