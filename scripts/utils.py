@@ -9,6 +9,8 @@ import sqlalchemy as sa
 import requests
 from sqlalchemy.dialects.postgresql import insert
 import json
+import pandas as pd
+
 
 def get_taxon_df(taxon_ids):
     limit = len(taxon_ids)
@@ -25,7 +27,7 @@ def get_taxon_df(taxon_ids):
     taxon = pd.DataFrame(taxon)
     taxon = taxon.rename(columns={'id': 'taxonID'})
     taxon = taxon.drop(columns=['taxon_name_id','_version_'],errors='ignore')
-    taxon = taxon.replace({nan:None})
+    taxon = taxon.replace({np.nan:None})
     return taxon
 
 
