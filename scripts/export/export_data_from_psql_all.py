@@ -19,7 +19,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import sqlalchemy as sa
 
-
+from scripts.taxon.match_taibif_utils import get_taxon_df
 # with db.begin() as conn:
 #     qry = sa.text("select * from taxon")
 #     resultset = conn.execute(qry)
@@ -29,9 +29,9 @@ import sqlalchemy as sa
 # taxon = taxon.drop(columns=['scientificNameID','id'])
 
 
-url = "http://solr:8983/solr/taxa/select?indent=true&q.op=OR&q=*%3A*&rows=2147483647"
-resp = requests.get(url)
-taxon = resp.json()['response']['docs']
+# url = "http://solr:8983/solr/taxa/select?indent=true&q.op=OR&q=*%3A*&rows=2147483647"
+# resp = requests.get(url)
+# taxon = resp.json()['response']['docs']
 
 
 # with db.begin() as conn:
@@ -39,10 +39,10 @@ taxon = resp.json()['response']['docs']
 #     resultset = conn.execute(qry)
 #     taxon = resultset.mappings().all()
 
-taxon = pd.DataFrame(taxon)
-taxon = taxon.rename(columns={'id': 'taxonID'})
-taxon = taxon.drop(columns=['taxon_name_id','_version_'])
-taxon = taxon.replace({nan:None})
+# taxon = pd.DataFrame(taxon)
+# taxon = taxon.rename(columns={'id': 'taxonID'})
+# taxon = taxon.drop(columns=['taxon_name_id','_version_'])
+# taxon = taxon.replace({nan:None})
 
 
 # group_list = ['brcas','brmas','cpami','fact','forest','ntm','oca','taif','tcd','wra'] 
@@ -82,6 +82,7 @@ while has_more_data:
         min_id = df.id.max()
         df = df.drop(columns=['id'])
         df = df.rename(columns={'tbiaID': 'id'})
+        taxon = get_taxon_df(taxon_ids=df[df.taxonID.notnull()].taxonID.to_list())
         # taxonID
         final_df = df.merge(taxon,on='taxonID',how='left')
         # a = df[df.taxonID.notnull()].merge(taxon,on='taxonID',)
