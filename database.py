@@ -48,6 +48,7 @@ class Records(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     match_higher_taxon: Mapped[bool] = mapped_column(server_default='f')
+    update_version: Mapped[Optional[int]] = mapped_column(server_default='0', index=True)
     associatedMedia: Mapped[Optional[str]] = mapped_column(String(10000))
     basisOfRecord: Mapped[Optional[str]] = mapped_column(String(10000))
     catalogNumber: Mapped[Optional[str]] = mapped_column(String(10000))

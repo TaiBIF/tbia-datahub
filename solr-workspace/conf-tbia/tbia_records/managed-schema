@@ -527,6 +527,12 @@
   <field name="is_brackish" type="boolean"/>
   <field name="is_marine" type="boolean"/>
   <field name="is_in_taiwan" type="boolean"/>
+
+
+  <!-- 202311新增 -->
+  <field name="update_version" type="pdouble"/>
+
+  
   
     <!-- taxa fields start -->
     <field name="aberration" type="string"/>
