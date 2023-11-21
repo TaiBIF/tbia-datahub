@@ -27,35 +27,6 @@ rank_map = {
     'Nothosubspecies', 37: 'Variety', 38: 'Subvariety', 39: 'Nothovariety', 40: 'Form', 41: 'Subform', 42: 'Special Form', 43: 'Race', 44: 'Stirp', 45: 'Morph', 46: 'Aberration', 47: 'Hybrid Formula'}
 
 
-
-import json
-
-
-
-def get_existed_records(ids, rights_holder):
-    # ids = [f'occurrenceID:"{t}"' for t in ids]
-    limit = len(ids)
-    ids = ','.join(ids)
-    query = { "query": "*:*",
-                    "offset": 0,
-                    "filter": [f"rightsHolder:{rights_holder}",
-                               "{!terms f=occurrenceID} "+ ids],
-                    "limit": limit,
-                    "fields": ['id', 'occurrenceID']
-                    }
-    response = requests.post(f'http://solr:8983/solr/tbia_records/select', data=json.dumps(query), headers={'content-type': "application/json" })
-    resp = response.json()
-    existed_records = resp['response']['docs']
-    existed_records = pd.DataFrame(existed_records)
-    existed_records = existed_records.rename(columns={'id': 'tbiaID'})
-    # taxon = taxon.drop(columns=['taxon_name_id','_version_'])
-    # taxon = taxon.replace({nan:None})
-    return existed_records
-
-
-
-
-
 def match_name(matching_name, sci_name, original_name, is_parent, match_stage, sci_names, source_family, source_class, source_order, sci_index):
     if matching_name:
         request_url = f"http://host.docker.internal:8080/api.php?names={urllib.parse.quote(matching_name)}&format=json&source=taicol"

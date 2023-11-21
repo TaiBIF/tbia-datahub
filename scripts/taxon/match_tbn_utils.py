@@ -27,26 +27,6 @@ rank_map = {
     'Nothosubspecies', 37: 'Variety', 38: 'Subvariety', 39: 'Nothovariety', 40: 'Form', 41: 'Subform', 42: 'Special Form', 43: 'Race', 44: 'Stirp', 45: 'Morph', 46: 'Aberration', 47: 'Hybrid Formula'}
 
 
-
-# with db.begin() as conn:
-#     qry = sa.text("select * from taxon")
-#     resultset = conn.execute(qry)
-#     taxon = resultset.mappings().all()
-
-# taxon = pd.DataFrame(taxon)
-# taxon = taxon.drop(columns=['scientificNameID','id'])
-
-
-url = "http://solr:8983/solr/taxa/select?indent=true&q.op=OR&q=*%3A*&rows=2147483647"
-resp = requests.get(url)
-taxon = resp.json()['response']['docs']
-
-taxon = pd.DataFrame(taxon)
-taxon = taxon.rename(columns={'id': 'taxonID'})
-taxon = taxon.drop(columns=['taxon_name_id','_version_'])
-taxon = taxon.replace({nan:None})
-
-
 def match_name(matching_name, sci_name, original_name, is_parent, match_stage, sci_names, source_family, source_class, source_order, sci_index):
     if matching_name:
         request_url = f"http://host.docker.internal:8080/api.php?names={urllib.parse.quote(matching_name)}&format=json&source=taicol"
@@ -345,4 +325,3 @@ def matching_flow(sci_names):
     sci_names.loc[(sci_names.match_stage==5)&(sci_names.taxonID==''),'match_stage'] = None
     # sci_names.loc[(sci_names.match_stage==5)&(sci_names.taxonID=='')&(sci_names.parentTaxonID==''),'match_stage'] = None
     return sci_names
-

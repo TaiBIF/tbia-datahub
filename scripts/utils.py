@@ -12,6 +12,27 @@ import json
 import pandas as pd
 
 
+def get_existed_records(ids, rights_holder):
+    # ids = [f'occurrenceID:"{t}"' for t in ids]
+    limit = len(ids)
+    ids = ','.join(ids)
+    query = { "query": "*:*",
+                    "offset": 0,
+                    "filter": [f"rightsHolder:{rights_holder}",
+                               "{!terms f=occurrenceID} "+ ids],
+                    "limit": limit,
+                    "fields": ['id', 'occurrenceID']
+                    }
+    response = requests.post(f'http://solr:8983/solr/tbia_records/select', data=json.dumps(query), headers={'content-type': "application/json" })
+    resp = response.json()
+    existed_records = resp['response']['docs']
+    existed_records = pd.DataFrame(existed_records)
+    existed_records = existed_records.rename(columns={'id': 'tbiaID'})
+    # taxon = taxon.drop(columns=['taxon_name_id','_version_'])
+    # taxon = taxon.replace({nan:None})
+    return existed_records
+
+
 def get_taxon_df(taxon_ids):
     limit = len(taxon_ids)
     ids = ','.join(taxon_ids)
@@ -29,7 +50,6 @@ def get_taxon_df(taxon_ids):
     taxon = taxon.drop(columns=['taxon_name_id','_version_'],errors='ignore')
     taxon = taxon.replace({np.nan:None})
     return taxon
-
 
 
 issue_map = {

@@ -9,7 +9,7 @@ from dateutil import parser
 from datetime import datetime, timedelta
 import glob
 
-from scripts.taxon.match_taibif_utils import matching_flow, taxon
+from scripts.taxon.match_taibif_utils import matching_flow
 from scripts.utils import *
 
 
@@ -27,7 +27,7 @@ sci_cols = ['sourceScientificName','sourceVernacularName']
 df_sci_cols = [s for s in sci_cols if s != 'taxonID'] 
 
 # 在postgres要排除掉的taxon欄位
-psql_records_key = [k for k in taxon.keys() if k != 'taxonID']
+# psql_records_key = [k for k in taxon.keys() if k != 'taxonID']
 
 
 # 單位資訊
@@ -38,9 +38,17 @@ rights_holder = '濕地環境資料庫'
 info_id = 1
 
 # 先將records設為is_deleted='t'
-with db.begin() as conn:
-    qry = sa.text("""update records set is_deleted = 't' where "rightsHolder" = '{}' and "group" = '{}';""".format(rights_holder, group))
-    resultset = conn.execute(qry)
+# with db.begin() as conn:
+#     qry = sa.text("""update records set is_deleted = 't' where "rightsHolder" = '{}' and "group" = '{}';""".format(rights_holder, group))
+#     resultset = conn.execute(qry)
+
+response = requests.get(f'http://solr:8983/solr/tbia_records/select?fl=update_version&fq=rightsHolder:{rights_holder}&q.op=OR&q=*%3A*&rows=1&sort=update_version%20desc')
+if response.status_code == 200:
+    resp = response.json()
+    if data := resp['response']['docs']:
+        update_version = data[0]['update_version'] + 1
+    else:
+        update_version = 1
 
 now = datetime.now() + timedelta(hours=8)
 
@@ -93,21 +101,24 @@ for p in range(0,total_len,10):
         sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
         sci_names = matching_flow(sci_names)
         df = df.drop(columns=['taxonID'], errors='ignore')
+        match_taxon_id = sci_names
         # taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique()) + list(sci_names[sci_names.parentTaxonID!=''].parentTaxonID.unique())
-        taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique())
-        final_taxon = taxon[taxon.taxonID.isin(taxon_list)]
-        final_taxon = pd.DataFrame(final_taxon)
-        if len(final_taxon):
-            match_taxon_id = sci_names.merge(final_taxon)
-            # 若沒有taxonID的 改以parentTaxonID串
-            # match_parent_taxon_id = sci_names.drop(columns=['taxonID']).merge(final_taxon,left_on='parentTaxonID',right_on='taxonID')
-            # match_parent_taxon_id['taxonID'] = ''
-            # match_taxon_id = pd.concat([match_taxon_id, match_parent_taxon_id], ignore_index=True)
-            # 如果都沒有對到 要再加回來
-            match_taxon_id = pd.concat([match_taxon_id,sci_names[~sci_names.sci_index.isin(match_taxon_id.sci_index.to_list())]], ignore_index=True)
+        # taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique())
+        # final_taxon = taxon[taxon.taxonID.isin(taxon_list)]
+        # final_taxon = pd.DataFrame(final_taxon)
+        # if len(final_taxon):
+        #     match_taxon_id = sci_names.merge(final_taxon)
+        #     # 若沒有taxonID的 改以parentTaxonID串
+        #     # match_parent_taxon_id = sci_names.drop(columns=['taxonID']).merge(final_taxon,left_on='parentTaxonID',right_on='taxonID')
+        #     # match_parent_taxon_id['taxonID'] = ''
+        #     # match_taxon_id = pd.concat([match_taxon_id, match_parent_taxon_id], ignore_index=True)
+        #     # 如果都沒有對到 要再加回來
+        #     match_taxon_id = pd.concat([match_taxon_id,sci_names[~sci_names.sci_index.isin(match_taxon_id.sci_index.to_list())]], ignore_index=True)
+        #     match_taxon_id = match_taxon_id.replace({nan: ''})
+        #     match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
+        if len(match_taxon_id):
             match_taxon_id = match_taxon_id.replace({nan: ''})
             match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
-        if len(match_taxon_id):
             df[df_sci_cols] = df[df_sci_cols].replace({'': '-999999',None:'-999999'})
             df = df.merge(match_taxon_id, on=df_sci_cols, how='left')
             df[sci_cols] = df[sci_cols].replace({'-999999': ''})
@@ -161,20 +172,23 @@ for p in range(0,total_len,10):
         # 更新資料
         if 'occurrenceID' in df.keys():
             df['occurrenceID'] = df['occurrenceID'].astype('str')
-            with db.begin() as conn:
-                qry = sa.text("""select "tbiaID", "occurrenceID", "created" from records  
-                                where "rightsHolder" = '{}' AND "occurrenceID" IN {}  """.format(rights_holder, str(df.occurrenceID.to_list()).replace('[','(').replace(']',')')) )
-                resultset = conn.execute(qry)
-                results = resultset.mappings().all()
-                existed_records = pd.DataFrame(results)
+            # with db.begin() as conn:
+            #     qry = sa.text("""select "tbiaID", "occurrenceID", "created" from records  
+            #                     where "rightsHolder" = '{}' AND "occurrenceID" IN {}  """.format(rights_holder, str(df.occurrenceID.to_list()).replace('[','(').replace(']',')')) )
+            #     resultset = conn.execute(qry)
+            #     results = resultset.mappings().all()
+            #     existed_records = pd.DataFrame(results)
+            existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
+            existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder)
             if len(existed_records):
                 df =  df.merge(existed_records,on=["occurrenceID"], how='left')
                 df = df.replace({nan: None})
                 # 如果已存在，取存在的tbiaID
                 df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
                 # 如果已存在，取存在的建立日期
-                df['created'] = df.apply(lambda x: x.created_y if x.tbiaID else now, axis=1)
-                df = df.drop(columns=['tbiaID','created_y','created_x'])
+                # df['created'] = df.apply(lambda x: x.created_y if x.tbiaID else now, axis=1)
+                # df = df.drop(columns=['tbiaID','created_y','created_x'])
+                df = df.drop(columns=['tbiaID'])
         else:
             df['occurrenceID'] = ''
         # match_log要用更新的
@@ -191,7 +205,8 @@ for p in range(0,total_len,10):
         # df.to_csv(f'/solr/csvs/updated/{group}_{info_id}_{p}.csv', index=False)
         # 存到records裏面
         df = df.rename(columns=({'id': 'tbiaID'}))
-        df = df.drop(columns=psql_records_key,errors='ignore')
+        df['update_version'] = int(update_version)
+        # df = df.drop(columns=psql_records_key,errors='ignore')
         df.to_sql('records', db, # schema='my_schema',
                 if_exists='append',
                 index=False,
@@ -199,7 +214,7 @@ for p in range(0,total_len,10):
 
 
 # 刪除is_deleted的records & match_log
-delete_records(rights_holder=rights_holder,group=group)
+delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version))
 
 # 打包match_log
 zip_match_log(group=group,info_id=info_id)
