@@ -28,20 +28,32 @@ rank_map = {
 
 
 
-url = "http://solr:8983/solr/taxa/select?indent=true&q.op=OR&q=*%3A*&rows=2147483647"
-resp = requests.get(url)
-taxon = resp.json()['response']['docs']
+import json
 
 
-# with db.begin() as conn:
-#     qry = sa.text("select * from taxon")
-#     resultset = conn.execute(qry)
-#     taxon = resultset.mappings().all()
 
-taxon = pd.DataFrame(taxon)
-taxon = taxon.rename(columns={'id': 'taxonID'})
-taxon = taxon.drop(columns=['taxon_name_id','_version_'])
-taxon = taxon.replace({nan:None})
+def get_existed_records(ids, rights_holder):
+    # ids = [f'occurrenceID:"{t}"' for t in ids]
+    limit = len(ids)
+    ids = ','.join(ids)
+    query = { "query": "*:*",
+                    "offset": 0,
+                    "filter": [f"rightsHolder:{rights_holder}",
+                               "{!terms f=occurrenceID} "+ ids],
+                    "limit": limit,
+                    "fields": ['id', 'occurrenceID']
+                    }
+    response = requests.post(f'http://solr:8983/solr/tbia_records/select', data=json.dumps(query), headers={'content-type': "application/json" })
+    resp = response.json()
+    existed_records = resp['response']['docs']
+    existed_records = pd.DataFrame(existed_records)
+    existed_records = existed_records.rename(columns={'id': 'tbiaID'})
+    # taxon = taxon.drop(columns=['taxon_name_id','_version_'])
+    # taxon = taxon.replace({nan:None})
+    return existed_records
+
+
+
 
 
 def match_name(matching_name, sci_name, original_name, is_parent, match_stage, sci_names, source_family, source_class, source_order, sci_index):

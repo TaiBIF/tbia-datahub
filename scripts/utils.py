@@ -8,6 +8,27 @@ import psycopg2
 import sqlalchemy as sa
 import requests
 from sqlalchemy.dialects.postgresql import insert
+import json
+
+def get_taxon_df(taxon_ids):
+    limit = len(taxon_ids)
+    ids = ','.join(taxon_ids)
+    query = { "query": "*:*",
+                    "offset": 0,
+                    "filter": ["{!terms f=id} "+ ids],
+                    "limit": limit,
+                    # "fields": ['id', 'occurrenceID']
+                    }
+    response = requests.post(f'http://solr:8983/solr/taxa/select', data=json.dumps(query), headers={'content-type': "application/json" })
+    resp = response.json()
+    taxon = resp['response']['docs']
+    taxon = pd.DataFrame(taxon)
+    taxon = taxon.rename(columns={'id': 'taxonID'})
+    taxon = taxon.drop(columns=['taxon_name_id','_version_'],errors='ignore')
+    taxon = taxon.replace({nan:None})
+    return taxon
+
+
 
 issue_map = {
     1: 'higherrank',
@@ -245,12 +266,12 @@ def zip_match_log(group, info_id):
     return a
 
 
-def delete_records(rights_holder,group):
+def delete_records(rights_holder,group,update_version):
     # 刪除is_deleted的records & match_log
     query = """
                 WITH moved_rows AS (
                     DELETE FROM records a
-                    WHERE a.is_deleted = 't' and a."rightsHolder" = '{}' and a."group" = '{}'
+                    WHERE a.update_version != {} and a."rightsHolder" = '{}' and a."group" = '{}'
                     RETURNING a."tbiaID", a."occurrenceID", a."rightsHolder", a."group"
                 ), delete_match_log AS (
                     DELETE FROM match_log 
@@ -258,7 +279,7 @@ def delete_records(rights_holder,group):
                 )
                 INSERT INTO deleted_records ("tbiaID", "occurrenceID", "rights_holder", "group", "deleted")
                 SELECT *, NOW() as deleted FROM moved_rows;
-                """.format(rights_holder, group)
+                """.format(update_version, rights_holder, group)
     conn = psycopg2.connect(**db_settings)
     with conn.cursor() as cursor:
         execute_line = cursor.execute(query)

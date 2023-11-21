@@ -19,7 +19,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import sqlalchemy as sa
 
-from scripts.taxon.match_taibif_utils import get_taxon_df
+from scripts.utils import get_taxon_df
 # with db.begin() as conn:
 #     qry = sa.text("select * from taxon")
 #     resultset = conn.execute(qry)
