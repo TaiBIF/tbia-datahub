@@ -82,9 +82,12 @@ while has_more_data:
         min_id = df.id.max()
         df = df.drop(columns=['id'])
         df = df.rename(columns={'tbiaID': 'id'})
-        taxon = get_taxon_df(taxon_ids=df[df.taxonID.notnull()].taxonID.to_list())
-        # taxonID
-        final_df = df.merge(taxon,on='taxonID',how='left')
+        if len(df[df.taxonID.notnull()]):
+            taxon = get_taxon_df(taxon_ids=df[df.taxonID.notnull()].taxonID.to_list())
+            # taxonID
+            final_df = df.merge(taxon,on='taxonID',how='left')
+        else:
+            final_df = df
         # a = df[df.taxonID.notnull()].merge(taxon,on='taxonID',)
         # parentTaxonID
         # b = df[df.parentTaxonID.notnull()].drop(columns=['taxonID']).merge(taxon, left_on='parentTaxonID', right_on='taxonID')
