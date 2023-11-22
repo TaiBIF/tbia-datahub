@@ -297,8 +297,9 @@ df = df.replace({np.nan: None, '': None})
 # 更新資料
 if 'occurrenceID' in df.keys():
     df['occurrenceID'] = df['occurrenceID'].astype('str')
-    existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
+    existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
     existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder)
+    existed_records = existed_records.replace({nan:''})
     # with db.begin() as conn:
     #     qry = sa.text("""select "tbiaID", "occurrenceID", "created" from records  
     #                     where "rightsHolder" = '{}' AND "occurrenceID" IN {}  """.format(rights_holder, str(df.occurrenceID.to_list()).replace('[','(').replace(']',')')) )
@@ -306,7 +307,7 @@ if 'occurrenceID' in df.keys():
     #     results = resultset.mappings().all()
     #     existed_records = pd.DataFrame(results)
     if len(existed_records):
-        df =  df.merge(existed_records,on=["occurrenceID"], how='left')
+        df =  df.merge(existed_records,on=["occurrenceID","datasetName"], how='left')
         df = df.replace({nan: None})
         # 如果已存在，取存在的tbiaID
         df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)

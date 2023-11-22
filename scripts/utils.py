@@ -21,7 +21,7 @@ def get_existed_records(ids, rights_holder):
                     "filter": [f"rightsHolder:{rights_holder}",
                                "{!terms f=occurrenceID} "+ ids],
                     "limit": limit,
-                    "fields": ['id', 'occurrenceID']
+                    "fields": ['id', 'occurrenceID', 'datasetName']
                     }
     response = requests.post(f'http://solr:8983/solr/tbia_records/select', data=json.dumps(query), headers={'content-type': "application/json" })
     resp = response.json()

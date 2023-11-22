@@ -179,10 +179,11 @@ for d in dataset_list:
                 #     resultset = conn.execute(qry)
                 #     results = resultset.mappings().all()
                 #     existed_records = pd.DataFrame(results)
-                existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
+                existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
                 existed_records = get_existed_records(ids=df['occurrenceID'].to_list(), rights_holder=rights_holder)
+                existed_records = existed_records.replace({nan:''})
                 if len(existed_records):
-                    df = df.merge(existed_records,on=["occurrenceID"], how='left')
+                    df = df.merge(existed_records,on=["occurrenceID","datasetName"], how='left')
                     df = df.replace({nan: None})
                     # 如果已存在，取存在的tbiaID
                     df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
