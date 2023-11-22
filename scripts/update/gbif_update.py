@@ -108,6 +108,16 @@ if response.status_code == 200:
     dataset = dataset[~dataset.gbifDatasetID.isin(duplicated_dataset_list)]
     dataset_list = dataset[['taibifDatasetID','numberOccurrence']].to_dict('tight')['data']
 
+
+# for d in dataset_list:
+#     url = f"https://portal.taibif.tw/api/v2/occurrence/detail_occ?taibifDatasetID={d[0]}&rows=1000&offset=0"
+#     response = requests.get(url)
+#     if response.status_code == 200:
+#         result = response.json()
+#         if d[1] != result['count']:
+#             print(d[0], d[1], result['count'])
+
+
 now = datetime.now() + timedelta(hours=8)
 
 d_list_index = 0
@@ -135,8 +145,7 @@ for d in dataset_list: # 20
         if len(data):
             df = pd.DataFrame(data)
             df = df.rename(columns= {
-                                    'occurrenceID': 'sourceOccurrenceID',
-                                    'taibifOccurrenceID': 'occurrenceID', # 使用TaiBIF給的id, 避免空值
+                                    'taibifOccurrenceID': 'sourceOccurrenceID', # 使用TaiBIF給的id, 避免空值
                                     'scientificName': 'sourceScientificName',
                                     'taxonRank': 'sourceTaxonRank',
                                     'isPreferredName': 'sourceVernacularName',
@@ -211,7 +220,8 @@ for d in dataset_list: # 20
                             df['recordType'] = 'occ'
                     else:
                         df['recordType'] = 'occ'
-                    df.loc[i,'references'] = f"https://portal.taibif.tw/occurrence/{row.occurrenceID}" if row.occurrenceID else None
+                    # 使用GBIF ID
+                    df.loc[i, 'references'] = f"https://www.gbif.org/occurrence/{row.gbifID}" if row.gbifID else None
                     # 如果有mediaLicense才放associatedMedia
                     if not row.mediaLicense:
                         df.loc[i,'associatedMedia'] = None            
