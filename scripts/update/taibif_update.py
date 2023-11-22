@@ -285,6 +285,7 @@ for d in dataset_list: # 20
                 df = df.rename(columns=({'id': 'tbiaID'}))
                 df['update_version'] = int(update_version)
                 # df = df.drop(columns=psql_records_key,errors='ignore')
+                df = df.drop(columns=['gbifID'])
                 df.to_sql('records', db, # schema='my_schema',
                         if_exists='append',
                         index=False,
