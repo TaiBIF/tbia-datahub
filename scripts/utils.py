@@ -10,7 +10,7 @@ import requests
 from sqlalchemy.dialects.postgresql import insert
 import json
 import pandas as pd
-
+from dateutil import parser
 
 def get_existed_records(ids, rights_holder):
     # ids = [f'occurrenceID:"{t}"' for t in ids]
@@ -62,7 +62,7 @@ issue_map = {
 
 date_formats = ['%Y/%m/%d','%Y%m%d','%Y-%m-%d','%Y/%m/%d %H:%M:%S','%Y-%m-%d %H:%M',
                 '%Y/%m/%d %H:%M','%Y-%m-%d %H:%M:%S','%Y/%m/%d %H:%M:%S',
-                '%Y/%m/%d %p %I:%M:%S', '%Y/%m/%d %H', '%Y-%m-%d %H']
+                '%Y/%m/%d %p %I:%M:%S', '%Y/%m/%d %H', '%Y-%m-%d %H', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%SZ']
 
 def convert_date(date):
     formatted_date = None
@@ -73,6 +73,11 @@ def convert_date(date):
             try:
                 formatted_date = datetime.strptime(date, ff)
                 return formatted_date
+            except:
+                formatted_date = None
+        if not formatted_date:
+            try:
+                formatted_date = parser.parse(date)
             except:
                 formatted_date = None
         if not formatted_date:
