@@ -145,7 +145,8 @@ for d in dataset_list: # 20
         if len(data):
             df = pd.DataFrame(data)
             df = df.rename(columns= {
-                                    'taibifOccurrenceID': 'sourceOccurrenceID', # 使用TaiBIF給的id, 避免空值
+                                    'occurrenceID': 'sourceOccurrenceID',
+                                    'taibifOccurrenceID': 'occurrenceID', # 使用TaiBIF給的id, 避免空值
                                     'scientificName': 'sourceScientificName',
                                     'taxonRank': 'sourceTaxonRank',
                                     'isPreferredName': 'sourceVernacularName',
