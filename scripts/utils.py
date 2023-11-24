@@ -187,8 +187,13 @@ basis_dict = {
     "材料實體": "MaterialEntity",
     "分類群": "Taxon",
     "出現紀錄": "Occurrence",
-    "調查活動": "Event"
+    "調查活動": "Event",
+    "材料引用": "MaterialCitation", # GBIF資料
+    "組織樣本": "MaterialSample", # GBIF資料
+    "人類調查": "HumanObservation" # GBIF資料
+
 }
+
 
 def control_basis_of_record(basisOfRecord):
     if basisOfRecord in basis_dict.keys():

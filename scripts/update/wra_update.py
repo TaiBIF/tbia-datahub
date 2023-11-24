@@ -135,6 +135,7 @@ for d in dataset_list:
                 # 數量 
                 df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
                 # basisOfRecord
+                df['basisOfRecord'] = df['basisOfRecord'].apply(lambda x: control_basis_of_record(x))
                 df['recordType'] = df.apply(lambda x: 'col' if 'Specimen' in x.basisOfRecord else 'occ', axis=1)
                 # dataGeneralizations
                 df['dataGeneralizations'] = df['dataGeneralizations'].apply(lambda x: True if x else None)

@@ -67,7 +67,7 @@ for url in url_list:
         c = p
         while c < p + 10 and c < total_page:
             # print(c, url)
-            time.sleep(1)
+            time.sleep(3)
             if url.find('limit=1000') < 0:
                 url += '&limit=1000'
             if url.find(f"apikey={os.getenv('TBN_KEY')}") < 0:

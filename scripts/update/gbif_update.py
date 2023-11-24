@@ -209,6 +209,7 @@ for d in dataset_list: # 20
                 df['standardLongitude'] = None
                 df['standardLatitude'] = None
                 df['location_rpt'] = None
+                df['basisOfRecord'] = df['basisOfRecord'].apply(lambda x: control_basis_of_record(x))
                 for i in df.index:
                     # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
                     df.loc[i,'id'] = str(bson.objectid.ObjectId())
