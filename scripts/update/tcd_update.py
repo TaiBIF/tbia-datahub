@@ -101,7 +101,7 @@ for p in range(0,total_page,10):
         df['recordType'] = df.apply(lambda x: 'col' if '標本' in x.basisOfRecord else 'occ', axis=1)
         df['basisOfRecord'] = df['basisOfRecord'].apply(lambda x: control_basis_of_record(x))
         # dataGeneralizations
-        df['dataGeneralizations'] = df['dataGeneralizations'].replace({'Y': True})
+        df['dataGeneralizations'] = df['dataGeneralizations'].replace({'Y': True, '': None})
         # 敏感層級
         df['sensitiveCategory'] = df['sensitiveCategory'].replace({'低敏感': '輕度'})
         # 經緯度
