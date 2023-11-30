@@ -46,7 +46,6 @@ if response.status_code == 200:
     else:
         update_version = 1
 
-
 url = f"https://taifdb.tfri.gov.tw/apis/data.php?limit=1"
 response = requests.get(url, verify=False)
 c = 0
@@ -66,7 +65,7 @@ for p in range(0,total_page,10):
         offset = c*300
         print('offset:',offset)
         # time.sleep(30)
-        url = f"https://taifdb.tfri.gov.tw/apis/data.php?limit=300&offset={offset}"
+        url = f"https://taifdb.tfri.gov.tw/apis/data.php?limit=300&offset={offset}&k={os.getenv('TAIF_KEY')}"
         response = requests.get(url, verify=False)
         if response.status_code == 200:
             result = response.json()
@@ -76,27 +75,13 @@ for p in range(0,total_page,10):
     df = df[~(df.isPreferredName.isin([nan,'',None])&df.scientificName.isin([nan,'',None]))]
     if len(df):
         df = df.reset_index(drop=True)
-        df = df.replace({np.nan: '', 'NA': ''})
+        df = df.replace({nan: '', 'NA': ''})
         df = df.rename(columns={'modified': 'sourceModified', 'scientificName': 'sourceScientificName',
                                 'isPreferredName': 'sourceVernacularName', 'taxonRank': 'sourceTaxonRank'})
         sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
         sci_names = matching_flow(sci_names)
         df = df.drop(columns=['taxonID'], errors='ignore')
         match_taxon_id = sci_names
-        # taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique()) + list(sci_names[sci_names.parentTaxonID!=''].parentTaxonID.unique())
-        # taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique()) 
-        # final_taxon = taxon[taxon.taxonID.isin(taxon_list)]
-        # final_taxon = pd.DataFrame(final_taxon)
-        # if len(final_taxon):
-        #     match_taxon_id = sci_names.merge(final_taxon)
-        #     # 若沒有taxonID的 改以parentTaxonID串
-        #     # match_parent_taxon_id = sci_names.drop(columns=['taxonID']).merge(final_taxon,left_on='parentTaxonID',right_on='taxonID')
-        #     # match_parent_taxon_id['taxonID'] = ''
-        #     # match_taxon_id = pd.concat([match_taxon_id, match_parent_taxon_id], ignore_index=True)
-        #     # 如果都沒有對到 要再加回來
-        #     match_taxon_id = pd.concat([match_taxon_id,sci_names[~sci_names.sci_index.isin(match_taxon_id.sci_index.to_list())]], ignore_index=True)
-        #     match_taxon_id = match_taxon_id.replace({nan: ''})
-        #     match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
         if len(match_taxon_id):
             match_taxon_id = match_taxon_id.replace({nan: ''})
             match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
@@ -129,11 +114,21 @@ for p in range(0,total_page,10):
             # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
             df.loc[i,'id'] = str(bson.objectid.ObjectId())
             row = df.loc[i]
+            # 如果有mediaLicense才放associatedMedia
+            if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
+                if not row.mediaLicense:
+                    df.loc[i,'associatedMedia'] = None
+            # 幫忙補dataGeneralizations
             standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
             if standardLon and standardLat:
-                df.loc[i,'standardLongitude'] = standardLon
-                df.loc[i,'standardLatitude'] = standardLat
-                df.loc[i,'location_rpt'] = location_rpt
+                df.loc[i, 'dataGeneralizations'] = True
+                df.loc[i, 'standardRawLongitude'] = standardLon
+                df.loc[i, 'standardRawLatitude'] = standardLat
+                df.loc[i, 'raw_location_rpt'] = location_rpt
+                df.loc[i, 'verbatimRawLatitude'] = float(row.verbatimLatitude)
+                df.loc[i, 'verbatimRawLongitude'] = float(row.verbatimLongitude)
+                # df.loc[i, 'standardLongitude'] = None
+                # df.loc[i, 'standardLatitude'] = None
                 grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
                 df.loc[i, 'grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
                 grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
@@ -142,6 +137,9 @@ for p in range(0,total_page,10):
                 df.loc[i, 'grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
                 grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
                 df.loc[i, 'grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
+        # 屏蔽原始資料
+        df['verbatimLongitude'] = None
+        df['verbatimLatitude'] = None    
         # 資料集
         ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
         update_dataset_key(ds_name=ds_name, rights_holder=rights_holder)

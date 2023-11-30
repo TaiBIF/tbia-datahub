@@ -159,8 +159,9 @@ for d in dataset_list:
                     # if gbif_id:
                     #     df.loc[i, 'references'] = f"https://www.gbif.org/occurrence/{gbif_id}" 
                     # 如果有mediaLicense才放associatedMedia
-                    if not row.mediaLicense:
-                        df.loc[i,'associatedMedia'] = None            
+                    if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
+                        if not row.mediaLicense:
+                            df.loc[i,'associatedMedia'] = None
                     standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
                     if standardLon and standardLat:
                         df.loc[i,'standardLongitude'] = standardLon

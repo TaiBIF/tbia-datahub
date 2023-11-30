@@ -168,6 +168,10 @@ for url in url_list:
                 # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
                 df.loc[i,'id'] = str(bson.objectid.ObjectId())
                 row = df.loc[i]
+                # 如果有mediaLicense才放associatedMedia
+                if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
+                    if not row.mediaLicense:
+                        df.loc[i,'associatedMedia'] = None       
                 # 座標模糊化
                 try:
                     coordinatePrecision = float(row.coordinatePrecision)

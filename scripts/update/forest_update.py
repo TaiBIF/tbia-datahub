@@ -78,7 +78,7 @@ for p in range(0,total_page,10):
     df = df[~df.datasetName.isin([duplicated_dataset_list])]
     if len(df):
         df = df.reset_index(drop=True)
-        df = df.replace({np.nan: '', 'NA': ''})
+        df = df.replace({nan: '', 'NA': '', '-99999': ''})
         df = df.rename(columns={'created': 'sourceCreated', 'modified': 'sourceModified', 'scientificName': 'sourceScientificName',
                                 'isPreferredName': 'sourceVernacularName', 'taxonRank': 'sourceTaxonRank'})
         sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
@@ -133,11 +133,15 @@ for p in range(0,total_page,10):
             # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
             df.loc[i,'id'] = str(bson.objectid.ObjectId())
             row = df.loc[i]
+            if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
+                if not row.mediaLicense:
+                    df.loc[i,'associatedMedia'] = None
             # 2023-05-24 改成直接回傳未模糊化座標
             try:
                 coordinatePrecision = float(row.coordinatePrecision)
             except:
                 coordinatePrecision = None
+            # TODO 這邊可能會有座標沒有模糊化，如果沒辦法判斷的話
             if row.dataGeneralizations and coordinatePrecision:
                 standardRawLon, standardRawLat, raw_location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
                 if standardRawLon and standardRawLat:

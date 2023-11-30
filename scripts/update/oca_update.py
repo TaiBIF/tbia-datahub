@@ -270,6 +270,10 @@ df['location_rpt'] = None
 for i in df.index:
     df.loc[i,'id'] = str(bson.objectid.ObjectId())
     row = df.loc[i]
+    # 如果有mediaLicense才放associatedMedia
+    if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
+        if not row.mediaLicense:
+            df.loc[i,'associatedMedia'] = None
     if any(ext in str(row.verbatimLongitude) for ext in ['N', 'S', 'W', 'E']) or any(ext in str(row.verbatimLatitude) for ext in ['N', 'S', 'W', 'E']):
         lon, lat = convert_to_decimal(row.verbatimLongitude, row.verbatimLatitude)
     else:
@@ -291,7 +295,7 @@ for i in df.index:
 ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
 update_dataset_key(ds_name=ds_name, rights_holder=rights_holder)
 
-df = df.replace({np.nan: None, '': None})
+df = df.replace({nan: None, '': None})
 
 # 更新match_log
 # 更新資料

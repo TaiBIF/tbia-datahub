@@ -224,9 +224,9 @@ for d in dataset_list: # 20
                         df['recordType'] = 'occ'
                     # 使用GBIF ID
                     df.loc[i, 'references'] = f"https://www.gbif.org/occurrence/{row.gbifID}" if row.gbifID else None
-                    # 如果有mediaLicense才放associatedMedia
-                    if not row.mediaLicense:
-                        df.loc[i,'associatedMedia'] = None            
+                    if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
+                        if not row.mediaLicense:
+                            df.loc[i,'associatedMedia'] = None          
                     standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
                     if standardLon and standardLat:
                         df.loc[i,'standardLongitude'] = standardLon

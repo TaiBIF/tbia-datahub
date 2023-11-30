@@ -132,6 +132,9 @@ for p in range(0,total_page,10):
             mediaLicense = ';'.join([am['licence'] for am in row.associatedMedia])
             df.loc[i, 'associatedMedia'] = associatedMedia
             df.loc[i, 'mediaLicense'] = mediaLicense
+            if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
+                if not row.mediaLicense:
+                    df.loc[i,'associatedMedia'] = None
             standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
             if standardLon and standardLat:
                 df.loc[i,'standardLongitude'] = standardLon

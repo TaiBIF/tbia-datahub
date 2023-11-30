@@ -231,8 +231,9 @@ for d in dataset_list: # 20
                         df['recordType'] = 'occ'
                     df.loc[i,'references'] = f"https://portal.taibif.tw/occurrence/{row.occurrenceID}" if row.occurrenceID else None
                     # 如果有mediaLicense才放associatedMedia
-                    if not row.mediaLicense:
-                        df.loc[i,'associatedMedia'] = None            
+                    if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
+                        if not row.mediaLicense:
+                            df.loc[i,'associatedMedia'] = None                
                     standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
                     if standardLon and standardLat:
                         df.loc[i,'standardLongitude'] = standardLon
