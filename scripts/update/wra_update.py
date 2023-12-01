@@ -209,7 +209,7 @@ for d in dataset_list:
                 # records要用更新的
                 # 已經串回原本的tbiaID，可以用tbiaID做更新
                 df['is_deleted'] = False
-                df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','taxon_name_id','sci_index','gbifDatasetID'],errors='ignore')
+                df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','taxon_name_id','sci_index','gbifDatasetID','gbifID'],errors='ignore')
                 # 最後再一起匯出
                 # # 在solr裡 要使用id當作名稱 而非tbiaID
                 # df.to_csv(f'/solr/csvs/updated/{group}_{info_id}_{p}.csv', index=False)
