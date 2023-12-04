@@ -212,7 +212,7 @@ df = final_df
 
 df = df[~(df.sourceVernacularName.isin([nan,'',None])&df.sourceScientificName.isin([nan,'',None]))]
 df = df.reset_index(drop=True)
-df = df.replace({nan: '', 'NA': '', '-99999': ''})
+df = df.replace({nan: '', 'NA': '', '-99999': '', 'N/A': ''})
 
 
 sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
@@ -300,6 +300,7 @@ df = df.replace({nan: None, '': None})
 # 更新match_log
 # 更新資料
 if 'occurrenceID' in df.keys():
+    df['occurrenceID'] = df['occurrenceID'].replace({ None: ''})
     df['occurrenceID'] = df['occurrenceID'].astype('str')
     existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
     existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder)
@@ -321,6 +322,9 @@ if 'occurrenceID' in df.keys():
         df = df.drop(columns=['tbiaID'])
 else:
     df['occurrenceID'] = ''
+
+
+df = df.replace({nan: None, '': None})
 
 # match_log要用更新的
 match_log = df[['occurrenceID','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','group','rightsHolder','created','modified']]

@@ -129,7 +129,7 @@ class Records(Base):
 
 
 
-# class Taxon(models.Model):
+# 應deprecated
 class Taxon(Base):
     __tablename__ = "taxon"
 
