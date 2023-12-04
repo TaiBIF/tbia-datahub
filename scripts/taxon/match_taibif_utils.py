@@ -10,7 +10,7 @@ import urllib
 import numpy as np
 from datetime import datetime, timedelta
 import sqlalchemy as sa
-
+from scripts.utils import get_namecode
 
 issue_map = {
     1: 'higherrank',
@@ -146,31 +146,31 @@ def match_namecode(matching_namecode, sci_name, match_stage, sci_names, sci_inde
     # 改成用TaiCOL API
     # taxon_name_id = None
     taxon_data = []
-    name_res = requests.get(f'https://api.taicol.tw/v2/namecode?namecode={matching_namecode}')
-    if name_res.status_code == 200:
-        if name_data := name_res.json().get('data'):
-            # for d in name_data:
-            #     print(d)
-            # tmp = [d['taxon'] for d in name_data if d.get('usage_status') !='misapplied']
-            name_data = name_data[0] # 一個 namecode 對應一個 taxon_name_id
-            taxon_data = pd.DataFrame(name_data.get('taxon'), columns=['taxon_id','usage_status'])
-            # 不用排除誤用，但優先序為 有效 -> 無效 -> 誤用
-            # 如果有accepted，僅考慮accepted
-            if len(taxon_data[taxon_data.usage_status=='accepted']):
-                taxon_data = taxon_data[taxon_data.usage_status=='accepted']
-            # 如果沒有accepted，但有not-accepted，僅考慮not-accepted
-            elif len(taxon_data[taxon_data.usage_status=='not-accepted']):
-                taxon_data = taxon_data[taxon_data.usage_status=='not-accepted']
-            taxon_data = taxon_data.taxon_id.to_list()
-            # for n in name_data:
-            #     for tt in n.get('taxon'):
-            #         if tt.get('usage_status') != 'misapplied':
-            #             taxon_data.append(tt.get('taxon_id'))
-            if len(taxon_data) == 1:
-                sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = taxon_data[0]
-                sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = None
-            else:
-                sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 4
+    # name_res = requests.get(f'https://api.taicol.tw/v2/namecode?namecode={matching_namecode}')
+    # if name_res.status_code == 200:
+    if name_data := get_namecode(matching_namecode):
+        # for d in name_data:
+        #     print(d)
+        # tmp = [d['taxon'] for d in name_data if d.get('usage_status') !='misapplied']
+        name_data = name_data[0] # 一個 namecode 對應一個 taxon_name_id
+        taxon_data = pd.DataFrame(name_data.get('taxon'), columns=['taxon_id','usage_status'])
+        # 不用排除誤用，但優先序為 有效 -> 無效 -> 誤用
+        # 如果有accepted，僅考慮accepted
+        if len(taxon_data[taxon_data.usage_status=='accepted']):
+            taxon_data = taxon_data[taxon_data.usage_status=='accepted']
+        # 如果沒有accepted，但有not-accepted，僅考慮not-accepted
+        elif len(taxon_data[taxon_data.usage_status=='not-accepted']):
+            taxon_data = taxon_data[taxon_data.usage_status=='not-accepted']
+        taxon_data = taxon_data.taxon_id.to_list()
+        # for n in name_data:
+        #     for tt in n.get('taxon'):
+        #         if tt.get('usage_status') != 'misapplied':
+        #             taxon_data.append(tt.get('taxon_id'))
+        if len(taxon_data) == 1:
+            sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = taxon_data[0]
+            sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = None
+        else:
+            sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 4
 
 
 

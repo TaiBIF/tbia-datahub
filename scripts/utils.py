@@ -12,6 +12,59 @@ import json
 import pandas as pd
 from dateutil import parser
 
+import pymysql
+
+from dotenv import load_dotenv
+import os
+load_dotenv(override=True)
+
+
+
+taicol_db_settings = {
+    "host": os.getenv('TaiCOL_DB_HOST'),
+    "port": int(os.getenv('TaiCOL_DB_PORT')),
+    "user": os.getenv('TaiCOL_DB_USER'),
+    "password": os.getenv('TaiCOL_DB_PASSWORD'),
+    "database": os.getenv('TaiCOL_DB_DBNAME'),
+}
+
+
+def get_namecode(namecode):
+    conn = pymysql.connect(**taicol_db_settings)
+    with conn.cursor() as cursor:     
+        query = """
+        WITH cte
+            AS
+            (
+                SELECT distinct anc.namecode, anc.taxon_name_id, atu.taxon_id, atu.status, at.is_deleted
+                FROM api_namecode anc
+                LEFT JOIN api_taxon_usages atu ON atu.taxon_name_id = anc.taxon_name_id
+                LEFT JOIN api_taxon at ON at.taxon_id = atu.taxon_id
+                WHERE anc.namecode = %s
+            )
+        SELECT namecode, taxon_name_id, 
+        JSON_ARRAYAGG(JSON_OBJECT('taxon_id', taxon_id, 'status', status, 'is_deleted', is_deleted))
+        FROM cte GROUP BY namecode, taxon_name_id;
+        """
+        cursor.execute(query, (namecode))
+        df = pd.DataFrame(cursor.fetchall(), columns=['namecode', 'name_id', 'taxon'])
+        for i in df.index:
+            row = df.iloc[i]
+            taxon_tmp = json.loads(row.taxon)
+            taxon_final = []
+            for t in taxon_tmp:
+                if t.get('is_deleted'):
+                    taxon_final.append({'taxon_id': t.get('taxon_id'), 'usage_status': 'deleted'})
+                elif t.get('taxon_id'):
+                    taxon_final.append({'taxon_id': t.get('taxon_id'), 'usage_status': t.get('status')})
+            df.loc[i,'taxon'] = json.dumps(taxon_final)
+        if len(df):
+            df['taxon'] = df['taxon'].replace({np.nan:'[]'})
+            df['taxon'] = df['taxon'].apply(json.loads)
+        return df.to_dict('records')
+
+
+
 def get_existed_records(ids, rights_holder):
     # ids = [f'occurrenceID:"{t}"' for t in ids]
     limit = len(ids)
