@@ -9,7 +9,7 @@ import re
 import urllib
 import numpy as np
 from datetime import datetime, timedelta
-from scripts.utils import get_namecode
+from scripts.utils import get_namecode, get_namecode_tmp
 
 import sqlalchemy as sa
 
@@ -153,7 +153,7 @@ def match_namecode(matching_namecode, sci_name, match_stage, sci_names, sci_inde
     taxon_data = []
     # name_res = requests.get(f'https://api.taicol.tw/v2/namecode?namecode={matching_namecode}')
     # if name_res.status_code == 200:
-    if name_data := get_namecode(matching_namecode):
+    if name_data := get_namecode_tmp(matching_namecode):
         # for d in name_data:
         #     print(d)
         # tmp = [d['taxon'] for d in name_data if d.get('usage_status') !='misapplied']
@@ -176,6 +176,19 @@ def match_namecode(matching_namecode, sci_name, match_stage, sci_names, sci_inde
             sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = None
         else:
             sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 4
+
+def match_namecode_tmp(matching_namecode, sci_name, match_stage, sci_names, sci_index):
+    # 這邊不會有fuzzy的問題 因為直接用namecode對應
+    # 也不考慮高階層
+    try:
+        matching_namecode = str(int(matching_namecode))
+    except:
+        pass
+    if taxon_id:= get_namecode_tmp(matching_namecode):
+        sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = taxon_id
+        sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = None
+    else:
+        sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 4
 
 
 def matching_flow(sci_names):
