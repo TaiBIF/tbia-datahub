@@ -62,6 +62,48 @@ def get_namecode(namecode):
             df['taxon'] = df['taxon'].replace({np.nan:'[]'})
             df['taxon'] = df['taxon'].apply(json.loads)
         return df.to_dict('records')
+    
+
+
+def get_namecode_tmp(namecode):
+    conn = pymysql.connect(**taicol_db_settings)
+    with conn.cursor() as cursor:     
+        query = """
+        SELECT taxon_name_id FROM api_namecode where namecode = %s;
+        """
+        cursor.execute(query, (namecode))
+        resp = cursor.fetchone()
+        if resp:
+            taxon_name_id = resp[0]
+            response = requests.get(f'http://solr:8983/solr/taxa/select?q=taxon_name_id:{taxon_name_id}&fl=id')
+            resp = response.json()
+            taxon = resp['response']['docs']
+            if len(taxon):
+                return taxon[0]['id']
+            else:
+                return None
+        else:
+            return None
+            # taxon = pd.DataFrame(taxon)
+            # taxon = taxon.rename(columns={'id': 'taxonID'})
+            # taxon = taxon.drop(columns=['taxon_name_id','_version_'],errors='ignore')
+
+            
+
+        # for i in df.index:
+        #     row = df.iloc[i]
+        #     taxon_tmp = json.loads(row.taxon)
+        #     taxon_final = []
+        #     for t in taxon_tmp:
+        #         if t.get('is_deleted'):
+        #             taxon_final.append({'taxon_id': t.get('taxon_id'), 'usage_status': 'deleted'})
+        #         elif t.get('taxon_id'):
+        #             taxon_final.append({'taxon_id': t.get('taxon_id'), 'usage_status': t.get('status')})
+        #     df.loc[i,'taxon'] = json.dumps(taxon_final)
+        # if len(df):
+        #     df['taxon'] = df['taxon'].replace({np.nan:'[]'})
+        #     df['taxon'] = df['taxon'].apply(json.loads)
+        # return df.to_dict('records')
 
 
 
