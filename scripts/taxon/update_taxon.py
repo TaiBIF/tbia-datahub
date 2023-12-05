@@ -120,8 +120,6 @@ for r in rights_list:
                     if_exists='append',
                     index=False,
                     method=records_upsert)
-            # 下一次query最小的id
-            min_id = df.id.max()
             offset += limit
         if len(results) < limit:
             has_more_data = False
