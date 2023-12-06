@@ -667,6 +667,10 @@
     <field name="grid_5" type="string"/>
     <field name="grid_10" type="string"/>
     <field name="grid_100" type="string"/>
+    <field name="grid_1_blurred" type="string"/>
+    <field name="grid_5_blurred" type="string"/>
+    <field name="grid_10_blurred" type="string"/>
+    <field name="grid_100_blurred" type="string"/>
     <!-- 
     <field name="grid_x_1" type="pint" uninvertible="false" docValues="true" indexed="true" stored="true"/>
     <field name="grid_y_1" type="pint" uninvertible="false" docValues="true" indexed="true" stored="true"/>
