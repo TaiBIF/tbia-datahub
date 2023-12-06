@@ -2,7 +2,7 @@ import time
 from app import db
 import sqlalchemy as sa
 
-
+has_more_data = True
 min_id = 1
 offset = 0
 while has_more_data:
@@ -30,4 +30,4 @@ while has_more_data:
             has_more_data = False
 
 
-print('done!')
+print('done!', offset)
