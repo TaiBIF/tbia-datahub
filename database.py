@@ -98,10 +98,16 @@ class Records(Base):
     verbatimRawLatitude: Mapped[Optional[str]] = mapped_column(String(10000))
     verbatimRawLongitude: Mapped[Optional[str]] = mapped_column(String(10000))
     verbatimSRS: Mapped[Optional[str]] = mapped_column(String(10000))
+    # 未模糊化網格
     grid_1: Mapped[Optional[str]] = mapped_column(String(50))
     grid_5: Mapped[Optional[str]] = mapped_column(String(50))
     grid_10: Mapped[Optional[str]] = mapped_column(String(50))
     grid_100: Mapped[Optional[str]] = mapped_column(String(50))
+    # 模糊化網格
+    grid_1_blurred: Mapped[Optional[str]] = mapped_column(String(50))
+    grid_5_blurred: Mapped[Optional[str]] = mapped_column(String(50))
+    grid_10_blurred: Mapped[Optional[str]] = mapped_column(String(50))
+    grid_100_blurred: Mapped[Optional[str]] = mapped_column(String(50))
     scientificNameID: Mapped[Optional[str]] = mapped_column(String(10000), index=True) # 原始資料提供
     # 為了因應某些單位有自己的學名系統 如TBN taxonUUID or TaiBIF的gbifAcceptedID
     sourceTaxonID: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
