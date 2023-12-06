@@ -28,7 +28,7 @@ if response.status_code == 200:
         s = time.time()
         new_date = convert_date(d)
         # 找出所有相對應的tbiaID並更新
-        url = f"http://solr:8983/solr/tbia_records/select?facet.field=id&facet.limit=-1&facet.mincount=1&facet=true&indent=true&q.op=OR&q=eventDate%3A%22--01%22&rows=0&start=0"
+        url = f"http://solr:8983/solr/tbia_records/select?facet.field=id&facet.limit=-1&facet.mincount=1&facet=true&indent=true&q.op=OR&q=eventDate%3A%22{d}%22&rows=0&start=0"
         new_resp = requests.get(url)
         tbia_ids = new_resp.json()['facet_counts']['facet_fields']['id']
         tbia_ids = [tbia_ids[x] for x in range(0, len(tbia_ids),2)]
