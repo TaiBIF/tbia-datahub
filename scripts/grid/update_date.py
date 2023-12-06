@@ -5,7 +5,7 @@ from app import db_settings
 from psycopg2.extras import execute_values
 import time
 
-import datetime
+from datetime import datetime
 
 # date_formats = ['%Y0%m0%d']
 
