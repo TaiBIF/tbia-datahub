@@ -6,6 +6,8 @@ from psycopg2.extras import execute_values
 import time
 
 
+# 18553787
+
 has_more_data = True
 limit = 1000
 offset = 0
@@ -60,7 +62,10 @@ while has_more_data:
                 conn = psycopg2.connect(**db_settings)
                 curs = conn.cursor()  # Assuming you already got the connection object
                 execute_values(curs, sql, new_data)
+                conn.commit()
+                conn.close()
             print(offset, time.time()-s)
             offset += limit
         else:
             has_more_data = False
+
