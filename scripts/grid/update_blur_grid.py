@@ -6,18 +6,19 @@ from psycopg2.extras import execute_values
 import time
 
 
-# 18553787
 
 has_more_data = True
 limit = 1000
 offset = 0
 while has_more_data:
     s = time.time()
-    response = requests.get(f'http://solr:8983/solr/tbia_records/select?fl=id%2CstandardLatitude%2CstandardLongitude&indent=true&q.op=OR&q=location_rpt%3A*&rows={limit}&sort=id%20desc&start={offset}')
+    # 只更新有敏感資料原始座標的
+    response = requests.get(f'http://solr:8983/solr/tbia_records/select?fl=id%2CstandardLatitude%2CstandardLongitude&indent=true&q.op=OR&q=raw_location_rpt%3A*&rows={limit}&sort=id%20desc&start={offset}')
     if response.status_code == 200:
         resp = response.json()
         data = resp['response']['docs']
         if len(data):
+            print(data[0]['id'])
             new_data = []
             for d in data:
                 tmp_dict = {'id': d['id']}
@@ -47,6 +48,8 @@ while has_more_data:
                     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
                     tmp_dict['grid_100_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
                     new_data.append((tmp_dict['id'], tmp_dict['grid_1_blurred'], tmp_dict['grid_5_blurred'], tmp_dict['grid_10_blurred'], tmp_dict['grid_100_blurred']))
+                else:
+                    new_data.append((tmp_dict['id'],None,None,None,None))
             if len(new_data):
                 # 更新資料
                 sql = """
