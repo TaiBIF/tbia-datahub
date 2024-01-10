@@ -75,7 +75,7 @@ for p in range(0,total_page,10):
     df = pd.DataFrame(data)
     df = df[~(df.isPreferredName.isin([nan,'',None])&df.scientificName.isin([nan,'',None]))]
     # 排除重複資料集
-    df = df[~df.datasetName.isin([duplicated_dataset_list])]
+    df = df[~df.datasetName.isin(duplicated_dataset_list)]
     if len(df):
         df = df.reset_index(drop=True)
         df = df.replace({nan: '', 'NA': '', '-99999': ''})
