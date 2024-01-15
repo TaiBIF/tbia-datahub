@@ -6,3 +6,4 @@ pandas
 requests
 bson
 flask
+pymysql

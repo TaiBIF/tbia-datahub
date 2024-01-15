@@ -322,3 +322,22 @@ class SpeciesImages(Base):
     __table_args__ = (
         UniqueConstraint('namecode','taxon_name_id', name='namecode'),
     )
+
+
+# 資料更新紀錄
+class UpdateVersion(Base):
+    __tablename__ = "update_version"
+    
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    update_version: Mapped[Optional[int]]
+    current_page: Mapped[Optional[int]]
+    rights_holder:  Mapped[Optional[str]] = mapped_column(String(10000), index=True)
+    note: Mapped[Optional[str]] = mapped_column(JSON)
+    is_finished: Mapped[bool] = mapped_column(server_default='f')
+    created: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    modified: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint('rights_holder','update_version', name='update_unique'),
+    )

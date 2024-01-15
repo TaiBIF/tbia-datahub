@@ -28,6 +28,13 @@ taicol_db_settings = {
     "database": os.getenv('TaiCOL_DB_DBNAME'),
 }
 
+def format_float(num):
+    try:
+        num = float(num)
+        num = np.format_float_positional(num, trim='-')
+    except:
+        num = None
+    return num
 
 def get_namecode(namecode):
     conn = pymysql.connect(**taicol_db_settings)
@@ -109,6 +116,7 @@ def get_namecode_tmp(namecode):
 
 def get_existed_records(ids, rights_holder):
     # ids = [f'occurrenceID:"{t}"' for t in ids]
+    # TODO 這邊是不是還是要從postgres取得比較合適？也可以確保中斷後不會有重複的tbiaID產生
     limit = len(ids)
     ids = ','.join(ids)
     query = { "query": "*:*",
@@ -412,4 +420,189 @@ def delete_records(rights_holder,group,update_version):
         execute_line = cursor.execute(query)
         conn.commit()
     return execute_line
+
+
+
+def update_dataset_deprecated(rights_holder):
+    # 先抓出所有該rights_holder的dataset
+    conn = psycopg2.connect(**db_settings)
+    with conn.cursor() as cursor:     
+        query = """SELECT "name", record_type, id FROM dataset WHERE rights_holder = '{}' """.format(rights_holder)
+        cursor.execute(query)
+        datasets = pd.DataFrame(cursor.fetchall(), columns=['datasetName', 'record_type', 'dataset_id'])
+        if len(datasets):
+            datasets['dataset_id'].values.astype(int)
+            for i in datasets.index:
+                # if i ==0:
+                row = datasets.iloc[i]
+                # 用 name + record_type + rights_holder 去 query 看在records表中存不存在
+                query = """SELECT EXISTS ( select id from records where "datasetName" = '{}' 
+                    and "recordType" = '{}' and "rightsHolder" = '{}');""".format(row.datasetName, row.record_type, rights_holder)
+                cursor.execute(query)
+                res = cursor.fetchone()
+                # 存在 -> deprecated 改成 f
+                # 不存在 -> deprecated 改成 t                
+                if res[0] == True:
+                    update_query = "UPDATE dataset SET deprecated = 'f' WHERE id = {}".format(row.dataset_id)
+                else:
+                    update_query = "UPDATE dataset SET deprecated = 't' WHERE id = {}".format(row.dataset_id)
+                execute_line = cursor.execute(update_query)
+                conn.commit()
+
+
+def update_update_version(update_version, rights_holder, current_page=0, note=None, is_finished=False):
+    now = datetime.now() + timedelta(hours=8)
+    conn = psycopg2.connect(**db_settings)
+    if is_finished:
+        query = """
+                UPDATE update_version SET is_finished = 't', modified = %s WHERE "update_version" = %s and rights_holder = %s;
+                """
+        cur = conn.cursor()
+        cur.execute(query, (now, update_version, rights_holder))
+    else:
+        query = """
+                UPDATE update_version SET current_page = %s, note = %s, modified = %s 
+                WHERE "update_version" = %s and rights_holder = %s;
+                """
+        cur = conn.cursor()
+        cur.execute(query, (current_page, note, now, update_version, rights_holder))
+    conn.commit()
+    conn.close()
+
+
+
+def insert_new_update_version(update_version, rights_holder):
+    now = datetime.now() + timedelta(hours=8)
+    res = None
+    conn = psycopg2.connect(**db_settings)
+    query = """select current_page FROM update_version WHERE "update_version" = %s and rights_holder = %s;"""
+    with conn.cursor() as cursor:
+        cursor.execute(query, (update_version, rights_holder))
+        res = cursor.fetchone()
+    if res:
+        return res[0]
+    else:
+        query = """
+                INSERT INTO update_version ("update_version", rights_holder, created, modified) VALUES (%s, %s, %s, %s)
+                """
+        cur = conn.cursor()
+        cur.execute(query, (update_version, rights_holder, now, now))
+        conn.commit()
+        conn.close()
+        return 0
+
+
+import math
+
+# 如果是需要幫忙做模糊化的 進來的 orignal_lon & orignal_lat 一定是未模糊化資料
+def create_blurred_grid_data(verbatimLongitude, verbatimLatitude, coordinatePrecision, dataGeneralizations, is_full_hidden=False):
+    # TODO 先暫時不處理科學記號的問題
+    # 判斷coordinatePrecision 是否為合理數值 小於0 or =1 or 完全屏蔽
+    # from DwC quick guide
+    # 0.00001 (normal GPS limit for decimal degrees)
+    # 0.000278 (nearest second) # TODO 尚未處理 還沒有需要處理的資料
+    # 0.01667 (nearest minute) # TODO 尚未處理 還沒有需要處理的資料
+    # 1.0 (nearest degree)
+    standardRawLon, standardRawLat, raw_location_rpt = standardize_coor(verbatimLongitude, verbatimLatitude)
+    grid_data = {}
+    grid_data['grid_1'] = '-1_-1'
+    grid_data['grid_5'] = '-1_-1'
+    grid_data['grid_10'] = '-1_-1'
+    grid_data['grid_100'] = '-1_-1'
+    grid_data['grid_1_blurred'] = '-1_-1'
+    grid_data['grid_5_blurred'] = '-1_-1'
+    grid_data['grid_10_blurred'] = '-1_-1'
+    grid_data['grid_100_blurred'] = '-1_-1'
+    grid_data['standardRawLon'] = standardRawLon
+    grid_data['standardRawLat'] = standardRawLat
+    grid_data['raw_location_rpt'] = raw_location_rpt
+    grid_data['standardLon'] = None
+    grid_data['standardLat'] = None
+    grid_data['location_rpt'] = None
+    if standardRawLon and standardRawLat:
+        if float(coordinatePrecision) < 1 and float(coordinatePrecision) > 0:
+            ten_times = math.pow(10, len(str(coordinatePrecision).split('.')[-1]))
+            fuzzy_lon = math.floor(float(standardRawLon)*ten_times)/ten_times
+            fuzzy_lat = math.floor(float(standardRawLat)*ten_times)/ten_times
+        elif float(coordinatePrecision) == 1:
+            # 直接去除掉小數點以後的數字
+            fuzzy_lon = str(standardRawLon).split('.')[0]
+            fuzzy_lat = str(standardRawLat).split('.')[0]
+        elif is_full_hidden: # 完全屏蔽 
+            fuzzy_lon = None
+            fuzzy_lat = None
+        else: # 空值 / 不合理 / 無法判斷
+            # 直接把 grid_* 跟 grid_*_blurred填入一樣的值
+            fuzzy_lon = standardRawLon
+            fuzzy_lat = standardRawLat
+        # 就算沒有給到那麼細的點位 還是一樣畫上去 例如 原始座標只給到121, 21 一樣給一公里網格的資料
+        grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 0.01)
+        grid_data['grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
+        grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 0.05)
+        grid_data['grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
+        grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 0.1)
+        grid_data['grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
+        grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 1)
+        grid_data['grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
+        # if fuzzy_lon and fuzzy_lat:
+        standardLon, standardLat, location_rpt = standardize_coor(fuzzy_lon, fuzzy_lat)
+        grid_data['standardLon'] = standardLon
+        grid_data['standardLat'] = standardLat
+        grid_data['location_rpt'] = location_rpt
+        if standardLon and standardLat:
+            grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
+            grid_data['grid_1_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
+            grid_data['grid_5_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.1)
+            grid_data['grid_10_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
+            grid_data['grid_100_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+    return grid_data
+        
+
+# 沒有模糊化的情況
+def create_grid_data(verbatimLongitude, verbatimLatitude):
+    grid_data = {}
+    grid_data['grid_1'] = '-1_-1'
+    grid_data['grid_5'] = '-1_-1'
+    grid_data['grid_10'] = '-1_-1'
+    grid_data['grid_100'] = '-1_-1'
+    grid_data['grid_1_blurred'] = '-1_-1'
+    grid_data['grid_5_blurred'] = '-1_-1'
+    grid_data['grid_10_blurred'] = '-1_-1'
+    grid_data['grid_100_blurred'] = '-1_-1'
+    # grid_data['standardRawLon'] = None
+    # grid_data['standardRawLat'] = None
+    # grid_data['raw_location_rpt'] = None
+    grid_data['standardLon'] = None
+    grid_data['standardLat'] = None
+    grid_data['location_rpt'] = None
+    standardLon, standardLat, location_rpt = standardize_coor(verbatimLongitude, verbatimLatitude)
+    grid_data['standardLon'] = standardLon
+    grid_data['standardLat'] = standardLat
+    grid_data['location_rpt'] = location_rpt
+    # 因為沒有模糊化座標 所以grid_* & grid_*_blurred 欄位填一樣的
+    if standardLon and standardLat:
+        grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
+        grid_data['grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
+        grid_data['grid_1_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+        grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
+        grid_data['grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
+        grid_data['grid_5_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+        grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.1)
+        grid_data['grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
+        grid_data['grid_10_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+        grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
+        grid_data['grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
+        grid_data['grid_100_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+    return grid_data
+
+
+
+    
+
+
+# 如果是有提供模糊化的座標
+        
 
