@@ -175,7 +175,7 @@ def convert_date(date):
         for ff in date_formats:
             try:
                 formatted_date = datetime.strptime(date, ff)
-                return formatted_date
+                # return formatted_date
             except:
                 formatted_date = None
         if not formatted_date:
@@ -187,26 +187,30 @@ def convert_date(date):
             try: 
                 date = date.split('T')[0]
                 formatted_date = datetime.strptime(date, '%Y-%m-%d')
-                return formatted_date
+                # return formatted_date
             except:
                 formatted_date = None        
         if not formatted_date:
             try:
                 formatted_date = datetime.fromtimestamp(int(date))
-                return formatted_date
+                # return formatted_date
             except:
+                formatted_date = None
+        if formatted_date:
+            formatted_year = formatted_date.year
+            if str(formatted_year) not in date:
                 formatted_date = None
     return formatted_date
 
 
-def convert_year_month_day():
-    # YYYY-00-00
-    # YYYY-MM-00
-    # MM-DD
-    # MM-0
-    # 1968-04-26/27
-    # YYYY-MM-DD/DD
-    pass
+# def convert_year_month_day():
+#     # YYYY-00-00
+#     # YYYY-MM-00
+#     # MM-DD
+#     # MM-0
+#     # 1968-04-26/27
+#     # YYYY-MM-DD/DD
+#     pass
 
 
 
@@ -495,7 +499,7 @@ def insert_new_update_version(update_version, rights_holder):
 import math
 
 # 如果是需要幫忙做模糊化的 進來的 orignal_lon & orignal_lat 一定是未模糊化資料
-def create_blurred_grid_data(verbatimLongitude, verbatimLatitude, coordinatePrecision, dataGeneralizations, is_full_hidden=False):
+def create_blurred_grid_data(verbatimLongitude, verbatimLatitude, coordinatePrecision, is_full_hidden=False):
     # TODO 先暫時不處理科學記號的問題
     # 判斷coordinatePrecision 是否為合理數值 小於0 or =1 or 完全屏蔽
     # from DwC quick guide
@@ -520,7 +524,10 @@ def create_blurred_grid_data(verbatimLongitude, verbatimLatitude, coordinatePrec
     grid_data['standardLat'] = None
     grid_data['location_rpt'] = None
     if standardRawLon and standardRawLat:
-        if float(coordinatePrecision) < 1 and float(coordinatePrecision) > 0:
+        if not coordinatePrecision:
+            fuzzy_lon = standardRawLon
+            fuzzy_lat = standardRawLat
+        elif float(coordinatePrecision) < 1 and float(coordinatePrecision) > 0:
             ten_times = math.pow(10, len(str(coordinatePrecision).split('.')[-1]))
             fuzzy_lon = math.floor(float(standardRawLon)*ten_times)/ten_times
             fuzzy_lat = math.floor(float(standardRawLat)*ten_times)/ten_times

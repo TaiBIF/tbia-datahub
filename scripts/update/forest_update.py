@@ -48,6 +48,9 @@ if response.status_code == 200:
     else:
         update_version = 1
 
+# 在開始之前 先確認存不存在 
+# 若不存在 insert一個新的update_version
+current_page = insert_new_update_version(rights_holder=rights_holder,update_version=update_version)
 
 url = f"https://ecollect.forest.gov.tw/EcologicalTBiAOpenApi/api/Data/Get?Token={os.getenv('FOREST_KEY')}"
 response = requests.get(url)
@@ -57,7 +60,7 @@ if response.status_code == 200:
 
 now = datetime.now() + timedelta(hours=8)
 
-for p in range(0,total_page,10):
+for p in range(current_page,total_page,10):
 # for p in [0]:
     print(p)
     data = []
@@ -85,20 +88,6 @@ for p in range(0,total_page,10):
         sci_names = matching_flow(sci_names)
         df = df.drop(columns=['taxonID'], errors='ignore')
         match_taxon_id = sci_names
-        # taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique()) + list(sci_names[sci_names.parentTaxonID!=''].parentTaxonID.unique())
-        # taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique())
-        # final_taxon = taxon[taxon.taxonID.isin(taxon_list)]
-        # final_taxon = pd.DataFrame(final_taxon)
-        # if len(final_taxon):
-        #     match_taxon_id = sci_names.merge(final_taxon)
-        #     # 若沒有taxonID的 改以parentTaxonID串
-        #     # match_parent_taxon_id = sci_names.drop(columns=['taxonID']).merge(final_taxon,left_on='parentTaxonID',right_on='taxonID')
-        #     # match_parent_taxon_id['taxonID'] = ''
-        #     # match_taxon_id = pd.concat([match_taxon_id, match_parent_taxon_id], ignore_index=True)
-        #     # 如果都沒有對到 要再加回來
-        #     match_taxon_id = pd.concat([match_taxon_id,sci_names[~sci_names.sci_index.isin(match_taxon_id.sci_index.to_list())]], ignore_index=True)
-        #     match_taxon_id = match_taxon_id.replace({nan: ''})
-        #     match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
         if len(match_taxon_id):
             match_taxon_id = match_taxon_id.replace({nan: ''})
             match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
@@ -111,6 +100,9 @@ for p in range(0,total_page,10):
         df['rightsHolder'] = rights_holder
         df['created'] = now
         df['modified'] = now
+        # 出現地
+        if 'locality' in df.keys():
+            df['locality'] = df['locality'].apply(lambda x: x.strip())
         # 日期
         df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))
         # 數量
@@ -121,14 +113,18 @@ for p in range(0,total_page,10):
         # dataGeneralizations
         df['dataGeneralizations'] = df['dataGeneralizations'].replace({'N': False, 'Y': True})
         # 經緯度
-        df['grid_1'] = '-1_-1'
-        df['grid_5'] = '-1_-1'
-        df['grid_10'] = '-1_-1'
-        df['grid_100'] = '-1_-1'
+        # df['grid_1'] = '-1_-1'
+        # df['grid_5'] = '-1_-1'
+        # df['grid_10'] = '-1_-1'
+        # df['grid_100'] = '-1_-1'
+        # df['grid_1_blurred'] = '-1_-1'
+        # df['grid_5_blurred'] = '-1_-1'
+        # df['grid_10_blurred'] = '-1_-1'
+        # df['grid_100_blurred'] = '-1_-1'
         df['id'] = ''
-        df['standardLongitude'] = None
-        df['standardLatitude'] = None
-        df['location_rpt'] = None
+        # df['standardLongitude'] = None
+        # df['standardLatitude'] = None
+        # df['location_rpt'] = None
         for i in df.index:
             # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
             df.loc[i,'id'] = str(bson.objectid.ObjectId())
@@ -141,37 +137,90 @@ for p in range(0,total_page,10):
                 coordinatePrecision = float(row.coordinatePrecision)
             except:
                 coordinatePrecision = None
-            # TODO 這邊可能會有座標沒有模糊化，如果沒辦法判斷的話
-            if row.dataGeneralizations and coordinatePrecision:
-                standardRawLon, standardRawLat, raw_location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
-                if standardRawLon and standardRawLat:
-                    # 座標模糊化
-                    ten_times = math.pow(10, len(str(coordinatePrecision).split('.')[-1]))
-                    fuzzy_lon = math.floor(float(row.verbatimLongitude)*ten_times)/ten_times
-                    fuzzy_lat = math.floor(float(row.verbatimLatitude)*ten_times)/ten_times
-                    df.loc[i, 'coordinatePrecision'] = coordinatePrecision
-                    # 原始資料改存Raw
-                    df.loc[i, 'verbatimRawLatitude'] = float(row.verbatimLatitude)
-                    df.loc[i, 'verbatimRawLongitude'] = float(row.verbatimLongitude)
-                    df.loc[i, 'raw_location_rpt'] = raw_location_rpt
-                    df.loc[i, 'standardRawLongitude'] = standardRawLon
-                    df.loc[i, 'standardRawLatitude'] = standardRawLat
-                    df.loc[i, 'verbatimLongitude'] = fuzzy_lon
-                    df.loc[i, 'verbatimLatitude'] = fuzzy_lat    
-                    row = df.loc[i]
-            standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
-            if standardLon and standardLat:
-                df.loc[i,'standardLongitude'] = standardLon
-                df.loc[i,'standardLatitude'] = standardLat
-                df.loc[i,'location_rpt'] = location_rpt
-                grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
-                df.loc[i, 'grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
-                grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
-                df.loc[i, 'grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
-                grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.1)
-                df.loc[i, 'grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
-                grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
-                df.loc[i, 'grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            grid_data = create_blurred_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude, coordinatePrecision=coordinatePrecision)
+            df.loc[i,'standardRawLongitude'] = grid_data.get('standardRawLon')
+            df.loc[i,'standardRawLatitude'] = grid_data.get('standardRawLat')
+            df.loc[i,'raw_location_rpt'] = grid_data.get('raw_location_rpt')
+            df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
+            df.loc[i,'standardLatitude'] = grid_data.get('standardLat')
+            df.loc[i,'location_rpt'] = grid_data.get('location_rpt')
+            df.loc[i, 'grid_1'] = grid_data.get('grid_1')
+            df.loc[i, 'grid_1_blurred'] = grid_data.get('grid_1_blurred')
+            df.loc[i, 'grid_5'] = grid_data.get('grid_5')
+            df.loc[i, 'grid_5_blurred'] = grid_data.get('grid_5_blurred')
+            df.loc[i, 'grid_10'] = grid_data.get('grid_10')
+            df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
+            df.loc[i, 'grid_100'] = grid_data.get('grid_100')
+            df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
+            df.loc[i, 'verbatimLongitude'] = grid_data.get('standardLon')
+            df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
+            # # TODO 這邊可能會有座標沒有模糊化，如果沒辦法判斷的話
+            # if row.dataGeneralizations and coordinatePrecision:
+            #     no_raw_coor = False
+            #     standardRawLon, standardRawLat, raw_location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
+            #     if standardRawLon and standardRawLat:
+            #         # 座標模糊化
+            #         ten_times = math.pow(10, len(str(coordinatePrecision).split('.')[-1]))
+            #         fuzzy_lon = math.floor(float(row.verbatimLongitude)*ten_times)/ten_times
+            #         fuzzy_lat = math.floor(float(row.verbatimLatitude)*ten_times)/ten_times
+            #         df.loc[i, 'coordinatePrecision'] = coordinatePrecision
+            #         # 原始資料改存Raw
+            #         df.loc[i, 'verbatimRawLatitude'] = float(row.verbatimLatitude)
+            #         df.loc[i, 'verbatimRawLongitude'] = float(row.verbatimLongitude)
+            #         df.loc[i, 'raw_location_rpt'] = raw_location_rpt
+            #         df.loc[i, 'standardRawLongitude'] = standardRawLon
+            #         df.loc[i, 'standardRawLatitude'] = standardRawLat
+            #         df.loc[i, 'verbatimLongitude'] = fuzzy_lon
+            #         df.loc[i, 'verbatimLatitude'] = fuzzy_lat
+            #         # 以下為原始座標轉成的網格
+            #         grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 0.01)
+            #         df.loc[i, 'grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            #         grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 0.05)
+            #         df.loc[i, 'grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            #         grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 0.1)
+            #         df.loc[i, 'grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            #         grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 1)
+            #         df.loc[i, 'grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            #         row = df.loc[i]
+            # else:
+            #     no_raw_coor = True
+            # # 以下是模糊化座標
+            # standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
+            # if standardLon and standardLat:
+            #     df.loc[i,'standardLongitude'] = standardLon
+            #     df.loc[i,'standardLatitude'] = standardLat
+            #     df.loc[i,'location_rpt'] = location_rpt
+            #     # 以下為模糊化座標轉成的網格 _blurred
+            #     if '.' in str(standardLon) and '.' in str(standardLat):
+            #         float_len = min(len(str(standardLon).split('.')[-1]),len(str(standardLat).split('.')[-1]))
+            #     else:
+            #         float_len = 0
+            #     # 如果小數點超過兩位
+            #     if float_len >= 2:
+            #         grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
+            #         df.loc[i, 'grid_1_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            #         if no_raw_coor:
+            #             df.loc[i, 'grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            #     # else:
+            #     #     df.loc[i, 'grid_1_blurred'] = None
+            #     # 如果小數點超過一位
+            #     if float_len >= 1:
+            #         grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
+            #         df.loc[i, 'grid_5_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            #         if no_raw_coor:
+            #             df.loc[i, 'grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            #         # 如果小數點超過一位
+            #         grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.1)
+            #         df.loc[i, 'grid_10_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            #         if no_raw_coor:
+            #             df.loc[i, 'grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
+                # else:
+                #     df.loc[i, 'grid_5_blurred'] = None
+                #     df.loc[i, 'grid_10_blurred'] = None
+                # grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
+                # df.loc[i, 'grid_100_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+                # if no_raw_coor:
+                #     df.loc[i, 'grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
         # 資料集
         ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
         update_dataset_key(ds_name=ds_name, rights_holder=rights_holder)
@@ -216,6 +265,8 @@ for p in range(0,total_page,10):
                 if_exists='append',
                 index=False,
                 method=records_upsert)
+        # 成功之後 更新update_update_version
+        update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
 
 
 # 刪除is_deleted的records & match_log
@@ -223,6 +274,18 @@ delete_records(rights_holder=rights_holder,group=group,update_version=int(update
 
 # 打包match_log
 zip_match_log(group=group,info_id=info_id)
+
+# 更新update_version
+update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder)
+
+# 更新 datahub - dataset
+# 前面已經處理過新增了 最後只需要處理deprecated的部分
+update_dataset_deprecated(rights_holder=rights_holder)
+
+
+# TODO 更新 solr - dataset
+# 根據id進行update
+# solr 都最後再進行更新 ?
 
 print('done!')
 
