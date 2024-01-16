@@ -125,7 +125,7 @@ def get_existed_records(ids, rights_holder):
                 "offset": 0,
                 "filter": [f"rightsHolder:{rights_holder}"],
                             # "{!terms f=occurrenceID} "+ ",".join(ids[tt:tt+20])],
-                "limit": 20,
+                "limit": 1000000,
                 "fields": ['id', 'occurrenceID', 'datasetName']
                 }
         response = requests.post(f'http://solr:8983/solr/tbia_records/select', data=json.dumps(query), headers={'content-type': "application/json" })
@@ -135,36 +135,27 @@ def get_existed_records(ids, rights_holder):
                 subset_list += data
     existed_records = pd.DataFrame(subset_list)
     existed_records = existed_records.rename(columns={'id': 'tbiaID'})
-    # limit = len(ids)
-    # ids = ','.join(ids)
-    # query = { "query": "*:*",
-    #                 "offset": 0,
-    #                 "filter": [f"rightsHolder:{rights_holder}",
-    #                            "{!terms f=occurrenceID} "+ ids],
-    #                 "limit": limit,
-    #                 "fields": ['id', 'occurrenceID', 'datasetName']
-    #                 }
-    # response = requests.post(f'http://solr:8983/solr/tbia_records/select', data=json.dumps(query), headers={'content-type': "application/json" })
-    # resp = response.json()
-    # existed_records = resp['response']['docs']
-    # existed_records = pd.DataFrame(existed_records)
-    # existed_records = existed_records.rename(columns={'id': 'tbiaID'})
+    # 排除掉一個occurrenceID對到多個tbiaID的情況
+    a = existed_records[['occurrenceID','tbiaID','datasetName']].groupby(['occurrenceID','datasetName'], as_index=False).count()
+    a = a[a.tbiaID==1]
+    # a = a.reset_index(drop=True)
+    # 只保留一對一的結果 若有一對多 則刪除舊的 給予新的tbiaID
+    existed_records = existed_records[existed_records.occurrenceID.isin(a.occurrenceID.to_list())]
+    existed_records = existed_records.reset_index(drop=True)
     return existed_records
 
 
 def get_taxon_df(taxon_ids):
-    limit = len(taxon_ids)
-    ids = ','.join(taxon_ids)
-    query = { "query": "*:*",
-                    "offset": 0,
-                    "filter": ["{!terms f=id} "+ ids],
-                    "limit": limit,
-                    # "fields": ['id', 'occurrenceID']
-                    }
-    response = requests.post(f'http://solr:8983/solr/taxa/select', data=json.dumps(query), headers={'content-type': "application/json" })
-    resp = response.json()
-    taxon = resp['response']['docs']
-    taxon = pd.DataFrame(taxon)
+    subset_taxon_list = []
+    ids = [f"id:{d}" for d in taxon_ids]
+    for tt in range(0, len(taxon_ids), 20):
+        taxa_query = {'query': " OR ".join(ids[tt:tt+20]), 'limit': 20}
+        response = requests.post(f'http://solr:8983/solr/taxa/select', data=json.dumps(taxa_query), headers={'content-type': "application/json" })
+        if response.status_code == 200:
+            resp = response.json()
+            if data := resp['response']['docs']:
+                subset_taxon_list += data
+    taxon = pd.DataFrame(subset_taxon_list)
     taxon = taxon.rename(columns={'id': 'taxonID'})
     taxon = taxon.drop(columns=['taxon_name_id','_version_'],errors='ignore')
     taxon = taxon.replace({np.nan:None})
