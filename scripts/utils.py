@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert
 import json
 import pandas as pd
 from dateutil import parser
+import twd97
 
 import pymysql
 
@@ -233,18 +234,20 @@ def convert_coor_to_grid(x, y, grid):
 
 
 # N, S, W, E
+# E 121° 35.405 - 
+# 119°36'62.8\"E
 def convert_to_decimal(lon, lat):
     try:
-        deg, minutes, seconds =  re.split('[°\']', lat)
-        seconds = seconds[:-1]
-        direction = seconds[-1]
+        deg, minutes, seconds, direction =  re.split('[°\'\"]', lat)
+        # seconds = seconds[:-1]
+        # direction = seconds[-1]
         lat = (float(deg) + float(minutes)/60 + float(seconds)/(60*60)) * (-1 if direction in ['W', 'S'] else 1)
     except:
         lat = None
     try:
-        deg, minutes, seconds =  re.split('[°\']', lon)
-        seconds = seconds[:-1]
-        direction = seconds[-1]
+        deg, minutes, seconds, direction =  re.split('[°\'\"]', lon)
+        # seconds = seconds[:-1]
+        # direction = seconds[-1]
         lon = (float(deg) + float(minutes)/60 + float(seconds)/(60*60)) * (-1 if direction in ['W', 'S'] else 1)
     except:
         lon = None
@@ -266,6 +269,16 @@ def standardize_coor(lon,lat):
     if standardLat:
         if not (-90 <= standardLat and standardLat <= 90):
             standardLat = None
+    # TWD97的情況
+    if not standardLat or not standardLon:
+        try:
+            standardLat, standardLon = twd97.towgs84(float(lon), float(lat))
+            if not (-180 <= standardLon  and standardLon <= 180):
+                standardLon = None
+            if not (-90 <= standardLat and standardLat <= 90):
+                standardLat = None
+        except:
+            pass
     if standardLon and standardLat:
         # if -180 <= standardLon  and standardLon <= 180 and -90 <= standardLat and standardLat <= 90:
         location_rpt = f'POINT({standardLon} {standardLat})' 

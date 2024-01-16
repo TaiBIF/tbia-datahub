@@ -153,75 +153,11 @@ for p in range(current_page,total_page,10):
             df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
             df.loc[i, 'grid_100'] = grid_data.get('grid_100')
             df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
-            df.loc[i, 'verbatimLongitude'] = grid_data.get('standardLon')
-            df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
-            # # TODO 這邊可能會有座標沒有模糊化，如果沒辦法判斷的話
-            # if row.dataGeneralizations and coordinatePrecision:
-            #     no_raw_coor = False
-            #     standardRawLon, standardRawLat, raw_location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
-            #     if standardRawLon and standardRawLat:
-            #         # 座標模糊化
-            #         ten_times = math.pow(10, len(str(coordinatePrecision).split('.')[-1]))
-            #         fuzzy_lon = math.floor(float(row.verbatimLongitude)*ten_times)/ten_times
-            #         fuzzy_lat = math.floor(float(row.verbatimLatitude)*ten_times)/ten_times
-            #         df.loc[i, 'coordinatePrecision'] = coordinatePrecision
-            #         # 原始資料改存Raw
-            #         df.loc[i, 'verbatimRawLatitude'] = float(row.verbatimLatitude)
-            #         df.loc[i, 'verbatimRawLongitude'] = float(row.verbatimLongitude)
-            #         df.loc[i, 'raw_location_rpt'] = raw_location_rpt
-            #         df.loc[i, 'standardRawLongitude'] = standardRawLon
-            #         df.loc[i, 'standardRawLatitude'] = standardRawLat
-            #         df.loc[i, 'verbatimLongitude'] = fuzzy_lon
-            #         df.loc[i, 'verbatimLatitude'] = fuzzy_lat
-            #         # 以下為原始座標轉成的網格
-            #         grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 0.01)
-            #         df.loc[i, 'grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
-            #         grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 0.05)
-            #         df.loc[i, 'grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
-            #         grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 0.1)
-            #         df.loc[i, 'grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
-            #         grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 1)
-            #         df.loc[i, 'grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
-            #         row = df.loc[i]
-            # else:
-            #     no_raw_coor = True
-            # # 以下是模糊化座標
-            # standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
-            # if standardLon and standardLat:
-            #     df.loc[i,'standardLongitude'] = standardLon
-            #     df.loc[i,'standardLatitude'] = standardLat
-            #     df.loc[i,'location_rpt'] = location_rpt
-            #     # 以下為模糊化座標轉成的網格 _blurred
-            #     if '.' in str(standardLon) and '.' in str(standardLat):
-            #         float_len = min(len(str(standardLon).split('.')[-1]),len(str(standardLat).split('.')[-1]))
-            #     else:
-            #         float_len = 0
-            #     # 如果小數點超過兩位
-            #     if float_len >= 2:
-            #         grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
-            #         df.loc[i, 'grid_1_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
-            #         if no_raw_coor:
-            #             df.loc[i, 'grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
-            #     # else:
-            #     #     df.loc[i, 'grid_1_blurred'] = None
-            #     # 如果小數點超過一位
-            #     if float_len >= 1:
-            #         grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
-            #         df.loc[i, 'grid_5_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
-            #         if no_raw_coor:
-            #             df.loc[i, 'grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
-            #         # 如果小數點超過一位
-            #         grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.1)
-            #         df.loc[i, 'grid_10_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
-            #         if no_raw_coor:
-            #             df.loc[i, 'grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
-                # else:
-                #     df.loc[i, 'grid_5_blurred'] = None
-                #     df.loc[i, 'grid_10_blurred'] = None
-                # grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
-                # df.loc[i, 'grid_100_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
-                # if no_raw_coor:
-                #     df.loc[i, 'grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            # TODO 這邊要考慮是不是本來就要完全屏蔽 不然有可能是無法轉換座標 就必須要顯示原始座標
+            if grid_data.get('standardLon'):
+                df.loc[i, 'verbatimLongitude'] = grid_data.get('standardLon')
+            if grid_data.get('standardLat'):
+                df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
         # 資料集
         ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
         update_dataset_key(ds_name=ds_name, rights_holder=rights_holder)
