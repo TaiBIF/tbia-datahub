@@ -499,21 +499,21 @@ def insert_new_update_version(update_version, rights_holder):
     now = datetime.now() + timedelta(hours=8)
     res = None
     conn = psycopg2.connect(**db_settings)
-    query = """select current_page FROM update_version WHERE "update_version" = %s and rights_holder = %s;"""
+    query = """select * FROM update_version WHERE "update_version" = %s and rights_holder = %s;"""
     with conn.cursor() as cursor:
         cursor.execute(query, (update_version, rights_holder))
         res = cursor.fetchone()
-    if res:
-        return res[0]
-    else:
+    if res: # 確認是不是有id 有的話代表這個已經存在
+        return res[2], res[4] # 回傳page & note
+    else:        
         query = """
-                INSERT INTO update_version ("update_version", rights_holder, created, modified) VALUES (%s, %s, %s, %s)
-                """
+                    INSERT INTO update_version ("current_page","update_version", rights_holder, created, modified) VALUES (0, %s, %s, %s, %s)
+                    """
         cur = conn.cursor()
         cur.execute(query, (update_version, rights_holder, now, now))
         conn.commit()
         conn.close()
-        return 0
+        return 0, None
 
 
 import math
