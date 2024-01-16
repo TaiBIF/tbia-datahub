@@ -544,24 +544,28 @@ def create_blurred_grid_data(verbatimLongitude, verbatimLatitude, coordinatePrec
     grid_data['standardLat'] = None
     grid_data['location_rpt'] = None
     if standardRawLon and standardRawLat:
-        if not coordinatePrecision:
-            fuzzy_lon = standardRawLon
-            fuzzy_lat = standardRawLat
-        elif float(coordinatePrecision) < 1 and float(coordinatePrecision) > 0:
-            ten_times = math.pow(10, len(str(coordinatePrecision).split('.')[-1]))
-            fuzzy_lon = math.floor(float(standardRawLon)*ten_times)/ten_times
-            fuzzy_lat = math.floor(float(standardRawLat)*ten_times)/ten_times
-        elif float(coordinatePrecision) == 1:
-            # 直接去除掉小數點以後的數字
-            fuzzy_lon = str(standardRawLon).split('.')[0]
-            fuzzy_lat = str(standardRawLat).split('.')[0]
-        elif is_full_hidden: # 完全屏蔽 
+        if is_full_hidden:
             fuzzy_lon = None
             fuzzy_lat = None
-        else: # 空值 / 不合理 / 無法判斷
-            # 直接把 grid_* 跟 grid_*_blurred填入一樣的值
-            fuzzy_lon = standardRawLon
-            fuzzy_lat = standardRawLat
+        else:
+            if not coordinatePrecision:
+                fuzzy_lon = standardRawLon
+                fuzzy_lat = standardRawLat
+            elif float(coordinatePrecision) < 1 and float(coordinatePrecision) > 0:
+                ten_times = math.pow(10, len(str(coordinatePrecision).split('.')[-1]))
+                fuzzy_lon = math.floor(float(standardRawLon)*ten_times)/ten_times
+                fuzzy_lat = math.floor(float(standardRawLat)*ten_times)/ten_times
+            elif float(coordinatePrecision) == 1:
+                # 直接去除掉小數點以後的數字
+                fuzzy_lon = str(standardRawLon).split('.')[0]
+                fuzzy_lat = str(standardRawLat).split('.')[0]
+            # elif is_full_hidden: # 完全屏蔽 
+            #     fuzzy_lon = None
+            #     fuzzy_lat = None
+            else: # 空值 / 不合理 / 無法判斷
+                # 直接把 grid_* 跟 grid_*_blurred填入一樣的值
+                fuzzy_lon = standardRawLon
+                fuzzy_lat = standardRawLat
         # 就算沒有給到那麼細的點位 還是一樣畫上去 例如 原始座標只給到121, 21 一樣給一公里網格的資料
         grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 0.01)
         grid_data['grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
