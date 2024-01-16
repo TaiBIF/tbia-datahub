@@ -116,23 +116,39 @@ def get_namecode_tmp(namecode):
 
 def get_existed_records(ids, rights_holder):
     # ids = [f'occurrenceID:"{t}"' for t in ids]
-    # TODO 這邊是不是還是要從postgres取得比較合適？也可以確保中斷後不會有重複的tbiaID產生
-    limit = len(ids)
-    ids = ','.join(ids)
-    query = { "query": "*:*",
-                    "offset": 0,
-                    "filter": [f"rightsHolder:{rights_holder}",
-                               "{!terms f=occurrenceID} "+ ids],
-                    "limit": limit,
-                    "fields": ['id', 'occurrenceID', 'datasetName']
-                    }
-    response = requests.post(f'http://solr:8983/solr/tbia_records/select', data=json.dumps(query), headers={'content-type': "application/json" })
-    resp = response.json()
-    existed_records = resp['response']['docs']
-    existed_records = pd.DataFrame(existed_records)
+    ids = [f'occurrenceID:"{d}"' for d in ids]
+    subset_list = []
+    for tt in range(0, len(ids), 20):
+        # print(tt)
+        # query = {'query': " OR ".join(ids[tt:tt+20]), 'limit': 20, "fields": ['id', 'occurrenceID', 'datasetName']}
+        query = { "query": " OR ".join(ids[tt:tt+20]),
+                "offset": 0,
+                "filter": [f"rightsHolder:{rights_holder}"],
+                            # "{!terms f=occurrenceID} "+ ",".join(ids[tt:tt+20])],
+                "limit": 20,
+                "fields": ['id', 'occurrenceID', 'datasetName']
+                }
+        response = requests.post(f'http://solr:8983/solr/tbia_records/select', data=json.dumps(query), headers={'content-type': "application/json" })
+        if response.status_code == 200:
+            resp = response.json()
+            if data := resp['response']['docs']:
+                subset_list += data
+    existed_records = pd.DataFrame(subset_list)
     existed_records = existed_records.rename(columns={'id': 'tbiaID'})
-    # taxon = taxon.drop(columns=['taxon_name_id','_version_'])
-    # taxon = taxon.replace({nan:None})
+    # limit = len(ids)
+    # ids = ','.join(ids)
+    # query = { "query": "*:*",
+    #                 "offset": 0,
+    #                 "filter": [f"rightsHolder:{rights_holder}",
+    #                            "{!terms f=occurrenceID} "+ ids],
+    #                 "limit": limit,
+    #                 "fields": ['id', 'occurrenceID', 'datasetName']
+    #                 }
+    # response = requests.post(f'http://solr:8983/solr/tbia_records/select', data=json.dumps(query), headers={'content-type': "application/json" })
+    # resp = response.json()
+    # existed_records = resp['response']['docs']
+    # existed_records = pd.DataFrame(existed_records)
+    # existed_records = existed_records.rename(columns={'id': 'tbiaID'})
     return existed_records
 
 

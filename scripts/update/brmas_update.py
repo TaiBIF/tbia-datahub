@@ -162,7 +162,7 @@ for p in range(current_page,total_page,10):
         existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder)
         existed_records = existed_records.replace({nan:''})
         if len(existed_records):
-            df =  df.merge(existed_records,on=["occurrenceID","datasetName"], how='left')
+            df = df.merge(existed_records,on=["occurrenceID","datasetName"], how='left')
             df = df.replace({nan: None})
             # 如果已存在，取存在的tbiaID
             df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)

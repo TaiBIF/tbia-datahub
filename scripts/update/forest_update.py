@@ -135,6 +135,7 @@ for p in range(current_page,total_page,10):
             # 2023-05-24 改成直接回傳未模糊化座標
             try:
                 coordinatePrecision = float(row.coordinatePrecision)
+                df.loc[i,'dataGeneralizations'] = True
             except:
                 coordinatePrecision = None
             grid_data = create_blurred_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude, coordinatePrecision=coordinatePrecision)
