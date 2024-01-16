@@ -43,7 +43,7 @@ if response.status_code == 200:
 
 # 在開始之前 先確認存不存在 
 # 若不存在 insert一個新的update_version
-current_page = insert_new_update_version(rights_holder=rights_holder,update_version=update_version)
+current_page, note = insert_new_update_version(rights_holder=rights_holder,update_version=update_version)
 
 
 url = f"https://hast.biodiv.tw/api/v1/occurrence"
@@ -187,8 +187,8 @@ for p in range(current_page,total_page,10):
                 if_exists='append',
                 index=False,
                 method=records_upsert)
-        # 成功之後 更新update_update_version
-        update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
+    # 成功之後 更新update_update_version
+    update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
 
 
 # 刪除is_deleted的records & match_log
