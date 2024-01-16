@@ -46,6 +46,12 @@ if response.status_code == 200:
         update_version = 1
 
 
+# 在開始之前 先確認存不存在 
+# 若不存在 insert一個新的update_version
+current_page = insert_new_update_version(rights_holder=rights_holder,update_version=update_version)
+
+
+
 now = datetime.now() + timedelta(hours=8)
 
 payload = {'API-KEY': os.getenv('OCA_KEY')}
@@ -219,20 +225,6 @@ sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
 sci_names = matching_flow(sci_names)
 df = df.drop(columns=['taxonID'], errors='ignore')
 match_taxon_id = sci_names
-# taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique()) + list(sci_names[sci_names.parentTaxonID!=''].parentTaxonID.unique())
-# taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique()) 
-# final_taxon = taxon[taxon.taxonID.isin(taxon_list)]
-# final_taxon = pd.DataFrame(final_taxon)
-# if len(final_taxon):
-#     match_taxon_id = sci_names.merge(final_taxon)
-#     # 若沒有taxonID的 改以parentTaxonID串
-#     # match_parent_taxon_id = sci_names.drop(columns=['taxonID']).merge(final_taxon,left_on='parentTaxonID',right_on='taxonID')
-#     # match_parent_taxon_id['taxonID'] = ''
-#     # match_taxon_id = pd.concat([match_taxon_id, match_parent_taxon_id], ignore_index=True)
-#     # 如果都沒有對到 要再加回來
-#     match_taxon_id = pd.concat([match_taxon_id,sci_names[~sci_names.sci_index.isin(match_taxon_id.sci_index.to_list())]], ignore_index=True)
-#     match_taxon_id = match_taxon_id.replace({nan: ''})
-#     match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
 if len(match_taxon_id):
     match_taxon_id = match_taxon_id.replace({nan: ''})
     match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
@@ -247,6 +239,9 @@ df['rightsHolder'] = rights_holder
 df['created'] = now
 df['modified'] = now
 
+# 出現地
+if 'locality' in df.keys():
+    df['locality'] = df['locality'].apply(lambda x: x.strip())
 
 # 日期
 df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))
@@ -258,14 +253,14 @@ df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standard
 
 
 # 經緯度
-df['grid_1'] = '-1_-1'
-df['grid_5'] = '-1_-1'
-df['grid_10'] = '-1_-1'
-df['grid_100'] = '-1_-1'
+# df['grid_1'] = '-1_-1'
+# df['grid_5'] = '-1_-1'
+# df['grid_10'] = '-1_-1'
+# df['grid_100'] = '-1_-1'
 df['id'] = ''
-df['standardLongitude'] = None
-df['standardLatitude'] = None
-df['location_rpt'] = None
+# df['standardLongitude'] = None
+# df['standardLatitude'] = None
+# df['location_rpt'] = None
 
 for i in df.index:
     df.loc[i,'id'] = str(bson.objectid.ObjectId())
@@ -278,19 +273,31 @@ for i in df.index:
         lon, lat = convert_to_decimal(row.verbatimLongitude, row.verbatimLatitude)
     else:
         lon, lat = row.verbatimLongitude, row.verbatimLatitude
-    standardLon, standardLat, location_rpt = standardize_coor(lon, lat)
-    if standardLon and standardLat:
-        df.loc[i,'standardLongitude'] = standardLon
-        df.loc[i,'standardLatitude'] = standardLat
-        df.loc[i,'location_rpt'] = location_rpt
-        grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
-        df.loc[i, 'grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
-        grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
-        df.loc[i, 'grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
-        grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.1)
-        df.loc[i, 'grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
-        grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
-        df.loc[i, 'grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
+    grid_data = create_grid_data(verbatimLongitude=lon, verbatimLatitude=lat)
+    df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
+    df.loc[i,'standardLatitude'] = grid_data.get('standardLat')
+    df.loc[i,'location_rpt'] = grid_data.get('location_rpt')
+    df.loc[i, 'grid_1'] = grid_data.get('grid_1')
+    df.loc[i, 'grid_1_blurred'] = grid_data.get('grid_1_blurred')
+    df.loc[i, 'grid_5'] = grid_data.get('grid_5')
+    df.loc[i, 'grid_5_blurred'] = grid_data.get('grid_5_blurred')
+    df.loc[i, 'grid_10'] = grid_data.get('grid_10')
+    df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
+    df.loc[i, 'grid_100'] = grid_data.get('grid_100')
+    df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
+    # standardLon, standardLat, location_rpt = standardize_coor(lon, lat)
+    # if standardLon and standardLat:
+    #     df.loc[i,'standardLongitude'] = standardLon
+    #     df.loc[i,'standardLatitude'] = standardLat
+    #     df.loc[i,'location_rpt'] = location_rpt
+    #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
+    #     df.loc[i, 'grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
+    #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
+    #     df.loc[i, 'grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
+    #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.1)
+    #     df.loc[i, 'grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
+    #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
+    #     df.loc[i, 'grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
 
 ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
 update_dataset_key(ds_name=ds_name, rights_holder=rights_holder)
@@ -312,7 +319,7 @@ if 'occurrenceID' in df.keys():
     #     results = resultset.mappings().all()
     #     existed_records = pd.DataFrame(results)
     if len(existed_records):
-        df =  df.merge(existed_records,on=["occurrenceID","datasetName"], how='left')
+        df = df.merge(existed_records,on=["occurrenceID","datasetName"], how='left')
         df = df.replace({nan: None})
         # 如果已存在，取存在的tbiaID
         df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
@@ -326,10 +333,38 @@ else:
 
 df = df.replace({nan: None, '': None})
 
+# issue_map = {
+#     1: 'higherrank',
+#     2: 'none',
+#     3: 'fuzzy',
+#     4: 'multiple'
+# }
+
+# df.to_csv('oca_test.csv',index=None)
+
+
 # match_log要用更新的
 match_log = df[['occurrenceID','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','group','rightsHolder','created','modified']]
 match_log = match_log.reset_index(drop=True)
+# 須確認tbiaID為唯一值
 match_log = update_match_log(match_log=match_log, now=now)
+# match_log['is_matched'] = False
+# match_log.loc[match_log.taxonID.notnull(),'is_matched'] = True
+# match_log = match_log.replace({np.nan: None})
+# match_log['match_higher_taxon'] = match_log['match_higher_taxon'].replace({None: False, np.nan: False, '': False})
+# match_log['match_stage'] = match_log['match_stage'].apply(lambda x: int(x) if x or x == 0 else None)
+# match_log['stage_1'] = match_log['stage_1'].apply(lambda x: issue_map[x] if x else x)
+# match_log['stage_2'] = match_log['stage_2'].apply(lambda x: issue_map[x] if x else x)
+# match_log['stage_3'] = match_log['stage_3'].apply(lambda x: issue_map[x] if x else x)
+# match_log['stage_4'] = match_log['stage_4'].apply(lambda x: issue_map[x] if x else x)
+# match_log['stage_5'] = match_log['stage_5'].apply(lambda x: issue_map[x] if x else x)
+# match_log['created'] = now
+# match_log['modified'] = now
+# match_log = match_log.rename(columns={'id': 'tbiaID','rightsHolder':'rights_holder'})
+# match_log.to_sql('match_log', db, # schema='my_schema',
+#             if_exists='append',
+#             index=False)
+            #method=matchlog_upsert)  
 match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}.csv',index=None)
 
 # records要用更新的
@@ -343,10 +378,12 @@ df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','sta
 df = df.rename(columns=({'id': 'tbiaID'}))
 df['update_version'] = int(update_version)
 # df = df.drop(columns=psql_records_key,errors='ignore')
-df.to_sql('records', db, # schema='my_schema',
-        if_exists='append',
-        index=False,
-        method=records_upsert)
+for l in range(0, len(df), 1000):
+    # print(l)
+    df[l:l+1000].to_sql('records', db, # schema='my_schema',
+            if_exists='append',
+            index=False,
+            method=records_upsert)
 
 
 # 刪除is_deleted的records & match_log
@@ -354,5 +391,12 @@ delete_records(rights_holder=rights_holder,group=group,update_version=int(update
 
 # 打包match_log
 zip_match_log(group=group,info_id=info_id)
+
+# 更新update_version
+update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder)
+
+# 更新 datahub - dataset
+# 前面已經處理過新增了 最後只需要處理deprecated的部分
+update_dataset_deprecated(rights_holder=rights_holder)
 
 print('done!')
