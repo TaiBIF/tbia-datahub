@@ -73,25 +73,25 @@ def get_namecode(namecode):
     
 
 
-def get_namecode_tmp(namecode):
-    conn = pymysql.connect(**taicol_db_settings)
-    with conn.cursor() as cursor:     
-        query = """
-        SELECT taxon_name_id FROM api_namecode where namecode = %s;
-        """
-        cursor.execute(query, (namecode))
-        resp = cursor.fetchone()
-        if resp:
-            taxon_name_id = resp[0]
-            response = requests.get(f'http://solr:8983/solr/taxa/select?q=taxon_name_id:{taxon_name_id}&fl=id')
-            resp = response.json()
-            taxon = resp['response']['docs']
-            if len(taxon):
-                return taxon[0]['id']
-            else:
-                return None
-        else:
-            return None
+# def get_namecode_tmp(namecode):
+#     conn = pymysql.connect(**taicol_db_settings)
+#     with conn.cursor() as cursor:     
+#         query = """
+#         SELECT taxon_name_id FROM api_namecode where namecode = %s;
+#         """
+#         cursor.execute(query, (namecode))
+#         resp = cursor.fetchone()
+#         if resp:
+#             taxon_name_id = resp[0]
+#             response = requests.get(f'http://solr:8983/solr/taxa/select?q=taxon_name_id:{taxon_name_id}&fl=id')
+#             resp = response.json()
+#             taxon = resp['response']['docs']
+#             if len(taxon):
+#                 return taxon[0]['id']
+#             else:
+#                 return None
+#         else:
+#             return None
             # taxon = pd.DataFrame(taxon)
             # taxon = taxon.rename(columns={'id': 'taxonID'})
             # taxon = taxon.drop(columns=['taxon_name_id','_version_'],errors='ignore')
