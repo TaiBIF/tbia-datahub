@@ -285,6 +285,7 @@ for url in url_list[url_index:]:
         # 成功之後 更新update_update_version 也有可能這批page 沒有資料 一樣從下一個c開始
         update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=json.dumps({'url_index': url_index, 'request_url': request_url}))
     url_index += 1
+    current_page = 0 # 換成新的url時要重新開始
 
 
 # 刪除is_deleted的records & match_log
