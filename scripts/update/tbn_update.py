@@ -286,6 +286,7 @@ for url in url_list[url_index:]:
         update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=json.dumps({'url_index': url_index, 'request_url': request_url}))
     url_index += 1
     current_page = 0 # 換成新的url時要重新開始
+    update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=0, note=json.dumps({'url_index': url_index, 'request_url': None}))
 
 
 # 刪除is_deleted的records & match_log
