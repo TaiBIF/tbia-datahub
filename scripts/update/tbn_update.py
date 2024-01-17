@@ -53,16 +53,19 @@ current_page, note = insert_new_update_version(rights_holder=rights_holder,updat
 
 # 自產資料 + eBird
 url_list = ['https://www.tbn.org.tw/api/v25/occurrence?selfProduced=y', 'https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=4fa7b334-ce0d-4e88-aaae-2e0c138d049e']
-# url_list = ['https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=7a1d54c7-8f2e-4672-bb5b-bc29249aff9f']
 now = datetime.now() + timedelta(hours=8)
 
 if not note:
     url_index = 0
+    request_url = None
 else:
-    url_index = note
+    # note = json.load(note)
+    request_url = note.get('request_url')
+    url_index = note.get('url_index')
 
 for url in url_list[url_index:]:
     # print(url)
+    # 先取得總頁數
     response = requests.get(url + '&limit=1')
     # c = 0
     if response.status_code == 200:
@@ -76,17 +79,17 @@ for url in url_list[url_index:]:
         while c < p + 10 and c < total_page:
             # print(c, url)
             time.sleep(3)
-            if url.find('limit=1000') < 0:
-                url += '&limit=1000'
-            if url.find(f"apikey={os.getenv('TBN_KEY')}") < 0:
-                url += f"&apikey={os.getenv('TBN_KEY')}"
-            # if f"&apikey={os.getenv('TBN_KEY')}&limit=1000" not in url:
-            #     url = url + f"&apikey={os.getenv('TBN_KEY')}&limit=1000"
-            print(c, url)
-            response = requests.get(url)
+            if not request_url:
+                request_url = url
+            if request_url.find('limit=1000') < 0:
+                request_url += '&limit=1000'
+            if request_url.find(f"apikey={os.getenv('TBN_KEY')}") < 0:
+                request_url += f"&apikey={os.getenv('TBN_KEY')}"
+            print(c, request_url)
+            response = requests.get(request_url)
             if response.status_code == 200:
                 result = response.json()
-                url = result['links']['next']
+                request_url = result['links']['next']
                 data += result["data"]
             c += 1
         df = pd.DataFrame(data)
@@ -280,7 +283,7 @@ for url in url_list[url_index:]:
                     index=False,
                     method=records_upsert)
         # 成功之後 更新update_update_version 也有可能這批page 沒有資料 一樣從下一個c開始
-        update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=url_index)
+        update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=json.dumps({'url_index': url_index, 'request_url': request_url}))
     url_index += 1
 
 
