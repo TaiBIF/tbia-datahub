@@ -42,6 +42,9 @@ if response.status_code == 200:
     else:
         update_version = 1
 
+# 在開始之前 先確認存不存在 
+# 若不存在 insert一個新的update_version
+current_page, note = insert_new_update_version(rights_holder=rights_holder,update_version=update_version)
 
 url = f"https://wetland-db.tcd.gov.tw/WetlandTBiAOpenApi/api/Data/Get?token={os.getenv('TCD_KEY')}"
 response = requests.get(url)
@@ -51,7 +54,7 @@ if response.status_code == 200:
 
 now = datetime.now() + timedelta(hours=8)
 
-for p in range(0,total_page,10):
+for p in range(current_page,total_page,10):
 # for p in [0]:
     print(p)
     data = []
@@ -92,7 +95,9 @@ for p in range(0,total_page,10):
         df['modified'] = now
         # license
         df['license'] = df['license'].replace({'0': '公有領域CC0', '1': '姓名標註 CC-BY', '2': '姓名標註(非商業利用) CC-BY-NC'})
-        # 地點
+        # 出現地
+        if 'locality' in df.keys():
+            df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
         # 日期
         df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))
         # 數量 
@@ -105,14 +110,18 @@ for p in range(0,total_page,10):
         # 敏感層級
         df['sensitiveCategory'] = df['sensitiveCategory'].replace({'低敏感': '輕度'})
         # 經緯度
-        df['grid_1'] = '-1_-1'
-        df['grid_5'] = '-1_-1'
-        df['grid_10'] = '-1_-1'
-        df['grid_100'] = '-1_-1'
+        # df['grid_1'] = '-1_-1'
+        # df['grid_5'] = '-1_-1'
+        # df['grid_10'] = '-1_-1'
+        # df['grid_100'] = '-1_-1'
+        # df['grid_1_blurred'] = '-1_-1'
+        # df['grid_5_blurred'] = '-1_-1'
+        # df['grid_10_blurred'] = '-1_-1'
+        # df['grid_100_blurred'] = '-1_-1'
         df['id'] = ''
-        df['standardLongitude'] = None
-        df['standardLatitude'] = None
-        df['location_rpt'] = None
+        # df['standardLongitude'] = None
+        # df['standardLatitude'] = None
+        # df['location_rpt'] = None
         for i in df.index:
             # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
             df.loc[i,'id'] = str(bson.objectid.ObjectId())
@@ -121,37 +130,32 @@ for p in range(0,total_page,10):
                 if not row.mediaLicense:
                     df.loc[i,'associatedMedia'] = None
             # 敏感層級輕度的要幫忙模糊化
+            is_hidden = False
             if row.sensitiveCategory == '輕度':
-                standardRawLon, standardRawLat, raw_location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
-                if standardRawLon and standardRawLat:
-                    coordinatePrecision = 0.01
-                    # 座標模糊化
-                    ten_times = math.pow(10, len(str(coordinatePrecision).split('.')[-1]))
-                    fuzzy_lon = math.floor(float(row.verbatimLongitude)*ten_times)/ten_times
-                    fuzzy_lat = math.floor(float(row.verbatimLatitude)*ten_times)/ten_times
-                    # df.loc[i, 'coordinatePrecision'] = coordinatePrecision
-                    # 原始資料改存Raw
-                    df.loc[i, 'verbatimRawLatitude'] = float(row.verbatimLatitude)
-                    df.loc[i, 'verbatimRawLongitude'] = float(row.verbatimLongitude)
-                    df.loc[i, 'raw_location_rpt'] = raw_location_rpt
-                    df.loc[i, 'standardRawLongitude'] = standardRawLon
-                    df.loc[i, 'standardRawLatitude'] = standardRawLat
-                    df.loc[i, 'verbatimLongitude'] = fuzzy_lon
-                    df.loc[i, 'verbatimLatitude'] = fuzzy_lat    
-                    row = df.loc[i]
-            standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
-            if standardLon and standardLat:
-                df.loc[i,'standardLongitude'] = standardLon
-                df.loc[i,'standardLatitude'] = standardLat
-                df.loc[i,'location_rpt'] = location_rpt
-                grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
-                df.loc[i, 'grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
-                grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
-                df.loc[i, 'grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
-                grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.1)
-                df.loc[i, 'grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
-                grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
-                df.loc[i, 'grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
+                df.loc[i,'dataGeneralizations'] = True
+                df.loc[i,'coordinatePrecision'] = 0.01
+                grid_data = create_blurred_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude, coordinatePrecision=0.01, is_full_hidden=is_hidden)
+            else:
+                grid_data = create_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude)
+            df.loc[i,'standardRawLongitude'] = grid_data.get('standardRawLon')
+            df.loc[i,'standardRawLatitude'] = grid_data.get('standardRawLat')
+            df.loc[i,'raw_location_rpt'] = grid_data.get('raw_location_rpt')
+            df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
+            df.loc[i,'standardLatitude'] = grid_data.get('standardLat')
+            df.loc[i,'location_rpt'] = grid_data.get('location_rpt')
+            df.loc[i, 'grid_1'] = grid_data.get('grid_1')
+            df.loc[i, 'grid_1_blurred'] = grid_data.get('grid_1_blurred')
+            df.loc[i, 'grid_5'] = grid_data.get('grid_5')
+            df.loc[i, 'grid_5_blurred'] = grid_data.get('grid_5_blurred')
+            df.loc[i, 'grid_10'] = grid_data.get('grid_10')
+            df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
+            df.loc[i, 'grid_100'] = grid_data.get('grid_100')
+            df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
+            # TODO 這邊要考慮是不是本來就要完全屏蔽 不然有可能是無法轉換座標 就必須要顯示原始座標
+            if grid_data.get('standardLon') or is_hidden:
+                df.loc[i, 'verbatimLongitude'] = grid_data.get('standardLon')
+            if grid_data.get('standardLat') or is_hidden:
+                df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
         # 資料集
         ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
         update_dataset_key(ds_name=ds_name, rights_holder=rights_holder)
@@ -161,12 +165,6 @@ for p in range(0,total_page,10):
         existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
         existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder)
         existed_records = existed_records.replace({nan:''})
-        # with db.begin() as conn:
-        #     qry = sa.text("""select "tbiaID", "occurrenceID", "created" from records  
-        #                     where "rightsHolder" = '{}' AND "occurrenceID" IN {}  """.format(rights_holder, str(df.occurrenceID.to_list()).replace('[','(').replace(']',')')) )
-        #     resultset = conn.execute(qry)
-        #     results = resultset.mappings().all()
-        #     existed_records = pd.DataFrame(results)
         if len(existed_records):
             df =  df.merge(existed_records,on=["occurrenceID","datasetName"], how='left')
             df = df.replace({nan: None})
@@ -196,12 +194,21 @@ for p in range(0,total_page,10):
                 if_exists='append',
                 index=False,
                 method=records_upsert)
-
+    # 成功之後 更新update_update_version 也有可能這批page 沒有資料 一樣從下一個c開始
+    update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
 
 # 刪除is_deleted的records & match_log
 delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version))
 
 # 打包match_log
 zip_match_log(group=group,info_id=info_id)
+
+# 更新update_version
+update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder)
+
+# 更新 datahub - dataset
+# 前面已經處理過新增了 最後只需要處理deprecated的部分
+update_dataset_deprecated(rights_holder=rights_holder)
+
 
 print('done!')
