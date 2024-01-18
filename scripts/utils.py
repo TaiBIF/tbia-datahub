@@ -134,15 +134,18 @@ def get_existed_records(ids, rights_holder):
             resp = response.json()
             if data := resp['response']['docs']:
                 subset_list += data
-    existed_records = pd.DataFrame(subset_list)
-    existed_records = existed_records.rename(columns={'id': 'tbiaID'})
-    # 排除掉一個occurrenceID對到多個tbiaID的情況
-    a = existed_records[['occurrenceID','tbiaID','datasetName']].groupby(['occurrenceID','datasetName'], as_index=False).count()
-    a = a[a.tbiaID==1]
-    # a = a.reset_index(drop=True)
-    # 只保留一對一的結果 若有一對多 則刪除舊的 給予新的tbiaID
-    existed_records = existed_records[existed_records.occurrenceID.isin(a.occurrenceID.to_list())]
-    existed_records = existed_records.reset_index(drop=True)
+    if len(subset_list):
+        existed_records = pd.DataFrame(subset_list)
+        existed_records = existed_records.rename(columns={'id': 'tbiaID'})
+        # 排除掉一個occurrenceID對到多個tbiaID的情況
+        a = existed_records[['occurrenceID','tbiaID','datasetName']].groupby(['occurrenceID','datasetName'], as_index=False).count()
+        a = a[a.tbiaID==1]
+        # a = a.reset_index(drop=True)
+        # 只保留一對一的結果 若有一對多 則刪除舊的 給予新的tbiaID
+        existed_records = existed_records[existed_records.occurrenceID.isin(a.occurrenceID.to_list())]
+        existed_records = existed_records.reset_index(drop=True)
+    else:
+        existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
     return existed_records
 
 
