@@ -120,7 +120,7 @@ for p in range(current_page,total_page,10):
         df['modified'] = now
         # 地點
         df['locality'] = df['locality'].apply(lambda x: locality_map[x] if x in locality_map.keys() else x)
-        df['locality'] = df['locality'].apply(lambda x: x.strip())
+        df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
         # 日期
         df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))
         # 數量 

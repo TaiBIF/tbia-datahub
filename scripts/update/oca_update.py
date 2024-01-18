@@ -48,7 +48,7 @@ if response.status_code == 200:
 
 # 在開始之前 先確認存不存在 
 # 若不存在 insert一個新的update_version
-current_page = insert_new_update_version(rights_holder=rights_holder,update_version=update_version)
+current_page, note = insert_new_update_version(rights_holder=rights_holder,update_version=update_version)
 
 
 
@@ -241,7 +241,7 @@ df['modified'] = now
 
 # 出現地
 if 'locality' in df.keys():
-    df['locality'] = df['locality'].apply(lambda x: x.strip())
+    df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
 
 # 日期
 df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))

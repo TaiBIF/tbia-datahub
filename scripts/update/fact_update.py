@@ -46,6 +46,11 @@ if response.status_code == 200:
     else:
         update_version = 1
 
+# 在開始之前 先確認存不存在 
+# 若不存在 insert一個新的update_version
+current_page, note = insert_new_update_version(rights_holder=rights_holder,update_version=update_version)
+
+
 url = f"https://fact.tfri.gov.tw/api/1/occurrence/?token={os.getenv('FACT_KEY')}&page=1&per_page=1000"
 response = requests.get(url, verify=False)
 
@@ -56,7 +61,7 @@ if response.status_code == 200:
 
 now = datetime.now() + timedelta(hours=8)
 
-for p in range(0,total_page,10):
+for p in range(current_page,total_page,10):
     print(p)
     data = []
     c = p
@@ -79,20 +84,6 @@ for p in range(0,total_page,10):
         sci_names = matching_flow(sci_names)
         df = df.drop(columns=['taxonID'], errors='ignore')
         match_taxon_id = sci_names
-        # taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique()) + list(sci_names[sci_names.parentTaxonID!=''].parentTaxonID.unique())
-        # taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique()) 
-        # final_taxon = taxon[taxon.taxonID.isin(taxon_list)]
-        # final_taxon = pd.DataFrame(final_taxon)
-        # if len(final_taxon):
-        #     match_taxon_id = sci_names.merge(final_taxon)
-        #     # 若沒有taxonID的 改以parentTaxonID串
-        #     # match_parent_taxon_id = sci_names.drop(columns=['taxonID']).merge(final_taxon,left_on='parentTaxonID',right_on='taxonID')
-        #     # match_parent_taxon_id['taxonID'] = ''
-        #     # match_taxon_id = pd.concat([match_taxon_id, match_parent_taxon_id], ignore_index=True)
-        #     # 如果都沒有對到 要再加回來
-        #     match_taxon_id = pd.concat([match_taxon_id,sci_names[~sci_names.sci_index.isin(match_taxon_id.sci_index.to_list())]], ignore_index=True)
-        #     match_taxon_id = match_taxon_id.replace({nan: ''})
-        #     match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
         if len(match_taxon_id):
             match_taxon_id = match_taxon_id.replace({nan: ''})
             match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
@@ -106,6 +97,9 @@ for p in range(0,total_page,10):
         df['created'] = now
         df['modified'] = now
         df['recordType'] = 'col'
+        # 出現地
+        if 'locality' in df.keys():
+            df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
         # 日期
         df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))
         # 數量 
@@ -114,14 +108,18 @@ for p in range(0,total_page,10):
         # basisOfRecord 無資料
         # dataGeneralizations 無資料
         # 經緯度
-        df['grid_1'] = '-1_-1'
-        df['grid_5'] = '-1_-1'
-        df['grid_10'] = '-1_-1'
-        df['grid_100'] = '-1_-1'
+        # df['grid_1'] = '-1_-1'
+        # df['grid_5'] = '-1_-1'
+        # df['grid_10'] = '-1_-1'
+        # df['grid_100'] = '-1_-1'
+        # df['grid_1_blurred'] = '-1_-1'
+        # df['grid_5_blurred'] = '-1_-1'
+        # df['grid_10_blurred'] = '-1_-1'
+        # df['grid_100_blurred'] = '-1_-1'
         df['id'] = ''
-        df['standardLongitude'] = None
-        df['standardLatitude'] = None
-        df['location_rpt'] = None
+        # df['standardLongitude'] = None
+        # df['standardLatitude'] = None
+        # df['location_rpt'] = None
         df['mediaLicense'] = None
         for i in df.index:
             # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
@@ -135,19 +133,36 @@ for p in range(0,total_page,10):
             if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
                 if not row.mediaLicense:
                     df.loc[i,'associatedMedia'] = None
-            standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
-            if standardLon and standardLat:
-                df.loc[i,'standardLongitude'] = standardLon
-                df.loc[i,'standardLatitude'] = standardLat
-                df.loc[i,'location_rpt'] = location_rpt
-                grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
-                df.loc[i, 'grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
-                grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
-                df.loc[i, 'grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
-                grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.1)
-                df.loc[i, 'grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
-                grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
-                df.loc[i, 'grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            # 因為沒有模糊化座標 所以grid_* & grid_*_blurred 欄位填一樣的
+            grid_data = create_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude)
+            df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
+            df.loc[i,'standardLatitude'] = grid_data.get('standardLat')
+            df.loc[i,'location_rpt'] = grid_data.get('location_rpt')
+            df.loc[i, 'grid_1'] = grid_data.get('grid_1')
+            df.loc[i, 'grid_1_blurred'] = grid_data.get('grid_1_blurred')
+            df.loc[i, 'grid_5'] = grid_data.get('grid_5')
+            df.loc[i, 'grid_5_blurred'] = grid_data.get('grid_5_blurred')
+            df.loc[i, 'grid_10'] = grid_data.get('grid_10')
+            df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
+            df.loc[i, 'grid_100'] = grid_data.get('grid_100')
+            df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
+            # standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
+            # if standardLon and standardLat:
+            #     df.loc[i,'standardLongitude'] = standardLon
+            #     df.loc[i,'standardLatitude'] = standardLat
+            #     df.loc[i,'location_rpt'] = location_rpt
+            #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
+            #     df.loc[i, 'grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            #     df.loc[i, 'grid_1_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
+            #     df.loc[i, 'grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            #     df.loc[i, 'grid_5_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.1)
+            #     df.loc[i, 'grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            #     df.loc[i, 'grid_10_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
+            #     df.loc[i, 'grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            #     df.loc[i, 'grid_100_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
         # 資料集
         ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
         update_dataset_key(ds_name=ds_name, rights_holder=rights_holder)
@@ -157,12 +172,6 @@ for p in range(0,total_page,10):
         existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
         existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder)
         existed_records = existed_records.replace({nan:''})
-        # with db.begin() as conn:
-        #     qry = sa.text("""select "tbiaID", "occurrenceID", "created" from records  
-        #                     where "rightsHolder" = '{}' AND "occurrenceID" IN {}  """.format(rights_holder, str(df.occurrenceID.to_list()).replace('[','(').replace(']',')')) )
-        #     resultset = conn.execute(qry)
-        #     results = resultset.mappings().all()
-        #     existed_records = pd.DataFrame(results)
         if len(existed_records):
             df =  df.merge(existed_records,on=["occurrenceID","datasetName"], how='left')
             df = df.replace({nan: None})
@@ -188,15 +197,26 @@ for p in range(0,total_page,10):
         df = df.rename(columns=({'id': 'tbiaID'}))
         df['update_version'] = int(update_version)
         # df = df.drop(columns=psql_records_key,errors='ignore')
-        df.to_sql('records', db, # schema='my_schema',
-                if_exists='append',
-                index=False,
-                method=records_upsert)
+        for l in range(0, len(df), 1000):
+            df[l:l+1000].to_sql('records', db, # schema='my_schema',
+                    if_exists='append',
+                    index=False,
+                    method=records_upsert)
+    # 成功之後 更新update_update_version
+    update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
 
 # 刪除is_deleted的records & match_log
 delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version))
     
 # 打包match_log
 zip_match_log(group=group,info_id=info_id)
+
+# 更新update_version
+update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder)
+
+# 更新 datahub - dataset
+# 前面已經處理過新增了 最後只需要處理deprecated的部分
+update_dataset_deprecated(rights_holder=rights_holder)
+
 
 print('done!')

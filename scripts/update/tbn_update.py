@@ -98,7 +98,7 @@ for url in url_list[url_index:]:
             df = df.reset_index(drop=True)
             df = df.replace({nan: '', None: ''})
             df['locality'] = df.apply(lambda x: x.county + x.municipality, axis = 1)
-            df['locality'] = df['locality'].apply(lambda x: x.strip())
+            df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
             # 若沒有individualCount 則用organismQuantity 
             df['organismQuantity'] = df.apply(lambda x: x.individualCount if x.individualCount else x.organismQuantity, axis = 1)
             # df.apply(lambda x: f'{x.year}-{x.month:02}-{x.day:02} {x.hour:02}:{x.minute:02}', axis = 1)

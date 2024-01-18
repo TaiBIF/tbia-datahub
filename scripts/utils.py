@@ -375,10 +375,11 @@ def update_match_log(match_log, now):
     match_log['created'] = now
     match_log['modified'] = now
     match_log = match_log.rename(columns={'id': 'tbiaID','rightsHolder':'rights_holder'})
-    match_log.to_sql('match_log', db, # schema='my_schema',
-              if_exists='append',
-              index=False,
-              method=matchlog_upsert)  
+    for l in range(0, len(match_log), 1000):
+        match_log[l:l+1000].to_sql('match_log', db, # schema='my_schema',
+                if_exists='append',
+                index=False,
+                method=matchlog_upsert)
     return match_log
 
 

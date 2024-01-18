@@ -95,7 +95,7 @@ for p in range(current_page,total_page,10):
         df['recordType'] = 'col'
         # 出現地
         if 'locality' in df.keys():
-            df['locality'] = df['locality'].apply(lambda x: x.strip())
+            df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
         # 日期
         df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))
         # 數量 

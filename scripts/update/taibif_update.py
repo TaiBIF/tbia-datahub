@@ -32,11 +32,6 @@ rights_holder = '臺灣生物多樣性資訊機構 TaiBIF'
 # 在portal.Partner.info裡面的id
 info_id = 0
 
-# # 先將records設為is_deleted='t'
-# with db.begin() as conn:
-#     qry = sa.text("""update records set is_deleted = 't' where "rightsHolder" = '{}' and "group" = '{}';""".format(rights_holder, group))
-#     resultset = conn.execute(qry)
-
 response = requests.get(f'http://solr:8983/solr/tbia_records/select?fl=update_version&fq=rightsHolder:{rights_holder}&q.op=OR&q=*%3A*&rows=1&sort=update_version%20desc')
 if response.status_code == 200:
     resp = response.json()
@@ -45,94 +40,106 @@ if response.status_code == 200:
     else:
         update_version = 1
 
+# 在開始之前 先確認存不存在 
+# 若不存在 insert一個新的update_version
+current_page, note = insert_new_update_version(rights_holder=rights_holder,update_version=update_version)
 
-# 排除夥伴單位
-# 改用id
-# partners = ['Taiwan Forestry Bureau', 
-#             'Taiwan Endemic Species Research Institute', 
-#             'Taiwan Forestry Research Institute',
-#             'Marine National Park Headquarters', 
-#             'Yushan National Park Headquarters', 
-#             'National Taiwan Museum', 
-#             'Water Resources Agency,Ministry of Economic Affairs']
 
-partners = ['6ddd1cf5-0655-44ac-a572-cb581a054992', 
-            '7c07cec1-2925-443c-81f1-333e4187bdea', 
-            '898ba450-1627-11df-bd84-b8a03c50a862', 
-            '7f2ff82e-193e-48eb-8fb5-bad64c84782a', 
-            'f40c7fe5-e64a-450c-b229-21d674ef3c28', 
-            'c57cd401-ff9e-43bd-9403-089b88a97dea', 
-            'b6b89e2d-e881-41f3-bc57-213815cb9742']
+if not note:
+    d_list_index = 0
+    # request_url = None
+    dataset_list = []
+else:
+    # note = json.load(note)
+    d_list_index = note.get('d_list_index')
+    # request_url = note.get('request_url')
+    dataset_list = note.get('dataset_list')
 
-# 排除重複資料集
-# 單位間
-# 改用id
-# duplicated_dataset_list = ['Database of Native Plants in Taiwan',
-#                             # 'Digital Archives of Taiwan Malacofauna Database',
-#                             # 'ntou_db',
-#                             # 'nthu_db',
-#                             'The Fish Database of Taiwan',
-#                             'A dataset from bottom trawl survey around Taiwan',
-#                             'National Museum of Natural Science',
-#                             # 'taijiang_national_park_beamtrawling_2016-2018', 確認後不排除
-#                             '珊瑚健康指標之建立與保護區管理應用: 以墾丁國家公園珊瑚礁生態系為例 ',
-#                             '國家公園生物多樣性資料流通(2015)',
-#                             '國家公園生物資訊流通(2014)',
-#                             '國家公園資料集',
-#                             'national_parts_taiwan-2016',
-#                             # 'National vegetation diversity inventory and mapping plan',  確認後不排除
-#                             'National Taiwan Museum']
 
-duplicated_dataset_list = [
-    '36c38933-a03b-4f8b-9ba3-6987e5528179',
-    '489b921b-88fe-40ca-9efc-dbb3270bfa9e',
-    'ec70c946-482c-4e10-ab56-9e190c9d40f9',
-    'fddbabb3-7386-4a1c-a086-f12bbabe9eb6',
-    '44a761b5-5adf-4b67-adad-c5ae04637fb9',
-    '06b55da4-bfb9-453d-be18-a1d1ae68ed5d',
-    '836a5bd1-d440-4ebd-bb1e-0d83f91bd21a',
-    'af48a08e-f523-443d-9d4d-505a01be11a4',
-    '07b06590-6ecc-489e-a565-73c1f2081a02',
-    '73f63477-81be-4661-8d71-003597a701c0'
-]
+if not dataset_list:
+    # 排除夥伴單位
+    # 改用id
+    # partners = ['Taiwan Forestry Bureau', 
+    #             'Taiwan Endemic Species Research Institute', 
+    #             'Taiwan Forestry Research Institute',
+    #             'Marine National Park Headquarters', 
+    #             'Yushan National Park Headquarters', 
+    #             'National Taiwan Museum', 
+    #             'Water Resources Agency,Ministry of Economic Affairs']
+    partners = ['6ddd1cf5-0655-44ac-a572-cb581a054992', 
+                '7c07cec1-2925-443c-81f1-333e4187bdea', 
+                '898ba450-1627-11df-bd84-b8a03c50a862', 
+                '7f2ff82e-193e-48eb-8fb5-bad64c84782a', 
+                'f40c7fe5-e64a-450c-b229-21d674ef3c28', 
+                'c57cd401-ff9e-43bd-9403-089b88a97dea', 
+                'b6b89e2d-e881-41f3-bc57-213815cb9742']
+    # 排除重複資料集
+    # 單位間
+    # 改用id
+    # duplicated_dataset_list = ['Database of Native Plants in Taiwan',
+    #                             # 'Digital Archives of Taiwan Malacofauna Database',
+    #                             # 'ntou_db',
+    #                             # 'nthu_db',
+    #                             'The Fish Database of Taiwan',
+    #                             'A dataset from bottom trawl survey around Taiwan',
+    #                             'National Museum of Natural Science',
+    #                             # 'taijiang_national_park_beamtrawling_2016-2018', 確認後不排除
+    #                             '珊瑚健康指標之建立與保護區管理應用: 以墾丁國家公園珊瑚礁生態系為例 ',
+    #                             '國家公園生物多樣性資料流通(2015)',
+    #                             '國家公園生物資訊流通(2014)',
+    #                             '國家公園資料集',
+    #                             'national_parts_taiwan-2016',
+    #                             # 'National vegetation diversity inventory and mapping plan',  確認後不排除
+    #                             'National Taiwan Museum']
+    duplicated_dataset_list = [
+        '36c38933-a03b-4f8b-9ba3-6987e5528179',
+        '489b921b-88fe-40ca-9efc-dbb3270bfa9e',
+        'ec70c946-482c-4e10-ab56-9e190c9d40f9',
+        'fddbabb3-7386-4a1c-a086-f12bbabe9eb6',
+        '44a761b5-5adf-4b67-adad-c5ae04637fb9',
+        '06b55da4-bfb9-453d-be18-a1d1ae68ed5d',
+        '836a5bd1-d440-4ebd-bb1e-0d83f91bd21a',
+        'af48a08e-f523-443d-9d4d-505a01be11a4',
+        '07b06590-6ecc-489e-a565-73c1f2081a02',
+        '73f63477-81be-4661-8d71-003597a701c0',
+        'e7b6eb08-1380-40c7-9a2e-60d2ac9b00c2',
+        'c6552cda-cdb3-4711-84c1-347c6fe8ba86'
+    ]
+    # 單位內
+    # duplicated_dataset_list += ['tad_db']
+    duplicated_dataset_list += ['6e54a298-6358-4994-ae50-df9a8dd4efc6']
+    # 取得所有台灣發布者
+    url = "https://portal.taibif.tw/api/v2/publisher?countryCode=TW"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        pub = pd.DataFrame(data)
+        pub = pub[~pub.publisherID.isin(partners)]
+    dataset_list = []
+    # 取得所有資料集
+    url = "https://portal.taibif.tw/api/v2/dataset"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        dataset = pd.DataFrame(data)
+        dataset = dataset[dataset.source!='GBIF']
+        dataset = dataset[dataset.core.isin(['OCCURRENCE','SAMPLINGEVENT'])]
+        # dataset = dataset[~dataset.publisherID.isin(pub[pub.publisherName.isin(partners)].publisherID.to_list())]
+        dataset = dataset[dataset.publisherID.isin(pub.publisherID.to_list())]
+        dataset = dataset[~dataset.taibifDatasetID.isin(duplicated_dataset_list)]
+        dataset_list = dataset[['taibifDatasetID','numberOccurrence']].to_dict('tight')['data']
 
-# 單位內
-# duplicated_dataset_list += ['tad_db']
-duplicated_dataset_list += ['6e54a298-6358-4994-ae50-df9a8dd4efc6']
-
-# 取得所有台灣發布者
-url = "https://portal.taibif.tw/api/v2/publisher?countryCode=TW"
-response = requests.get(url)
-if response.status_code == 200:
-    data = response.json()
-    pub = pd.DataFrame(data)
-    pub = pub[~pub.publisherID.isin(partners)]
-
-dataset_list = []
-
-# 取得所有資料集
-url = "https://portal.taibif.tw/api/v2/dataset"
-response = requests.get(url)
-if response.status_code == 200:
-    data = response.json()
-    dataset = pd.DataFrame(data)
-    dataset = dataset[dataset.source!='GBIF']
-    dataset = dataset[dataset.core.isin(['OCCURRENCE','SAMPLINGEVENT'])]
-    # dataset = dataset[~dataset.publisherID.isin(pub[pub.publisherName.isin(partners)].publisherID.to_list())]
-    dataset = dataset[dataset.publisherID.isin(pub.publisherID.to_list())]
-    dataset = dataset[~dataset.taibifDatasetID.isin(duplicated_dataset_list)]
-    dataset_list = dataset[['taibifDatasetID','numberOccurrence']].to_dict('tight')['data']
 
 now = datetime.now() + timedelta(hours=8)
 
-d_list_index = 0
 
-for d in dataset_list: # 20
-    d_list_index += 1
-    test_count = 0
+# d_list_index = 0
+
+for d in dataset_list[d_list_index:]: # 20
+    # test_count = 0
     total_count = d[1]
     total_page = math.ceil (total_count / 1000)
-    for p in range(0,total_page,10):
+    for p in range(current_page,total_page,10):
         data = []
         c = p
         while c < p + 10 and c < total_page:
@@ -146,7 +153,7 @@ for d in dataset_list: # 20
                 result = response.json()
                 data += result.get('results')
             c+=1
-        test_count += len(data)
+        # test_count += len(data)
         if len(data):
             df = pd.DataFrame(data)
             df = df.rename(columns= {
@@ -175,20 +182,6 @@ for d in dataset_list: # 20
                 sci_names = matching_flow(sci_names)
                 df = df.drop(columns=['taxonID'], errors='ignore')
                 match_taxon_id = sci_names
-                # taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique()) + list(sci_names[sci_names.parentTaxonID!=''].parentTaxonID.unique())
-                # taxon_list = list(sci_names[sci_names.taxonID!=''].taxonID.unique())
-                # final_taxon = taxon[taxon.taxonID.isin(taxon_list)]
-                # final_taxon = pd.DataFrame(final_taxon)
-                # if len(final_taxon):
-                #     match_taxon_id = sci_names.merge(final_taxon)
-                #     # 若沒有taxonID的 改以parentTaxonID串
-                #     # match_parent_taxon_id = sci_names.drop(columns=['taxonID']).merge(final_taxon,left_on='parentTaxonID',right_on='taxonID')
-                #     # match_parent_taxon_id['taxonID'] = ''
-                #     # match_taxon_id = pd.concat([match_taxon_id, match_parent_taxon_id], ignore_index=True)
-                #     # 如果都沒有對到 要再加回來
-                #     match_taxon_id = pd.concat([match_taxon_id,sci_names[~sci_names.sci_index.isin(match_taxon_id.sci_index.to_list())]], ignore_index=True)
-                #     match_taxon_id = match_taxon_id.replace({nan: ''})
-                #     match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
                 if len(match_taxon_id):
                     match_taxon_id = match_taxon_id.replace({nan: ''})
                     match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
@@ -201,6 +194,9 @@ for d in dataset_list: # 20
                 df['rightsHolder'] = rights_holder
                 df['created'] = now
                 df['modified'] = now
+                # 出現地
+                if 'locality' in df.keys():
+                    df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
                 # 日期
                 df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))
                 # 數量 
@@ -208,14 +204,18 @@ for d in dataset_list: # 20
                 # dataGeneralizations
                 df['dataGeneralizations'] = df['dataGeneralizations'].apply(lambda x: True if x else None)
                 # 經緯度
-                df['grid_1'] = '-1_-1'
-                df['grid_5'] = '-1_-1'
-                df['grid_10'] = '-1_-1'
-                df['grid_100'] = '-1_-1'
+                # df['grid_1'] = '-1_-1'
+                # df['grid_5'] = '-1_-1'
+                # df['grid_10'] = '-1_-1'
+                # df['grid_100'] = '-1_-1'
+                # df['grid_1_blurred'] = '-1_-1'
+                # df['grid_5_blurred'] = '-1_-1'
+                # df['grid_10_blurred'] = '-1_-1'
+                # df['grid_100_blurred'] = '-1_-1'
                 df['id'] = ''
-                df['standardLongitude'] = None
-                df['standardLatitude'] = None
-                df['location_rpt'] = None
+                # df['standardLongitude'] = None
+                # df['standardLatitude'] = None
+                # df['location_rpt'] = None
                 df['basisOfRecord'] = df['basisOfRecord'].apply(lambda x: control_basis_of_record(x))
                 for i in df.index:
                     # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
@@ -233,20 +233,37 @@ for d in dataset_list: # 20
                     # 如果有mediaLicense才放associatedMedia
                     if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
                         if not row.mediaLicense:
-                            df.loc[i,'associatedMedia'] = None                
-                    standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
-                    if standardLon and standardLat:
-                        df.loc[i,'standardLongitude'] = standardLon
-                        df.loc[i,'standardLatitude'] = standardLat
-                        df.loc[i,'location_rpt'] = location_rpt
-                        grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
-                        df.loc[i, 'grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
-                        grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
-                        df.loc[i, 'grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
-                        grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.1)
-                        df.loc[i, 'grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
-                        grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
-                        df.loc[i, 'grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
+                            df.loc[i,'associatedMedia'] = None  
+                    grid_data = create_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude)
+                    df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
+                    df.loc[i,'standardLatitude'] = grid_data.get('standardLat')
+                    df.loc[i,'location_rpt'] = grid_data.get('location_rpt')
+                    df.loc[i, 'grid_1'] = grid_data.get('grid_1')
+                    df.loc[i, 'grid_1_blurred'] = grid_data.get('grid_1_blurred')
+                    df.loc[i, 'grid_5'] = grid_data.get('grid_5')
+                    df.loc[i, 'grid_5_blurred'] = grid_data.get('grid_5_blurred')
+                    df.loc[i, 'grid_10'] = grid_data.get('grid_10')
+                    df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
+                    df.loc[i, 'grid_100'] = grid_data.get('grid_100')
+                    df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
+                    # standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
+                    # # 因為沒有模糊化座標 所以grid_* & grid_*_blurred 欄位填一樣的
+                    # if standardLon and standardLat:
+                    #     df.loc[i,'standardLongitude'] = standardLon
+                    #     df.loc[i,'standardLatitude'] = standardLat
+                    #     df.loc[i,'location_rpt'] = location_rpt
+                    #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
+                    #     df.loc[i, 'grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
+                    #     df.loc[i, 'grid_1_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+                    #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
+                    #     df.loc[i, 'grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
+                    #     df.loc[i, 'grid_5_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+                    #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.1)
+                    #     df.loc[i, 'grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
+                    #     df.loc[i, 'grid_10_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+                    #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
+                    #     df.loc[i, 'grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
+                    #     df.loc[i, 'grid_100_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
                 # 資料集
                 ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
                 update_dataset_key(ds_name=ds_name, rights_holder=rights_holder)
@@ -256,20 +273,11 @@ for d in dataset_list: # 20
                 existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
                 existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder)
                 existed_records = existed_records.replace({nan:''})
-                # with db.begin() as conn:
-                #     qry = sa.text("""select "tbiaID", "occurrenceID", "created" from records  
-                #                     where "rightsHolder" = '{}' AND "occurrenceID" IN {}  """.format(rights_holder, str(df.occurrenceID.to_list()).replace('[','(').replace(']',')')) )
-                #     resultset = conn.execute(qry)
-                #     results = resultset.mappings().all()
-                #     existed_records = pd.DataFrame(results)
                 if len(existed_records):
                     df =  df.merge(existed_records,on=["occurrenceID","datasetName"], how='left')
                     df = df.replace({nan: None})
                     # 如果已存在，取存在的tbiaID
                     df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
-                    # 如果已存在，取存在的建立日期
-                    # df['created'] = df.apply(lambda x: x.created_y if x.tbiaID else now, axis=1)
-                    # df = df.drop(columns=['tbiaID','created_y','created_x'])
                     df = df.drop(columns=['tbiaID'])
                 # match_log要用更新的
                 match_log = df[['occurrenceID','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','group','rightsHolder','created','modified']]
@@ -291,7 +299,12 @@ for d in dataset_list: # 20
                         if_exists='append',
                         index=False,
                         method=records_upsert)
-    print(test_count, total_count)
+        # 成功之後 更新update_update_version
+        update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}))
+    # print(test_count, total_count)
+    d_list_index += 1
+    current_page = 0 # 換成新的url時要重新開始
+    update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=0, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}))
 
 
 # 刪除is_deleted的records & match_log
@@ -299,5 +312,12 @@ delete_records(rights_holder=rights_holder,group=group,update_version=int(update
 
 # 打包match_log
 zip_match_log(group=group,info_id=info_id)
+
+# 更新update_version
+update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder)
+
+# 更新 datahub - dataset
+# 前面已經處理過新增了 最後只需要處理deprecated的部分
+update_dataset_deprecated(rights_holder=rights_holder)
 
 print('done!')
