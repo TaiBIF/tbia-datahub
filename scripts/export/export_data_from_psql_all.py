@@ -83,7 +83,7 @@ while has_more_data:
         df = df.drop(columns=['id'])
         df = df.rename(columns={'tbiaID': 'id'})
         if len(df[df.taxonID.notnull()]):
-            taxon = get_taxon_df(taxon_ids=df[df.taxonID.notnull()].taxonID.to_list())
+            taxon = get_taxon_df(taxon_ids=df[df.taxonID.notnull()].taxonID.unique())
             # taxonID
             final_df = df.merge(taxon,on='taxonID',how='left')
         else:
