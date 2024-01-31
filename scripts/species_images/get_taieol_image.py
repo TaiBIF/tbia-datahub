@@ -20,7 +20,7 @@ def update_species_images(taxon_name_id, namecode, taieol_id, images):
     conn.close()
 
 
-df = pd.read_csv('/bucket/taicol-web-namecode-2023-11-7.csv')
+df = pd.read_csv('/bucket/taicol-web-namecode-2024-1-31.csv')
 
 for i in df.index:
     if i % 100 == 0:
@@ -36,7 +36,7 @@ for i in df.index:
     img = r.json()
     if img:
         for ii in img:
-            images += [{'author':ii['author'], 'src':ii['image_big'], 'provider':ii['provider']}]
+            images += [{'author':ii['author'], 'src':ii['image_big'], 'provider':ii['provider'], 'license': ii['license']}]
     images = json.dumps(images)
     url = 'https://data.taieol.tw/eol/endpoint/taxondesc/species/{}'.format(namecode)
     r = requests.get(url)
