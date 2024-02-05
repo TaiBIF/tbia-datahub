@@ -217,6 +217,9 @@ final_df = final_df.replace({nan:None})
 df = final_df
 
 df = df[~(df.sourceVernacularName.isin([nan,'',None])&df.sourceScientificName.isin([nan,'',None]))]
+if 'sensitiveCategory' in df.keys():
+    df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
+
 df = df.reset_index(drop=True)
 df = df.replace({nan: '', 'NA': '', '-99999': '', 'N/A': ''})
 

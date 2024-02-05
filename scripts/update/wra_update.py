@@ -113,6 +113,8 @@ for d in dataset_list[d_list_index:]:
                                 'habitatReserve', 'wildlifeReserve', 'occurrenceStatus', 'selfProduced',
                                 'datasetShortName','taibifDatasetID','establishmentMeans', 'issue'])
             df = df[~(df.sourceVernacularName.isin([nan,'',None])&df.sourceScientificName.isin([nan,'',None]))]
+            if 'sensitiveCategory' in df.keys():
+                df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
             if len(df):
                 sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
                 sci_names = matching_flow(sci_names)

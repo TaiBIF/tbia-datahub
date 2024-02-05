@@ -76,6 +76,8 @@ for p in range(current_page,total_page,10):
             data += result.get('data')
     df = pd.DataFrame(data)
     df = df[~(df.isPreferredName.isin([nan,'',None])&df.scientificName.isin([nan,'',None]))]
+    if 'sensitiveCategory' in df.keys():
+        df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
     if len(df):
         df = df.rename(columns={'created': 'sourceCreated', 'modified': 'sourceModified', 'scientificName': 'sourceScientificName', 
         'permanentLink': 'references', 'isPreferredName': 'sourceVernacularName', 'collectionID': 'catalogNumber', 'taxonRank': 'sourceTaxonRank'})

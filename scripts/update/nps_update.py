@@ -95,6 +95,8 @@ for p in range(current_page,total_page,10):
             data += result.get('Data')
     df = pd.DataFrame(data)
     df = df[~(df.isPreferredName.isin([nan,'',None])&df.scientificName.isin([nan,'',None]))]
+    if 'sensitiveCategory' in df.keys():
+        df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
     # 排除重複資料集
     df = df[~df.datasetName.isin(duplicated_dataset_list)]
     if len(df):
@@ -130,7 +132,7 @@ for p in range(current_page,total_page,10):
         df['basisOfRecord'] = df['basisOfRecord'].apply(lambda x: control_basis_of_record(x))
         # dataGeneralizations 已標準化
         # 敏感層級
-        df['sensitiveCategory'] = df['sensitiveCategory'].replace({'物種不開放': '分類群不開放'})
+        # df['sensitiveCategory'] = df['sensitiveCategory'].replace({'物種不開放': '分類群不開放'})
         # 經緯度
         # df['grid_1'] = '-1_-1'
         # df['grid_5'] = '-1_-1'

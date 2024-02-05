@@ -79,6 +79,8 @@ for p in range(current_page,total_page,10):
     df = df[~(df.isPreferredName.isin([nan,'',None])&df.scientificName.isin([nan,'',None]))]
     # 排除重複資料集
     df = df[~df.datasetName.isin(duplicated_dataset_list)]
+    if 'sensitiveCategory' in df.keys():
+        df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
     if len(df):
         df = df.reset_index(drop=True)
         df = df.replace({nan: '', 'NA': '', '-99999': ''})

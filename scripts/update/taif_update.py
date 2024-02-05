@@ -77,6 +77,8 @@ for p in range(current_page,total_page,10):
         c += 1
     df = pd.DataFrame(data)
     df = df[~(df.isPreferredName.isin([nan,'',None])&df.scientificName.isin([nan,'',None]))]
+    if 'sensitiveCategory' in df.keys():
+        df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
     if len(df):
         df = df.reset_index(drop=True)
         df = df.replace({nan: '', 'NA': ''})

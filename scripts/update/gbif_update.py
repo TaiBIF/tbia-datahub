@@ -62,12 +62,12 @@ else:
 
 if not dataset_list:
     # 排除夥伴單位
-    partners = ['6ddd1cf5-0655-44ac-a572-cb581a054992', 
-                '898ba450-1627-11df-bd84-b8a03c50a862', 
-                '7f2ff82e-193e-48eb-8fb5-bad64c84782a', 
-                'f40c7fe5-e64a-450c-b229-21d674ef3c28', 
-                'c57cd401-ff9e-43bd-9403-089b88a97dea', 
-                'b6b89e2d-e881-41f3-bc57-213815cb9742']
+    partners = ['6ddd1cf5-0655-44ac-a572-cb581a054992', # 林保署
+                '898ba450-1627-11df-bd84-b8a03c50a862', # 林試所
+                '7f2ff82e-193e-48eb-8fb5-bad64c84782a', # 國家公園
+                'f40c7fe5-e64a-450c-b229-21d674ef3c28', # 國家公園
+                'c57cd401-ff9e-43bd-9403-089b88a97dea', # 台博館
+                'b6b89e2d-e881-41f3-bc57-213815cb9742'] # 水利署
     # 排除重複資料集
     # 單位間
     # GBIF 需要排除的生多所資料
@@ -149,6 +149,8 @@ for d in dataset_list[d_list_index:]: # 20
                                 'habitatReserve', 'wildlifeReserve', 'occurrenceStatus', 'selfProduced',
                                 'datasetShortName','taibifDatasetID','establishmentMeans', 'issue'])
             df = df[~(df.sourceVernacularName.isin([nan,'',None])&df.sourceScientificName.isin([nan,'',None]))]
+            if 'sensitiveCategory' in df.keys():
+                df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
             if len(df):
                 sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
                 sci_names = matching_flow(sci_names)

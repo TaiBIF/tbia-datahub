@@ -70,6 +70,8 @@ for p in range(current_page,total_page,10):
             data += result.get('Data')
     df = pd.DataFrame(data)
     df = df[~(df.isPreferredName.isin([nan,'',None])&df.scientificName.isin([nan,'',None]))]
+    if 'sensitiveCategory' in df.keys():
+        df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
     # 排除重複資料集
     # df = df[~df.datasetName.isin([duplicated_dataset_list])]
     if len(df):

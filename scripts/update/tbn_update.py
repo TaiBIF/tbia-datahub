@@ -33,11 +33,6 @@ rights_holder = '台灣生物多樣性網絡 TBN'
 # 在portal.Partner.info裡面的id
 info_id = 0
 
-# 先將records設為is_deleted='t'
-# with db.begin() as conn:
-#     qry = sa.text("""update records set is_deleted = 't' where "rightsHolder" = '{}' and "group" = '{}';""".format(rights_holder, group))
-#     resultset = conn.execute(qry)
-
 response = requests.get(f'http://solr:8983/solr/tbia_records/select?fl=update_version&fq=rightsHolder:{rights_holder}&q.op=OR&q=*%3A*&rows=1&sort=update_version%20desc')
 if response.status_code == 200:
     resp = response.json()
@@ -53,6 +48,27 @@ current_page, note = insert_new_update_version(rights_holder=rights_holder,updat
 
 # 自產資料 + eBird
 url_list = ['https://www.tbn.org.tw/api/v25/occurrence?selfProduced=y', 'https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=4fa7b334-ce0d-4e88-aaae-2e0c138d049e']
+
+# 從ipt上傳的tbri資料
+url_list += ["https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=4410edca-3bdd-4475-98a2-de823b2266bc",
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=e0b8cb67-6667-423d-ab71-08021b6485f3",
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=f170f056-3f8a-4ef3-ac9f-4503cc854ce0",
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=4daa291b-0e9d-4e21-b78d-6b4e96093adc",
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=f3f25fcf-2930-4cf1-a495-6b31d7fa0252",
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=3f9cd7e5-6d7b-40a8-8062-a18d2f2ca599",
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=db09684b-0fd1-431e-b5fa-4c1532fbdb14",
+        # "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=54eaea55-f346-442e-9414-039c25658877",
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=617e5387-3122-47b7-b639-c9fafc35bf13",
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=346c95be-c7b3-41dc-99c9-e88a18d8884a",
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=f464cad8-531e-4d53-ad36-2e4430f6765e",
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=cb6e756a-c56a-4dc4-bbfa-2002a0a754dd",
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=cb382c4d-7b6c-40c2-9e2d-e8167380cec5",
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=0528b82f-bebb-49b0-ad2e-5082ae002823",
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=a1f3b9e3-60d5-49fe-a6d1-2d22a154e2b2",
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=7bff8305-a1e3-4e5b-bbc3-4afe04006b88",
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=3a3aae4c-5895-4ba5-b3ba-d5f7d924478d"]
+
+
 now = datetime.now() + timedelta(hours=8)
 
 if not note:
@@ -94,6 +110,9 @@ for url in url_list[url_index:]:
             c += 1
         df = pd.DataFrame(data)
         df = df[~(df.originalVernacularName.isin([nan,'',None])&df.scientificName.isin([nan,'',None]))]
+        df = df[df.originalVernacularName != '原始資料無物種資訊']
+        if 'sensitiveCategory' in df.keys():
+            df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
         if len(df):
             df = df.reset_index(drop=True)
             df = df.replace({nan: '', None: ''})
@@ -196,7 +215,8 @@ for url in url_list[url_index:]:
                 # if row.sensitiveCategory not in ['縣市','座標不開放','分類群不開放']:
                 #     is_hidden = True
                 #     df.loc[i,'dataGeneralizations'] = True
-                if row.sensitiveCategory in ['縣市','座標不開放','分類群不開放']:
+                # if row.sensitiveCategory in ['縣市','座標不開放','分類群不開放']:
+                if row.sensitiveCategory in ['縣市','座標不開放']:
                     is_hidden = True
                     df.loc[i,'dataGeneralizations'] = True
                 grid_data = create_blurred_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude, coordinatePrecision=coordinatePrecision, is_full_hidden=is_hidden)
