@@ -300,10 +300,21 @@ class Dataset(Base):
     
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(10000), index=True)
+    datasetTaxonGroup: Mapped[Optional[str]] = mapped_column(String(10000))
+    resourceContacts: Mapped[Optional[str]] = mapped_column(String(10000))
     record_type: Mapped[str] = mapped_column(String(20), index=True)
     rights_holder:  Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     deprecated: Mapped[bool] = mapped_column(server_default='f', index=True)
-    source_datasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
+    sourceDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
+    gbifDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
+    tbiaDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
+    dateCoverage: Mapped[Optional[str]] = mapped_column(String(10000))
+    occurrenceCount: Mapped[Optional[int]] = mapped_column(server_default='0')
+    datasetAuthor: Mapped[Optional[str]] = mapped_column(String(10000))
+    datasetURL: Mapped[Optional[str]] = mapped_column(String(10000))
+    datasetLicense: Mapped[Optional[str]] = mapped_column(String(10000))
+    created: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    modified: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         UniqueConstraint('name','record_type','rights_holder', name='dataset_unique'),
