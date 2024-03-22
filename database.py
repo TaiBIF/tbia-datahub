@@ -316,6 +316,7 @@ class Dataset(Base):
     datasetPublisher: Mapped[Optional[str]] = mapped_column(String(10000))
     created: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     modified: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    update_version: Mapped[Optional[int]] = mapped_column(server_default='0', index=True)
 
     __table_args__ = (
         UniqueConstraint('name','record_type','rights_holder','sourceDatasetID', name='dataset_unique'),
@@ -359,14 +360,14 @@ class UpdateVersion(Base):
 
 # 影像來源規則
 class MediaRule(Base):
-    __tablename__ = "image_rule"
+    __tablename__ = "media_rule"
     
     id: Mapped[int] = mapped_column(primary_key=True)
 
     rights_holder:  Mapped[Optional[str]] = mapped_column(String(10000), index=True)
-    image_rule: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
+    media_rule: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     modified: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
-        UniqueConstraint('rights_holder','image_rule', name='rule_unique'),
+        UniqueConstraint('rights_holder','media_rule', name='media_rule_unique'),
     )
