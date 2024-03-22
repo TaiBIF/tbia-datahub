@@ -37,7 +37,7 @@ class MatchLog(Base):
     modified: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     
     __table_args__ = (
-        UniqueConstraint('tbiaID', name='tbiaID_unique'),
+        UniqueConstraint('tbiaID', name='tbiaid_unique'),
     )
 
 
