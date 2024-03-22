@@ -362,7 +362,7 @@ def matchlog_upsert(table, conn, keys, data_iter):
                 'stage_1','stage_2','stage_3','stage_4','stage_5','modified']
     insert_statement = insert(table.table).values(data)
     upsert_statement = insert_statement.on_conflict_do_update(
-        constraint=f"tbiaid_unique",
+        constraint=f"matchlog_unique",
         # 如果重複的時候，需要update的欄位
         set_={c.key: c for c in insert_statement.excluded if c.key in set_list},
     )
