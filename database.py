@@ -313,11 +313,12 @@ class Dataset(Base):
     datasetAuthor: Mapped[Optional[str]] = mapped_column(String(10000))
     datasetURL: Mapped[Optional[str]] = mapped_column(String(10000))
     datasetLicense: Mapped[Optional[str]] = mapped_column(String(10000))
+    datasetPublisher: Mapped[Optional[str]] = mapped_column(String(10000))
     created: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     modified: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
-        UniqueConstraint('name','record_type','rights_holder', name='dataset_unique'),
+        UniqueConstraint('name','record_type','rights_holder','sourceDatasetID', name='dataset_unique'),
     )
 
 
