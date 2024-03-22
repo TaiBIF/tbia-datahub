@@ -212,7 +212,7 @@ def matching_flow(sci_names):
             # matching_name, sci_name, original_name, original_taxonuuid, is_parent, match_stage, sci_names, source_family, source_class, source_order, sci_index
             match_name(matching_name=s_row.sourceScientificName,
                        sci_name=s_row.sourceScientificName,
-                       original_name=s_row.originalScientificName,
+                       original_name=s_row.originalVernacularName,
                     #    original_taxonuuid=s_row.sourceTaxonID,
                        is_parent=False,
                        match_stage=1,
@@ -232,14 +232,14 @@ def matching_flow(sci_names):
                 match_stage=2,
                 sci_names=sci_names,
                 sci_index=s_row.sci_index)
-    ## 第三階段比對 - originalScientificName 英文比對
-    ## 第三階段比對 - originalScientificName 中文比對
+    ## 第三階段比對 - originalVernacularName 英文比對
+    ## 第三階段比對 - originalVernacularName 中文比對
     sci_names.loc[sci_names.taxonID=='','match_stage'] = 3
-    no_taxon = sci_names[(sci_names.taxonID=='')&(sci_names.originalScientificName!='')]
+    no_taxon = sci_names[(sci_names.taxonID=='')&(sci_names.originalVernacularName!='')]
     # 要判斷是中文還是英文(英文可能帶有標點符號)
     for nti in no_taxon.sci_index.unique():
         s_row = sci_names.loc[sci_names.sci_index==nti].to_dict('records')[0]
-        nt_str = s_row.get('originalScientificName')
+        nt_str = s_row.get('originalVernacularName')
         # 拿掉階層名
         for v in rank_map.values():
             nt_str = nt_str.replace(v, '')
@@ -256,7 +256,7 @@ def matching_flow(sci_names):
                     # 英文
                     match_name(matching_name=sl, 
                                sci_name=s_row.get('sourceScientificName'),
-                               original_name=s_row.get('originalScientificName'),
+                               original_name=s_row.get('originalVernacularName'),
                             #    original_taxonuuid=sci_names.loc[nti,'sourceTaxonID'],
                                is_parent=False,
                                match_stage=3,
@@ -272,7 +272,7 @@ def matching_flow(sci_names):
                     # 中文
                     match_name(matching_name=sl, 
                                sci_name=s_row.get('sourceScientificName'),
-                               original_name=s_row.get('originalScientificName'),
+                               original_name=s_row.get('originalVernacularName'),
                             #    original_taxonuuid=sci_names.loc[nti,'sourceTaxonID'],
                                is_parent=False,
                                match_stage=3,
@@ -291,7 +291,7 @@ def matching_flow(sci_names):
             if len(nt_str.split(' ')) > 1: # 等於0的話代表上面已經對過了
                 match_name(matching_name=nt_str.split(' ')[0], 
                            sci_name=s_row.get('sourceScientificName'),
-                           original_name=s_row.get('originalScientificName'),
+                           original_name=s_row.get('originalVernacularName'),
                         #    original_taxonuuid=sci_names.loc[nti,'sourceTaxonID'],
                            is_parent=True,
                            match_stage=4,
@@ -300,17 +300,17 @@ def matching_flow(sci_names):
                            source_class=s_row.get('sourceClass'), 
                            source_order=s_row.get('sourceOrder'),
                            sci_index=s_row.get('sci_index'))
-    ## 第五階段比對 - originalScientificName第一個英文單詞 (為了至少可以補階層)
+    ## 第五階段比對 - originalVernacularName第一個英文單詞 (為了至少可以補階層)
     ## 這個情況要給的是parentTaxonID
     sci_names.loc[sci_names.taxonID=='','match_stage'] = 5
     # no_taxon = sci_names[(sci_names.taxonID=='')&(sci_names.parentTaxonID=='')]
     no_taxon = sci_names[(sci_names.taxonID=='')]
     for nti in no_taxon.sci_index.unique():
         s_row = sci_names.loc[sci_names.sci_index==nti].to_dict('records')[0]
-        if nt_str := s_row.get('originalScientificName'):
+        if nt_str := s_row.get('originalVernacularName'):
             if len(nt_str.split(' ')) > 1: # 等於0的話代表上面已經對過了
                 # 以TBN的資料來說應該第一個是英文 但再確認一次
-                # nt_str = sci_names.loc[nti,'originalScientificName']
+                # nt_str = sci_names.loc[nti,'originalVernacularName']
                 # 拿掉階層名
                 for v in rank_map.values():
                     nt_str = nt_str.replace(v, '')
@@ -322,7 +322,7 @@ def matching_flow(sci_names):
                 # if not any(re.findall(r'[\u4e00-\u9fff]+', eng_part)):
                 match_name(matching_name=eng_part.split(' ')[0], 
                            sci_name=s_row.get('sourceScientificName'),
-                           original_name=s_row.get('originalScientificName'),
+                           original_name=s_row.get('originalVernacularName'),
                         #    original_taxonuuid=sci_names.loc[nti,'sourceTaxonID'],
                            is_parent=True,
                            match_stage=5,

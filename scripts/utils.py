@@ -127,7 +127,8 @@ def get_existed_records(ids, rights_holder):
                 "filter": [f"rightsHolder:{rights_holder}"],
                             # "{!terms f=occurrenceID} "+ ",".join(ids[tt:tt+20])],
                 "limit": 1000000,
-                "fields": ['id', 'occurrenceID', 'datasetName']
+                # "fields": ['id', 'occurrenceID', 'datasetName']
+                "fields": ['id', 'occurrenceID']
                 }
         response = requests.post(f'http://solr:8983/solr/tbia_records/select', data=json.dumps(query), headers={'content-type': "application/json" })
         if response.status_code == 200:
@@ -138,14 +139,16 @@ def get_existed_records(ids, rights_holder):
         existed_records = pd.DataFrame(subset_list)
         existed_records = existed_records.rename(columns={'id': 'tbiaID'})
         # 排除掉一個occurrenceID對到多個tbiaID的情況
-        a = existed_records[['occurrenceID','tbiaID','datasetName']].groupby(['occurrenceID','datasetName'], as_index=False).count()
+        a = existed_records[['occurrenceID','tbiaID']].groupby(['occurrenceID'], as_index=False).count()
+        # a = existed_records[['occurrenceID','tbiaID','datasetName']].groupby(['occurrenceID','datasetName'], as_index=False).count()
         a = a[a.tbiaID==1]
         # a = a.reset_index(drop=True)
         # 只保留一對一的結果 若有一對多 則刪除舊的 給予新的tbiaID
         existed_records = existed_records[existed_records.occurrenceID.isin(a.occurrenceID.to_list())]
         existed_records = existed_records.reset_index(drop=True)
     else:
-        existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
+        # existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
+        existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
     return existed_records
 
 
@@ -332,16 +335,21 @@ def control_basis_of_record(basisOfRecord):
 
 
 # ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
-def update_dataset_key(ds_name, rights_holder):
+def update_dataset_key(ds_name, rights_holder, update_version):
+    now = datetime.now() + timedelta(hours=8)
     conn = psycopg2.connect(**db_settings)
     query = """
-            INSERT INTO dataset ("rights_holder", "name", "record_type", "deprecated")
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT ("name", "record_type","rights_holder") DO UPDATE SET deprecated = %s;
+            INSERT INTO dataset ("rights_holder", "name", "record_type", "sourceDatasetID", 
+            "datasetURL", "update_version", "deprecated",created,modified)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT ("name", "record_type","rights_holder","sourceDatasetID") 
+            DO UPDATE SET "datasetURL"=%s, deprecated=%s, modified=%s, update_version=%s;
             """
     for r in ds_name:
+        sourceDatasetID = r.get('sourceDatasetID', '')
+        datasetURL = r.get('datasetURL')
         cur = conn.cursor()
-        cur.execute(query, (rights_holder,r['datasetName'],r['recordType'],False,False))
+        cur.execute(query, (rights_holder,r['datasetName'],r['recordType'],sourceDatasetID,datasetURL,update_version,False,now,now,datasetURL,False,now,update_version))
         conn.commit()
     conn.close()
 
@@ -450,32 +458,35 @@ def delete_records(rights_holder,group,update_version):
     return execute_line
 
 
-
-def update_dataset_deprecated(rights_holder):
+def update_dataset_deprecated(rights_holder, update_verison):
     # 先抓出所有該rights_holder的dataset
     conn = psycopg2.connect(**db_settings)
     with conn.cursor() as cursor:     
-        query = """SELECT "name", record_type, id FROM dataset WHERE rights_holder = '{}' """.format(rights_holder)
-        cursor.execute(query)
-        datasets = pd.DataFrame(cursor.fetchall(), columns=['datasetName', 'record_type', 'dataset_id'])
-        if len(datasets):
-            datasets['dataset_id'].values.astype(int)
-            for i in datasets.index:
-                # if i ==0:
-                row = datasets.iloc[i]
-                # 用 name + record_type + rights_holder 去 query 看在records表中存不存在
-                query = """SELECT EXISTS ( select id from records where "datasetName" = '{}' 
-                    and "recordType" = '{}' and "rightsHolder" = '{}');""".format(row.datasetName, row.record_type, rights_holder)
-                cursor.execute(query)
-                res = cursor.fetchone()
-                # 存在 -> deprecated 改成 f
-                # 不存在 -> deprecated 改成 t                
-                if res[0] == True:
-                    update_query = "UPDATE dataset SET deprecated = 'f' WHERE id = {}".format(row.dataset_id)
-                else:
-                    update_query = "UPDATE dataset SET deprecated = 't' WHERE id = {}".format(row.dataset_id)
-                execute_line = cursor.execute(update_query)
-                conn.commit()
+        update_query = "UPDATE dataset SET deprecated = 't' WHERE rights_holder = '{}' AND update_version != {}".format(rights_holder, update_verison)
+        execute_line = cursor.execute(update_query)
+        conn.commit()
+    # with conn.cursor() as cursor:     
+    #     query = """SELECT "name", record_type, id FROM dataset WHERE rights_holder = '{}' """.format(rights_holder)
+    #     cursor.execute(query)
+    #     datasets = pd.DataFrame(cursor.fetchall(), columns=['datasetName', 'record_type', 'dataset_id'])
+    #     if len(datasets):
+    #         datasets['dataset_id'].values.astype(int)
+    #         for i in datasets.index:
+    #             # if i ==0:
+    #             row = datasets.iloc[i]
+    #             # 用 name + record_type + rights_holder 去 query 看在records表中存不存在
+    #             query = """SELECT EXISTS ( select id from records where "datasetName" = '{}' 
+    #                 and "recordType" = '{}' and "rightsHolder" = '{}');""".format(row.datasetName, row.record_type, rights_holder)
+    #             cursor.execute(query)
+    #             res = cursor.fetchone()
+    #             # 存在 -> deprecated 改成 f
+    #             # 不存在 -> deprecated 改成 t                
+    #             if res[0] == True:
+    #                 update_query = "UPDATE dataset SET deprecated = 'f' WHERE id = {}".format(row.dataset_id)
+    #             else:
+    #                 update_query = "UPDATE dataset SET deprecated = 't' WHERE id = {}".format(row.dataset_id)
+    #             execute_line = cursor.execute(update_query)
+    #             conn.commit()
 
 
 def update_update_version(update_version, rights_holder, current_page=0, note=None, is_finished=False):
@@ -496,7 +507,6 @@ def update_update_version(update_version, rights_holder, current_page=0, note=No
         cur.execute(query, (current_page, note, now, update_version, rights_holder))
     conn.commit()
     conn.close()
-
 
 
 def insert_new_update_version(update_version, rights_holder):
@@ -634,10 +644,48 @@ def create_grid_data(verbatimLongitude, verbatimLatitude):
     return grid_data
 
 
-
-    
-
-
 # 如果是有提供模糊化的座標
         
 
+# 取得影像網址前綴
+def get_media_rule(media_url):
+    full_rule = None
+    string_list = media_url.split('//')
+    if len(string_list) >= 2:
+        protocol = string_list[0]
+        domain = string_list[1].split('/')[0]
+        full_rule = protocol + '//' + domain
+    return full_rule
+
+    # 應該會第一個 / 之前 
+    # 例如:
+    # https://inaturalist-open-data.s3.amazonaws.com/photos/244585305/large.jpg
+    # https://brmas-media.s3.ap-northeast-1.amazonaws.com/hast/specimen/S_092293-l.jpg
+    # https://fact.tfri.gov.tw/files/muse_fact/muse_styles/w960_m/mcode/ad080b9a9c3f6a5146f91efcf7c24481.jpg?itok=QwFOo8_E
+
+
+# def csp_rule_upsert(table, conn, keys, data_iter):
+#     data = [dict(zip(keys, row)) for row in data_iter]
+#     set_list = ['modified']
+#     insert_statement = insert(table.table).values(data)
+#     upsert_statement = insert_statement.on_conflict_do_update(
+#         constraint=f"rule_unique",
+#         # 如果重複的時候，需要update的欄位
+#         set_={c.key: c for c in insert_statement.excluded if c.key in set_list},
+#     )
+#     conn.execute(upsert_statement)
+
+
+
+def update_media_rule(media_rule, rights_holder):
+    now = datetime.now() + timedelta(hours=8)
+    conn = psycopg2.connect(**db_settings)
+    query = """
+            INSERT INTO media_rule ("rights_holder", "media_rule", "modified")
+            VALUES (%s, %s, %s)
+            ON CONFLICT ("rights_holder", "media_rule") DO UPDATE SET modified = %s;
+            """
+    cur = conn.cursor()
+    cur.execute(query, (rights_holder, media_rule, now, now))
+    conn.commit()
+    conn.close()

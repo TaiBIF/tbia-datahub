@@ -18,7 +18,7 @@ from scripts.utils import *
 
 
 # 比對學名時使用的欄位
-sci_cols = ['sourceScientificName','sourceVernacularName','originalScientificName','sourceTaxonID','scientificNameID','sourceFamily']
+sci_cols = ['sourceScientificName','sourceVernacularName','originalVernacularName','sourceTaxonID','scientificNameID','sourceFamily']
 
 # 若原資料庫原本就有提供taxonID 在這段要拿掉 避免merge時產生衝突
 df_sci_cols = [s for s in sci_cols if s != 'taxonID'] 
@@ -57,7 +57,7 @@ url_list += ["https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=4410edca-3bd
         "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=f3f25fcf-2930-4cf1-a495-6b31d7fa0252",
         "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=3f9cd7e5-6d7b-40a8-8062-a18d2f2ca599",
         "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=db09684b-0fd1-431e-b5fa-4c1532fbdb14",
-        # "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=54eaea55-f346-442e-9414-039c25658877",
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=54eaea55-f346-442e-9414-039c25658877",
         "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=617e5387-3122-47b7-b639-c9fafc35bf13",
         "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=346c95be-c7b3-41dc-99c9-e88a18d8884a",
         "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=f464cad8-531e-4d53-ad36-2e4430f6765e",
@@ -99,6 +99,7 @@ for url in url_list[url_index:]:
                 request_url = url
             if request_url.find('limit=1000') < 0:
                 request_url += '&limit=1000'
+            # TODO 更新的時候這邊要打開
             if request_url.find(f"apikey={os.getenv('TBN_KEY')}") < 0:
                 request_url += f"&apikey={os.getenv('TBN_KEY')}"
             print(c, request_url)
@@ -109,10 +110,15 @@ for url in url_list[url_index:]:
                 data += result["data"]
             c += 1
         df = pd.DataFrame(data)
-        df = df[~(df.originalVernacularName.isin([nan,'',None])&df.scientificName.isin([nan,'',None]))]
-        df = df[df.originalVernacularName != '原始資料無物種資訊']
+        # 排除無學名或上階層資訊的欄位
+        # '原始資料無物種資訊'
+        df = df.replace({nan: '', None: ''})
+        df['originalVernacularName'] = df['originalVernacularName'].replace({'原始資料無物種資訊': ''})
+        # 如果 'originalVernacularName','simplifiedScientificName','vernacularName','familyScientificName' 都是空值才排除
+        df = df[~((df.originalVernacularName=='')&(df.simplifiedScientificName=='')&(df.vernacularName=='')&(df.familyScientificName==''))]
         if 'sensitiveCategory' in df.keys():
             df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
+        media_rule_list = []
         if len(df):
             df = df.reset_index(drop=True)
             df = df.replace({nan: '', None: ''})
@@ -132,11 +138,17 @@ for url in url_list[url_index:]:
                 # 'month': 'sourceMonth',
                 # 'day': 'sourceDay',
                 'taxonUUID': 'sourceTaxonID',
-                'originalVernacularName': 'originalScientificName',
+                # 'originalVernacularName': 'originalScientificName',
                 'taxonRank': 'sourceTaxonRank',
                 'vernacularName': 'sourceVernacularName',
                 'familyScientificName': 'sourceFamily',
             })
+            # 資料集
+            df['recordType'] = df.apply(lambda x: 'col' if '標本' in x.basisOfRecord else 'occ', axis=1)
+            ds_name = df[['datasetName','recordType','datasetUUID','datasetURL']].drop_duplicates()
+            ds_name = ds_name.rename(columns={'datasetUUID': 'sourceDatasetID'})
+            ds_name = ds_name.to_dict(orient='records')
+            update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
             df = df.drop(columns=['externalID','minimumElevationInMeters','gridID','adminareaCode',
                                 'county','municipality','hour','minute','protectedStatusTW',
                                     'categoryIUCN', 'categoryRedlistTW', 'endemism', 'nativeness',
@@ -169,18 +181,10 @@ for url in url_list[url_index:]:
             # 數量
             df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
             # basisOfRecord
-            df['recordType'] = df.apply(lambda x: 'col' if '標本' in x.basisOfRecord else 'occ', axis=1)
             df['basisOfRecord'] = df['basisOfRecord'].apply(lambda x: control_basis_of_record(x))
             # dataGeneralizations 已標準化
             # 經緯度
-            # df['grid_1'] = '-1_-1'
-            # df['grid_5'] = '-1_-1'
-            # df['grid_10'] = '-1_-1'
-            # df['grid_100'] = '-1_-1'
             df['id'] = ''
-            # df['standardLongitude'] = None
-            # df['standardLatitude'] = None
-            # df['location_rpt'] = None
             for i in df.index:
                 # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
                 df.loc[i,'id'] = str(bson.objectid.ObjectId())
@@ -188,7 +192,11 @@ for url in url_list[url_index:]:
                 # 如果有mediaLicense才放associatedMedia
                 if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
                     if not row.mediaLicense:
-                        df.loc[i,'associatedMedia'] = None       
+                        df.loc[i,'associatedMedia'] = None
+                if df.loc[i, 'associatedMedia']:
+                    media_rule = get_media_rule(df.loc[i, 'associatedMedia'])
+                    if media_rule and media_rule not in media_rule_list:
+                        media_rule_list.append(media_rule)
                 # 座標模糊化
                 try:
                     coordinatePrecision = float(row.coordinatePrecision)
@@ -196,26 +204,12 @@ for url in url_list[url_index:]:
                 except:
                     coordinatePrecision = None
                 is_hidden = False # 座標是否完全屏蔽
-                # if (row.dataGeneralizations and coordinatePrecision) or row.sensitiveCategory in ['輕度','重度','縣市','座標不開放','物種不開放']:
-                #     fuzzy_lon = None
-                #     fuzzy_lat = None
-                #     standardRawLon, standardRawLat, raw_location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
-                #     if standardRawLon and standardRawLat:
-                #         df.loc[i, 'verbatimRawLatitude'] = float(row.verbatimLatitude)
-                #         df.loc[i, 'verbatimRawLongitude'] = float(row.verbatimLongitude)
-                #         df.loc[i, 'raw_location_rpt'] = raw_location_rpt
-                #         df.loc[i, 'standardRawLongitude'] = standardRawLon
-                #         df.loc[i, 'standardRawLatitude'] = standardRawLat
                 if not coordinatePrecision and row.sensitiveCategory == '輕度':
                     coordinatePrecision = 0.01
                     df.loc[i,'dataGeneralizations'] = True
                 elif not coordinatePrecision and row.sensitiveCategory == '重度':
                     coordinatePrecision = 0.1
                     df.loc[i,'dataGeneralizations'] = True
-                # if row.sensitiveCategory not in ['縣市','座標不開放','分類群不開放']:
-                #     is_hidden = True
-                #     df.loc[i,'dataGeneralizations'] = True
-                # if row.sensitiveCategory in ['縣市','座標不開放','分類群不開放']:
                 if row.sensitiveCategory in ['縣市','座標不開放']:
                     is_hidden = True
                     df.loc[i,'dataGeneralizations'] = True
@@ -234,47 +228,20 @@ for url in url_list[url_index:]:
                 df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
                 df.loc[i, 'grid_100'] = grid_data.get('grid_100')
                 df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
-                # TODO 這邊要考慮是不是本來就要完全屏蔽 不然有可能是無法轉換座標 就必須要顯示原始座標
+                # 要考慮是不是本來就要完全屏蔽 不然有可能是無法轉換座標 就必須要顯示原始座標 (從grid_data的回傳的是)
                 if grid_data.get('standardLon') or is_hidden:
                     df.loc[i, 'verbatimLongitude'] = grid_data.get('standardLon')
                 if grid_data.get('standardLat') or is_hidden:
                     df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
-                        # ten_times = math.pow(10, len(str(coordinatePrecision).split('.')[-1]))
-                        # if row.verbatimLongitude:
-                        #     fuzzy_lon = math.floor(float(row.verbatimLongitude)*ten_times)/ten_times
-                        # if row.verbatimLatitude:
-                        #     fuzzy_lat = math.floor(float(row.verbatimLatitude)*ten_times)/ten_times
-                        # df.loc[i, 'coordinatePrecision'] = coordinatePrecision
-                    # elif row.sensitiveCategory in ['縣市','座標不開放','物種不開放']:
-                    #     fuzzy_lon = None
-                    #     fuzzy_lat = None
-                #     df.loc[i, 'verbatimLongitude'] = fuzzy_lon
-                #     df.loc[i, 'verbatimLatitude'] = fuzzy_lat  
-                #     row = df.loc[i]
-                # standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
-                # if standardLon and standardLat:
-                #     df.loc[i,'standardLongitude'] = standardLon
-                #     df.loc[i,'standardLatitude'] = standardLat
-                #     df.loc[i,'location_rpt'] = location_rpt
-                #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
-                #     df.loc[i, 'grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
-                #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
-                #     df.loc[i, 'grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
-                #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.1)
-                #     df.loc[i, 'grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
-                #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
-                #     df.loc[i, 'grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
-            # 資料集
-            ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
-            update_dataset_key(ds_name=ds_name, rights_holder=rights_holder)
             # 更新match_log
             # 更新資料
             df['occurrenceID'] = df['occurrenceID'].astype('str')
-            existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
+            existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
             existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder)
             existed_records = existed_records.replace({nan:''})
             if len(existed_records):
-                df =  df.merge(existed_records,on=["occurrenceID","datasetName"], how='left')
+                # NOTE 改成只用occurrenceID對應
+                df = df.merge(existed_records,on="occurrenceID", how='left')
                 df = df.replace({nan: None})
                 # 如果已存在，取存在的tbiaID
                 df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
@@ -304,6 +271,9 @@ for url in url_list[url_index:]:
                     method=records_upsert)
         # 成功之後 更新update_update_version 也有可能這批page 沒有資料 一樣從下一個c開始
         update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=json.dumps({'url_index': url_index, 'request_url': request_url}))
+        # 更新 media rule
+        for mm in media_rule_list:
+            update_media_rule(media_rule=mm,rights_holder=rights_holder)
     url_index += 1
     current_page = 0 # 換成新的url時要重新開始
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=0, note=json.dumps({'url_index': url_index, 'request_url': None}))
@@ -320,7 +290,6 @@ update_update_version(is_finished=True, update_version=update_version, rights_ho
 
 # 更新 datahub - dataset
 # 前面已經處理過新增了 最後只需要處理deprecated的部分
-update_dataset_deprecated(rights_holder=rights_holder)
-
+update_dataset_deprecated(rights_holder=rights_holder,update_verison=update_version)
 
 print('done!')
