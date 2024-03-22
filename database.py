@@ -69,7 +69,8 @@ class Records(Base):
     occurrenceID: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     organismQuantity: Mapped[Optional[str]] = mapped_column(String(10000))
     organismQuantityType: Mapped[Optional[str]] = mapped_column(String(10000))
-    originalScientificName: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
+    # originalScientificName: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
+    originalVernacularName: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     preservation: Mapped[Optional[str]] = mapped_column(String(10000))
     recordedBy: Mapped[Optional[str]] = mapped_column(String(10000))
     recordNumber: Mapped[Optional[str]] = mapped_column(String(10000))
@@ -302,6 +303,7 @@ class Dataset(Base):
     record_type: Mapped[str] = mapped_column(String(20), index=True)
     rights_holder:  Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     deprecated: Mapped[bool] = mapped_column(server_default='f', index=True)
+    source_datasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
 
     __table_args__ = (
         UniqueConstraint('name','record_type','rights_holder', name='dataset_unique'),
@@ -340,4 +342,19 @@ class UpdateVersion(Base):
 
     __table_args__ = (
         UniqueConstraint('rights_holder','update_version', name='update_unique'),
+    )
+
+
+# 影像來源規則
+class MediaRule(Base):
+    __tablename__ = "image_rule"
+    
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    rights_holder:  Mapped[Optional[str]] = mapped_column(String(10000), index=True)
+    image_rule: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
+    modified: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint('rights_holder','image_rule', name='rule_unique'),
     )
