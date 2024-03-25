@@ -76,11 +76,19 @@ for p in range(current_page,total_page,10):
             total_page = result['Meta']['TotalPages']
             data += result.get('Data')
     df = pd.DataFrame(data)
-    df = df[~(df.isPreferredName.isin([nan,'',None])&df.scientificName.isin([nan,'',None]))]
+    # 如果 'isPreferredName','scientificName',都是空值才排除
+    df = df.replace({nan: '', None: ''})
+    df = df[~((df.isPreferredName=='')&(df.scientificName==''))]
+    # df = df[~(df.isPreferredName.isin([nan,'',None])&df.scientificName.isin([nan,'',None]))]
     # 排除重複資料集
     df = df[~df.datasetName.isin(duplicated_dataset_list)]
     if 'sensitiveCategory' in df.keys():
         df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
+    if 'license' in df.keys():
+        df = df[df.license!='']
+    else:
+        df = []
+    media_rule_list = []
     if len(df):
         df = df.reset_index(drop=True)
         df = df.replace({nan: '', 'NA': '', '-99999': ''})
@@ -114,19 +122,7 @@ for p in range(current_page,total_page,10):
         df['basisOfRecord'] = df['basisOfRecord'].apply(lambda x: control_basis_of_record(x))
         # dataGeneralizations
         df['dataGeneralizations'] = df['dataGeneralizations'].replace({'N': False, 'Y': True})
-        # 經緯度
-        # df['grid_1'] = '-1_-1'
-        # df['grid_5'] = '-1_-1'
-        # df['grid_10'] = '-1_-1'
-        # df['grid_100'] = '-1_-1'
-        # df['grid_1_blurred'] = '-1_-1'
-        # df['grid_5_blurred'] = '-1_-1'
-        # df['grid_10_blurred'] = '-1_-1'
-        # df['grid_100_blurred'] = '-1_-1'
         df['id'] = ''
-        # df['standardLongitude'] = None
-        # df['standardLatitude'] = None
-        # df['location_rpt'] = None
         for i in df.index:
             # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
             df.loc[i,'id'] = str(bson.objectid.ObjectId())
@@ -134,6 +130,10 @@ for p in range(current_page,total_page,10):
             if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
                 if not row.mediaLicense:
                     df.loc[i,'associatedMedia'] = None
+                if df.loc[i, 'associatedMedia']:
+                    media_rule = get_media_rule(df.loc[i, 'associatedMedia'])
+                    if media_rule and media_rule not in media_rule_list:
+                        media_rule_list.append(media_rule)
             # 2023-05-24 改成直接回傳未模糊化座標
             try:
                 coordinatePrecision = float(row.coordinatePrecision)
@@ -162,21 +162,15 @@ for p in range(current_page,total_page,10):
                 df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
         # 資料集
         ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
-        update_dataset_key(ds_name=ds_name, rights_holder=rights_holder)
+        update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
         # 更新match_log
         # 更新資料
         df['occurrenceID'] = df['occurrenceID'].astype('str')
-        existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
+        existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
         existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder)
         existed_records = existed_records.replace({nan:''})
-        # with db.begin() as conn:
-        #     qry = sa.text("""select "tbiaID", "occurrenceID", "created" from records  
-        #                     where "rightsHolder" = '{}' AND "occurrenceID" IN {}  """.format(rights_holder, str(df.occurrenceID.to_list()).replace('[','(').replace(']',')')) )
-        #     resultset = conn.execute(qry)
-        #     results = resultset.mappings().all()
-        #     existed_records = pd.DataFrame(results)
         if len(existed_records):
-            df =  df.merge(existed_records,on=["occurrenceID","datasetName"], how='left')
+            df =  df.merge(existed_records,on=["occurrenceID"], how='left')
             df = df.replace({nan: None})
             # 如果已存在，取存在的tbiaID
             df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
@@ -206,6 +200,9 @@ for p in range(current_page,total_page,10):
                 method=records_upsert)
     # 成功之後 更新update_update_version 也有可能這批page 沒有資料 一樣從下一個c開始
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
+    # 更新 media rule
+    for mm in media_rule_list:
+        update_media_rule(media_rule=mm,rights_holder=rights_holder)
 
 
 # 刪除is_deleted的records & match_log
@@ -221,10 +218,6 @@ update_update_version(is_finished=True, update_version=update_version, rights_ho
 # 前面已經處理過新增了 最後只需要處理deprecated的部分
 update_dataset_deprecated(rights_holder=rights_holder)
 
-
-# TODO 更新 solr - dataset
-# 根據id進行update
-# solr 都最後再進行更新 ?
 
 print('done!')
 
