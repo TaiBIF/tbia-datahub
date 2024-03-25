@@ -76,9 +76,17 @@ for p in range(current_page,total_page,10):
             data += result.get('data')
         c += 1
     df = pd.DataFrame(data)
-    df = df[~(df.isPreferredName.isin([nan,'',None])&df.scientificName.isin([nan,'',None]))]
+    # 如果 'isPreferredName','scientificName',都是空值才排除
+    df = df.replace({nan: '', None: '', 'NA': ''})
+    df = df[~((df.isPreferredName=='')&(df.scientificName==''))]
+    # df = df[~(df.isPreferredName.isin([nan,'',None])&df.scientificName.isin([nan,'',None]))]
     if 'sensitiveCategory' in df.keys():
         df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
+    if 'license' in df.keys():
+        df = df[df.license!='']
+    else:
+        df = []
+    media_rule_list = []
     if len(df):
         df = df.reset_index(drop=True)
         df = df.replace({nan: '', 'NA': ''})
@@ -110,19 +118,7 @@ for p in range(current_page,total_page,10):
             df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
         # basisOfRecord 無資料
         # dataGeneralizations 無資料
-        # 經緯度
-        # df['grid_1'] = '-1_-1'
-        # df['grid_5'] = '-1_-1'
-        # df['grid_10'] = '-1_-1'
-        # df['grid_100'] = '-1_-1'
-        # df['grid_1_blurred'] = '-1_-1'
-        # df['grid_5_blurred'] = '-1_-1'
-        # df['grid_10_blurred'] = '-1_-1'
-        # df['grid_100_blurred'] = '-1_-1'
         df['id'] = ''
-        # df['standardLongitude'] = None
-        # df['standardLatitude'] = None
-        # df['location_rpt'] = None
         for i in df.index:
             # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
             df.loc[i,'id'] = str(bson.objectid.ObjectId())
@@ -131,6 +127,10 @@ for p in range(current_page,total_page,10):
             if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
                 if not row.mediaLicense:
                     df.loc[i,'associatedMedia'] = None
+                if df.loc[i, 'associatedMedia']:
+                    media_rule = get_media_rule(df.loc[i, 'associatedMedia'])
+                    if media_rule and media_rule not in media_rule_list:
+                        media_rule_list.append(media_rule)
             # 幫忙補dataGeneralizations
             is_hidden = True
             grid_data = create_blurred_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude, coordinatePrecision=None, is_full_hidden=is_hidden)
@@ -148,43 +148,23 @@ for p in range(current_page,total_page,10):
             df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
             df.loc[i, 'grid_100'] = grid_data.get('grid_100')
             df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
-            # TODO 這邊要考慮是不是本來就要完全屏蔽 不然有可能是無法轉換座標 就必須要顯示原始座標
+            # 要考慮是不是本來就要完全屏蔽 不然有可能是無法轉換座標 就必須要顯示原始座標 (從grid_data的回傳的是屏蔽)
             if grid_data.get('standardLon') or is_hidden:
                 df.loc[i, 'verbatimLongitude'] = grid_data.get('standardLon')
             if grid_data.get('standardLat') or is_hidden:
                 df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
-        #     standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
-        #     if standardLon and standardLat:
-        #         df.loc[i, 'dataGeneralizations'] = True
-        #         df.loc[i, 'standardRawLongitude'] = standardLon
-        #         df.loc[i, 'standardRawLatitude'] = standardLat
-        #         df.loc[i, 'raw_location_rpt'] = location_rpt
-        #         df.loc[i, 'verbatimRawLatitude'] = float(row.verbatimLatitude)
-        #         df.loc[i, 'verbatimRawLongitude'] = float(row.verbatimLongitude)
-        #         # df.loc[i, 'standardLongitude'] = None
-        #         # df.loc[i, 'standardLatitude'] = None
-        #         grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
-        #         df.loc[i, 'grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
-        #         grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
-        #         df.loc[i, 'grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
-        #         grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.1)
-        #         df.loc[i, 'grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
-        #         grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
-        #         df.loc[i, 'grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
         # # 屏蔽原始資料 - 林試所目前的敏感資料是全部屏蔽 grid_*_blurred就維持用-1_-1
-        # df['verbatimLongitude'] = None
-        # df['verbatimLatitude'] = None    
         # 資料集
         ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
-        update_dataset_key(ds_name=ds_name, rights_holder=rights_holder)
+        update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
         # 更新match_log
         # 更新資料
         df['occurrenceID'] = df['occurrenceID'].astype('str')
-        existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
+        existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
         existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder)
         existed_records = existed_records.replace({nan:''})
         if len(existed_records):
-            df =  df.merge(existed_records,on=["occurrenceID","datasetName"], how='left')
+            df =  df.merge(existed_records,on=["occurrenceID"], how='left')
             df = df.replace({nan: None})
             # 如果已存在，取存在的tbiaID
             df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
@@ -214,6 +194,9 @@ for p in range(current_page,total_page,10):
                 method=records_upsert)
     # 成功之後 更新update_update_version 也有可能這批page 沒有資料 一樣從下一個c開始
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
+    # 更新 media rule
+    for mm in media_rule_list:
+        update_media_rule(media_rule=mm,rights_holder=rights_holder)
 
 
 
