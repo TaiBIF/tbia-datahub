@@ -472,8 +472,8 @@
   <field name="occurrenceID" type="string"/>
   <field name="organismQuantity" type="string"/>
   <field name="organismQuantityType" type="string"/>
-  <!-- <field name="originalScientificName" type="string"/> -->
-  <field name="originalVernacularName" type="string"/>
+  <field name="originalScientificName" type="string"/>
+  <!-- <field name="originalVernacularName" type="string"/> -->
   <field name="preservation" type="string"/>
   <field name="recordedBy" type="string"/>
   <field name="recordNumber" type="string"/>
