@@ -95,8 +95,10 @@ while has_more_data:
         # null
         # c = df[(df.taxonID.isnull()&df.parentTaxonID.isnull())]
         # final_df = pd.concat([a,b,c],ignore_index=True)
+        
         if len(results) != len(final_df):
             print('error', min_id)
+        final_df = final_df.rename(columns={'originalVernacularName': 'originalScientificName'})
         final_df.to_csv(f'/solr/csvs/export/export_{offset}.csv', index=None)
         offset += limit
     if len(results) < limit:
