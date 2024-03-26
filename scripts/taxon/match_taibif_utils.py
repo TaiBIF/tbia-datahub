@@ -27,7 +27,7 @@ rank_map = {
     'Nothosubspecies', 37: 'Variety', 38: 'Subvariety', 39: 'Nothovariety', 40: 'Form', 41: 'Subform', 42: 'Special Form', 43: 'Race', 44: 'Stirp', 45: 'Morph', 46: 'Aberration', 47: 'Hybrid Formula'}
 
 
-def match_name(matching_name, sci_name, original_name, is_parent, match_stage, sci_names, source_family, source_class, source_order, sci_index):
+def match_name(matching_name, is_parent, match_stage, sci_names, source_family, source_class, source_order, sci_index):
     if matching_name:
         request_url = f"http://host.docker.internal:8080/api.php?names={urllib.parse.quote(matching_name)}&format=json&source=taicol"
         response = requests.get(request_url)
@@ -136,7 +136,7 @@ def match_name(matching_name, sci_name, original_name, is_parent, match_stage, s
                 #     sci_names.loc[((sci_names.scientificName==sci_name)&(sci_names.sourceVernacularName==original_name)),f'stage_{match_stage}'] = 2 # none
 
 
-def match_namecode(matching_namecode, sci_name, match_stage, sci_names, sci_index):
+def match_namecode(matching_namecode, match_stage, sci_names, sci_index):
     # 這邊不會有fuzzy的問題 因為直接用namecode對應
     # 也不考慮高階層
     try:
@@ -194,8 +194,8 @@ def matching_flow(sci_names):
         s_row = sci_names.loc[s]
         if s_row.sourceScientificName:
             match_name(matching_name=s_row.sourceScientificName,
-                       sci_name=s_row.sourceScientificName,
-                       original_name=s_row.sourceVernacularName,
+                    #    sci_name=s_row.sourceScientificName,
+                    #    original_name=s_row.sourceVernacularName,
                     #    original_gbifid=s_row.sourceTaxonID,
                        is_parent=False,
                        match_stage=1,
@@ -211,7 +211,7 @@ def matching_flow(sci_names):
         s_row = sci_names.loc[s]
         if s_row.get('scientificNameID'):
             match_namecode(matching_namecode=s_row.get('scientificNameID'),
-                           sci_name=s_row.sourceScientificName,
+                        #    sci_name=s_row.sourceScientificName,
                            match_stage=2,
                            sci_names=sci_names,
                            sci_index=s_row.sci_index)
@@ -226,8 +226,8 @@ def matching_flow(sci_names):
                 if not sci_names.loc[nti,'taxonID']:
                     # s_row = sci_names.loc[sci_names.sci_index==nti]
                     match_name(matching_name=nn,
-                               sci_name=s_row.get('sourceScientificName'),
-                               original_name=s_row.get('sourceVernacularName'),
+                            #    sci_name=s_row.get('sourceScientificName'),
+                            #    original_name=s_row.get('sourceVernacularName'),
                             #    original_gbifid=s_row.sourceTaxonID,
                                is_parent=False,
                                match_stage=3,
@@ -247,8 +247,8 @@ def matching_flow(sci_names):
             if len(nt_str.split(' ')) > 1: # 等於0的話代表上面已經對過了
                 # s_row = sci_names.loc[sci_names.sci_index==nti]
                 match_name(matching_name=nt_str.split(' ')[0], 
-                           sci_name=s_row.get('sourceScientificName'),
-                           original_name=s_row.get('sourceVernacularName'),
+                        #    sci_name=s_row.get('sourceScientificName'),
+                        #    original_name=s_row.get('sourceVernacularName'),
                         #    original_gbifid=sci_names.loc[nti,'sourceTaxonID'],
                            is_parent=True,
                            match_stage=4,
@@ -257,7 +257,10 @@ def matching_flow(sci_names):
                            source_class=s_row.get('sourceClass'), 
                            source_order=s_row.get('sourceOrder'),
                            sci_index=s_row.get('sci_index'))
-    ## 比對綱目科
+    # 比對vernacularName
+    # 比對綱
+    # 比對目
+    # 比對科
     # 確定match_stage
     stage_list = [1,2,3,4,5]
     for i in stage_list[:4]:

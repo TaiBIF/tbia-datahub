@@ -99,7 +99,6 @@ for url in url_list[url_index:]:
                 request_url = url
             if request_url.find('limit=1000') < 0:
                 request_url += '&limit=1000'
-            # TODO 更新的時候這邊要打開
             if request_url.find(f"apikey={os.getenv('TBN_KEY')}") < 0:
                 request_url += f"&apikey={os.getenv('TBN_KEY')}"
             print(c, request_url)
@@ -115,7 +114,7 @@ for url in url_list[url_index:]:
         df = df.replace({nan: '', None: ''})
         df['originalVernacularName'] = df['originalVernacularName'].replace({'原始資料無物種資訊': ''})
         # 如果 'originalVernacularName','simplifiedScientificName','vernacularName','familyScientificName' 都是空值才排除
-        df = df[~((df.originalVernacularName=='')&(df.simplifiedScientificName=='')&(df.vernacularName=='')&(df.familyScientificName==''))]
+        df = df[~((df.originalVernacularName=='')&(df.simplifiedScientificName=='')&(df.vernacularName=='')&(df.familyScientificName=='')&(df.scientificNameID==''))]
         if 'sensitiveCategory' in df.keys():
             df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
         media_rule_list = []
@@ -193,10 +192,10 @@ for url in url_list[url_index:]:
                 if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
                     if not row.mediaLicense:
                         df.loc[i,'associatedMedia'] = None
-                if df.loc[i, 'associatedMedia']:
-                    media_rule = get_media_rule(df.loc[i, 'associatedMedia'])
-                    if media_rule and media_rule not in media_rule_list:
-                        media_rule_list.append(media_rule)
+                    if df.loc[i, 'associatedMedia']:
+                        media_rule = get_media_rule(df.loc[i, 'associatedMedia'])
+                        if media_rule and media_rule not in media_rule_list:
+                            media_rule_list.append(media_rule)
                 # 座標模糊化
                 try:
                     coordinatePrecision = float(row.coordinatePrecision)

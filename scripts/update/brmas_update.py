@@ -74,6 +74,11 @@ for p in range(current_page,total_page,10):
     df = df[~((df.isPreferredName=='')&(df.scientificName==''))]
     if 'sensitiveCategory' in df.keys():
         df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
+    if 'license' in df.keys():
+        df = df[df.license!='']
+    else:
+        df = []
+    media_rule_list = []
     if len(df):
         df = df.rename(columns={'created': 'sourceCreated', 'modified': 'sourceModified', 'scientificName': 'sourceScientificName', 
         'isPreferredName': 'sourceVernacularName', 'collectionID': 'catalogNumber', 'taxonRank': 'sourceTaxonRank'})
@@ -104,19 +109,7 @@ for p in range(current_page,total_page,10):
         df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
         # basisOfRecord 無資料
         # 敏感層級 無資料
-        # 經緯度
-        # df['grid_1'] = '-1_-1'
-        # df['grid_5'] = '-1_-1'
-        # df['grid_10'] = '-1_-1'
-        # df['grid_100'] = '-1_-1'
-        # df['grid_1_blurred'] = '-1_-1'
-        # df['grid_5_blurred'] = '-1_-1'
-        # df['grid_10_blurred'] = '-1_-1'
-        # df['grid_100_blurred'] = '-1_-1'
         df['id'] = ''
-        # df['standardLongitude'] = None
-        # df['standardLatitude'] = None
-        # df['location_rpt'] = None
         for i in df.index:
             # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
             df.loc[i,'id'] = str(bson.objectid.ObjectId())
@@ -124,6 +117,10 @@ for p in range(current_page,total_page,10):
             if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
                 if not row.mediaLicense:
                     df.loc[i,'associatedMedia'] = None
+                if df.loc[i, 'associatedMedia']:
+                    media_rule = get_media_rule(df.loc[i, 'associatedMedia'])
+                    if media_rule and media_rule not in media_rule_list:
+                        media_rule_list.append(media_rule)
             grid_data = create_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude)
             df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
             df.loc[i,'standardLatitude'] = grid_data.get('standardLat')
@@ -136,35 +133,17 @@ for p in range(current_page,total_page,10):
             df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
             df.loc[i, 'grid_100'] = grid_data.get('grid_100')
             df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
-            # standardLon, standardLat, location_rpt = standardize_coor(row.verbatimLongitude, row.verbatimLatitude)
-            # # 因為沒有模糊化座標 所以grid_* & grid_*_blurred 欄位填一樣的
-            # if standardLon and standardLat:
-            #     df.loc[i,'standardLongitude'] = standardLon
-            #     df.loc[i,'standardLatitude'] = standardLat
-            #     df.loc[i,'location_rpt'] = location_rpt
-            #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
-            #     df.loc[i, 'grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
-            #     df.loc[i, 'grid_1_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
-            #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
-            #     df.loc[i, 'grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
-            #     df.loc[i, 'grid_5_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
-            #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.1)
-            #     df.loc[i, 'grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
-            #     df.loc[i, 'grid_10_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
-            #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
-            #     df.loc[i, 'grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
-            #     df.loc[i, 'grid_100_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
         # 資料集
         ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
-        update_dataset_key(ds_name=ds_name, rights_holder=rights_holder)
+        update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
         # 更新match_log
         # 更新資料
         df['occurrenceID'] = df['occurrenceID'].astype('str')
-        existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
+        existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
         existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder)
         existed_records = existed_records.replace({nan:''})
         if len(existed_records):
-            df = df.merge(existed_records,on=["occurrenceID","datasetName"], how='left')
+            df = df.merge(existed_records,on=["occurrenceID"], how='left')
             df = df.replace({nan: None})
             # 如果已存在，取存在的tbiaID
             df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
@@ -191,6 +170,9 @@ for p in range(current_page,total_page,10):
                 method=records_upsert)
     # 成功之後 更新update_update_version
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
+    for mm in media_rule_list:
+        update_media_rule(media_rule=mm,rights_holder=rights_holder)
+
 
 
 # 刪除is_deleted的records & match_log
@@ -204,7 +186,7 @@ update_update_version(is_finished=True, update_version=update_version, rights_ho
 
 # 更新 datahub - dataset
 # 前面已經處理過新增了 最後只需要處理deprecated的部分
-update_dataset_deprecated(rights_holder=rights_holder)
+update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
 
 
 print('done!')

@@ -16,7 +16,7 @@ from scripts.utils import *
 
 
 # 比對學名時使用的欄位
-sci_cols = ['sourceVernacularName', 'sourceScientificName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily']
+sci_cols = ['sourceVernacularName','sourceScientificName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily']
 
 # 若原資料庫原本就有提供taxonID 在這段要拿掉 避免merge時產生衝突
 df_sci_cols = [s for s in sci_cols if s != 'taxonID'] 
@@ -51,7 +51,6 @@ if response.status_code == 200:
 current_page, note = insert_new_update_version(rights_holder=rights_holder,update_version=update_version)
 
 
-
 now = datetime.now() + timedelta(hours=8)
 
 payload = {'API-KEY': os.getenv('OCA_KEY')}
@@ -77,7 +76,7 @@ if r.status_code == 200:
     df = df.rename(columns={'ID': 'occurrenceID' ,'Species_Name': 'sourceVernacularName', 'Name_Code': 'scientificNameID', 
                             'Sightings_Time': 'eventDate', 'Sightings_Count': 'organismQuantity', 
                             'WGS84X': 'verbatimLongitude', 'WGS84Y': 'verbatimLatitude', 'Update_Time': 'sourceModified'})
-    df = df[~(df.sourceVernacularName.isin([nan,'',None]))]
+    # df = df[~(df.sourceVernacularName.isin([nan,'',None]))]
     df['datasetName'] = 'iOcean海洋生物目擊回報'
     final_df = pd.concat([df,final_df])
 
@@ -100,7 +99,7 @@ if r.status_code == 200:
                             'WGS84X': 'verbatimLongitude', 'WGS84Y': 'verbatimLatitude',
                             'Species_Name': 'sourceVernacularName', 'Name_Code': 'scientificNameID', 
                             'Fishing_Count': 'organismQuantity', 'UpdataTime': 'sourceModified'})
-    df = df[~(df.sourceVernacularName.isin([nan,'',None]))]
+    # df = df[~(df.sourceVernacularName.isin([nan,'',None]))]
     df['datasetName'] = 'iOcean垂釣回報'
     final_df = pd.concat([df,final_df])
 
@@ -127,7 +126,7 @@ if r.status_code == 200:
     df = df.rename(columns={'Event_Date': 'eventDate', 'County_Co': 'locality', 
                             'WGS84X': 'verbatimLongitude', 'WGS84Y': 'verbatimLatitude',
                             'Species_Name': 'sourceVernacularName', 'appName': 'recordedBy'})
-    df = df[~(df.sourceVernacularName.isin([nan,'',None]))]
+    # df = df[~(df.sourceVernacularName.isin([nan,'',None]))]
     df['datasetName'] = 'MARN鯨豚擱淺資料'
     final_df = pd.concat([df,final_df])
 
@@ -149,7 +148,7 @@ if r.status_code == 200:
     df = df.rename(columns={'Event_Date': 'eventDate', 'County_Co': 'locality', 
                             'WGS84X': 'verbatimLongitude', 'WGS84Y': 'verbatimLatitude', 
                             'Species_Name': 'sourceVernacularName', 'appName': 'recordedBy'})
-    df = df[~(df.sourceVernacularName.isin([nan,'',None]))]
+    # df = df[~(df.sourceVernacularName.isin([nan,'',None]))]
     df['datasetName'] = 'MARN海龜擱淺資料'
     final_df = pd.concat([df,final_df])
 
@@ -204,7 +203,7 @@ for i in ocas.index:
             df['sourceVernacularName'] = df.apply(lambda x: x.sourceVernacularName + ';' + x.物種俗名 if x.物種俗名 else x.sourceVernacularName, axis=1)
         df['eventDate'] = df.apply(lambda x: f"{x.year}-{x.month}-{x.day}", axis=1) 
         df['datasetName'] = row.d_name
-        df = df[~(df.sourceVernacularName.isin([nan,'',None])&df.sourceScientificName.isin([nan,'',None]))] 
+        # df = df[~(df.sourceVernacularName.isin([nan,'',None])&df.sourceScientificName.isin([nan,'',None]))] 
         drop_keys = [k for k in df.keys() if k in unused_keys]
         df = df.drop(columns=drop_keys)
         df = df.drop(columns=['drop'], errors='ignore')
@@ -216,12 +215,16 @@ final_df = final_df.replace({nan:None})
 
 df = final_df
 
-df = df[~(df.sourceVernacularName.isin([nan,'',None])&df.sourceScientificName.isin([nan,'',None]))]
+# df = df[~(df.sourceVernacularName.isin([nan,'',None])&df.sourceScientificName.isin([nan,'',None]))]
+
+
 if 'sensitiveCategory' in df.keys():
     df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
 
 df = df.reset_index(drop=True)
-df = df.replace({nan: '', 'NA': '', '-99999': '', 'N/A': ''})
+df = df.replace({nan: '', 'NA': '', '-99999': '', 'N/A': '', None: ''})
+
+df = df[~((df.sourceScientificName=='')&(df.sourceVernacularName=='')&(df.scientificNameID=='')&(df.sourceClass=='')&(df.sourceOrder=='')&(df.sourceFamily==''))]
 
 
 sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
@@ -241,6 +244,7 @@ df['group'] = group
 df['rightsHolder'] = rights_holder
 df['created'] = now
 df['modified'] = now
+df['license'] = 'CC0' # 因為是完全開放 所以直接帶入CC0
 
 # 出現地
 if 'locality' in df.keys():
@@ -265,6 +269,7 @@ df['id'] = ''
 # df['standardLatitude'] = None
 # df['location_rpt'] = None
 
+media_rule_list = []
 for i in df.index:
     df.loc[i,'id'] = str(bson.objectid.ObjectId())
     row = df.loc[i]
@@ -272,6 +277,10 @@ for i in df.index:
     if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
         if not row.mediaLicense:
             df.loc[i,'associatedMedia'] = None
+        if df.loc[i, 'associatedMedia']:
+            media_rule = get_media_rule(df.loc[i, 'associatedMedia'])
+            if media_rule and media_rule not in media_rule_list:
+                media_rule_list.append(media_rule)
     if any(ext in str(row.verbatimLongitude) for ext in ['N', 'S', 'W', 'E']) or any(ext in str(row.verbatimLatitude) for ext in ['N', 'S', 'W', 'E']):
         lon, lat = convert_to_decimal(row.verbatimLongitude, row.verbatimLatitude)
     else:
@@ -288,22 +297,9 @@ for i in df.index:
     df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
     df.loc[i, 'grid_100'] = grid_data.get('grid_100')
     df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
-    # standardLon, standardLat, location_rpt = standardize_coor(lon, lat)
-    # if standardLon and standardLat:
-    #     df.loc[i,'standardLongitude'] = standardLon
-    #     df.loc[i,'standardLatitude'] = standardLat
-    #     df.loc[i,'location_rpt'] = location_rpt
-    #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
-    #     df.loc[i, 'grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
-    #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
-    #     df.loc[i, 'grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
-    #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.1)
-    #     df.loc[i, 'grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
-    #     grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
-    #     df.loc[i, 'grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
 
 ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
-update_dataset_key(ds_name=ds_name, rights_holder=rights_holder)
+update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
 
 df = df.replace({nan: None, '': None})
 
@@ -312,17 +308,11 @@ df = df.replace({nan: None, '': None})
 if 'occurrenceID' in df.keys():
     df['occurrenceID'] = df['occurrenceID'].replace({ None: ''})
     df['occurrenceID'] = df['occurrenceID'].astype('str')
-    existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
+    existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
     existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder)
     existed_records = existed_records.replace({nan:''})
-    # with db.begin() as conn:
-    #     qry = sa.text("""select "tbiaID", "occurrenceID", "created" from records  
-    #                     where "rightsHolder" = '{}' AND "occurrenceID" IN {}  """.format(rights_holder, str(df.occurrenceID.to_list()).replace('[','(').replace(']',')')) )
-    #     resultset = conn.execute(qry)
-    #     results = resultset.mappings().all()
-    #     existed_records = pd.DataFrame(results)
     if len(existed_records):
-        df = df.merge(existed_records,on=["occurrenceID","datasetName"], how='left')
+        df = df.merge(existed_records,on=["occurrenceID"], how='left')
         df = df.replace({nan: None})
         # 如果已存在，取存在的tbiaID
         df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
@@ -336,38 +326,12 @@ else:
 
 df = df.replace({nan: None, '': None})
 
-# issue_map = {
-#     1: 'higherrank',
-#     2: 'none',
-#     3: 'fuzzy',
-#     4: 'multiple'
-# }
-
-# df.to_csv('oca_test.csv',index=None)
-
 
 # match_log要用更新的
 match_log = df[['occurrenceID','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','group','rightsHolder','created','modified']]
 match_log = match_log.reset_index(drop=True)
 # 須確認tbiaID為唯一值
 match_log = update_match_log(match_log=match_log, now=now)
-# match_log['is_matched'] = False
-# match_log.loc[match_log.taxonID.notnull(),'is_matched'] = True
-# match_log = match_log.replace({np.nan: None})
-# match_log['match_higher_taxon'] = match_log['match_higher_taxon'].replace({None: False, np.nan: False, '': False})
-# match_log['match_stage'] = match_log['match_stage'].apply(lambda x: int(x) if x or x == 0 else None)
-# match_log['stage_1'] = match_log['stage_1'].apply(lambda x: issue_map[x] if x else x)
-# match_log['stage_2'] = match_log['stage_2'].apply(lambda x: issue_map[x] if x else x)
-# match_log['stage_3'] = match_log['stage_3'].apply(lambda x: issue_map[x] if x else x)
-# match_log['stage_4'] = match_log['stage_4'].apply(lambda x: issue_map[x] if x else x)
-# match_log['stage_5'] = match_log['stage_5'].apply(lambda x: issue_map[x] if x else x)
-# match_log['created'] = now
-# match_log['modified'] = now
-# match_log = match_log.rename(columns={'id': 'tbiaID','rightsHolder':'rights_holder'})
-# match_log.to_sql('match_log', db, # schema='my_schema',
-#             if_exists='append',
-#             index=False)
-            #method=matchlog_upsert)  
 match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}.csv',index=None)
 
 # records要用更新的
@@ -388,6 +352,9 @@ for l in range(0, len(df), 1000):
             index=False,
             method=records_upsert)
 
+for mm in media_rule_list:
+    update_media_rule(media_rule=mm,rights_holder=rights_holder)
+
 
 # 刪除is_deleted的records & match_log
 delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version))
@@ -400,6 +367,6 @@ update_update_version(is_finished=True, update_version=update_version, rights_ho
 
 # 更新 datahub - dataset
 # 前面已經處理過新增了 最後只需要處理deprecated的部分
-update_dataset_deprecated(rights_holder=rights_holder)
+update_dataset_deprecated(rights_holder=rights_holder, update_verison=update_version)
 
 print('done!')

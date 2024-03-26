@@ -115,10 +115,13 @@ def get_namecode(namecode):
 
 
 
-def get_existed_records(ids, rights_holder):
+def get_existed_records(ids, rights_holder, get_reference=False):
     # ids = [f'occurrenceID:"{t}"' for t in ids]
     ids = [f'occurrenceID:"{d}"' for d in ids]
     subset_list = []
+    get_fields = ['id', 'occurrenceID']
+    if get_reference:
+        get_fields.append('references')
     for tt in range(0, len(ids), 20):
         # print(tt)
         # query = {'query': " OR ".join(ids[tt:tt+20]), 'limit': 20, "fields": ['id', 'occurrenceID', 'datasetName']}
@@ -128,7 +131,7 @@ def get_existed_records(ids, rights_holder):
                             # "{!terms f=occurrenceID} "+ ",".join(ids[tt:tt+20])],
                 "limit": 1000000,
                 # "fields": ['id', 'occurrenceID', 'datasetName']
-                "fields": ['id', 'occurrenceID']
+                "fields": get_fields
                 }
         response = requests.post(f'http://solr:8983/solr/tbia_records/select', data=json.dumps(query), headers={'content-type': "application/json" })
         if response.status_code == 200:
@@ -334,26 +337,68 @@ def control_basis_of_record(basisOfRecord):
     return basisOfRecord
 
 
-# ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
 def update_dataset_key(ds_name, rights_holder, update_version):
     now = datetime.now() + timedelta(hours=8)
     conn = psycopg2.connect(**db_settings)
-    query = """
-            INSERT INTO dataset ("rights_holder", "name", "record_type", "sourceDatasetID", 
-            "datasetURL", "update_version", "deprecated",created,modified)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT ("name", "record_type","rights_holder","sourceDatasetID") 
-            DO UPDATE SET "datasetURL"=%s, deprecated=%s, modified=%s, update_version=%s;
-            """
     for r in ds_name:
         sourceDatasetID = r.get('sourceDatasetID', '')
         datasetURL = r.get('datasetURL')
-        cur = conn.cursor()
-        cur.execute(query, (rights_holder,r['datasetName'],r['recordType'],sourceDatasetID,datasetURL,update_version,False,now,now,datasetURL,False,now,update_version))
-        conn.commit()
+        gbifDatasetID = r.get('gbifDatasetID')
+        # 如果有sourceDatasetID 優先以 sourceDatasetID 更新
+        # 但也有可能現在有sourceDatasetID 之前沒有
+        if sourceDatasetID:
+            query ="""
+                DO $$
+                BEGIN
+                IF EXISTS(SELECT * FROM dataset WHERE "sourceDatasetID" = %s AND rights_holder = %s AND record_type = %s)
+                    THEN
+                        UPDATE dataset SET "name" = %s, "gbifDatasetID" = %s, "datasetURL" = %s, deprecated = %s, modified = %s, update_version = %s
+                            WHERE "sourceDatasetID" = %s AND rights_holder = %s AND record_type = %s;
+                ELSIF EXISTS(SELECT * FROM dataset WHERE "name" = %s AND rights_holder = %s AND record_type = %s)
+                    THEN
+                        UPDATE dataset SET "sourceDatasetID" = %s, "gbifDatasetID" = %s, "datasetURL" = %s, deprecated = %s, modified = %s, update_version = %s
+                            WHERE "name" = %s AND rights_holder = %s AND record_type = %s;
+                ELSE 
+                    INSERT INTO dataset ("rights_holder", "name", "record_type", "sourceDatasetID", 
+                    "datasetURL","gbifDatasetID", "update_version", "deprecated", created, modified) 
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                END IF;
+                END $$;
+            """
+            cur = conn.cursor()
+            cur.execute(query, (sourceDatasetID, rights_holder, r.get('recordType'),
+                                r.get('datasetName'), gbifDatasetID, r.get('datasetURL'), False, now, update_version,
+                                sourceDatasetID, rights_holder, r.get('recordType'),
+                                r.get('datasetName'), rights_holder, r.get('recordType'),
+                                sourceDatasetID, gbifDatasetID, r.get('datasetURL'), False, now, update_version,
+                                r.get('datasetName'), rights_holder, r.get('recordType'),
+                                rights_holder, r.get('datasetName'), r.get('recordType'), sourceDatasetID, datasetURL,
+                                gbifDatasetID, update_version, False, now, now))
+            conn.commit()
+        else:
+            # 如果沒有sourceDatasetID 以 datasetName 更新
+            query ="""
+                DO $$
+                BEGIN
+                IF EXISTS(SELECT * FROM dataset WHERE "name" = %s AND rights_holder = %s AND record_type = %s) 
+                THEN
+                    UPDATE dataset SET "sourceDatasetID" = %s, "gbifDatasetID" = %s, "datasetURL" = %s, deprecated = %s, modified = %s, update_version = %s
+                        WHERE "name" = %s AND rights_holder = %s AND record_type = %s;
+                ELSE 
+                    INSERT INTO dataset ("rights_holder", "name", "record_type", "sourceDatasetID", 
+                    "datasetURL","gbifDatasetID", "update_version", "deprecated", created, modified) 
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                END IF;
+                END $$;
+            """
+            cur = conn.cursor()
+            cur.execute(query, (r.get('datasetName'), rights_holder, r.get('recordType'), # condition
+                                r.get('sourceDatasetID'), gbifDatasetID, r.get('datasetURL'), False, now, update_version,  # update
+                                r.get('datasetName'), rights_holder, r.get('recordType'),  # condition
+                                rights_holder, r.get('datasetName'), r.get('recordType'), sourceDatasetID, datasetURL,  # insert
+                                gbifDatasetID, update_version, False, now, now))
+            conn.commit()
     conn.close()
-
-
 
 
 def matchlog_upsert(table, conn, keys, data_iter):
@@ -400,8 +445,8 @@ def get_records(rights_holder, min_id, limit=10000):
         return results
     
 
-def get_gbif_id(gbifDatasetID, ocurrenceID):
-    gbif_url = f"https://api.gbif.org/v1/occurrence/{gbifDatasetID}/{ocurrenceID}"
+def get_gbif_id(gbifDatasetID, occurrenceID):
+    gbif_url = f"https://api.gbif.org/v1/occurrence/{gbifDatasetID}/{occurrenceID}"
     gbif_resp = requests.get(gbif_url)
     gbifID = None
     if gbif_resp.status_code == 200:

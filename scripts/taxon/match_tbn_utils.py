@@ -28,7 +28,7 @@ rank_map = {
     'Nothosubspecies', 37: 'Variety', 38: 'Subvariety', 39: 'Nothovariety', 40: 'Form', 41: 'Subform', 42: 'Special Form', 43: 'Race', 44: 'Stirp', 45: 'Morph', 46: 'Aberration', 47: 'Hybrid Formula'}
 
 
-def match_name(matching_name, sci_name, original_name, is_parent, match_stage, sci_names, source_family, source_class, source_order, sci_index):
+def match_name(matching_name, is_parent, match_stage, sci_names, source_family, source_class, source_order, sci_index):
     if matching_name:
         request_url = f"http://host.docker.internal:8080/api.php?names={urllib.parse.quote(matching_name)}&format=json&source=taicol"
         response = requests.get(request_url)
@@ -177,19 +177,6 @@ def match_namecode(matching_namecode, sci_name, match_stage, sci_names, sci_inde
         else:
             sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 4
 
-def match_namecode_tmp(matching_namecode, sci_name, match_stage, sci_names, sci_index):
-    # 這邊不會有fuzzy的問題 因為直接用namecode對應
-    # 也不考慮高階層
-    try:
-        matching_namecode = str(int(matching_namecode))
-    except:
-        pass
-    if taxon_id:= get_namecode(matching_namecode):
-        sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = taxon_id
-        sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = None
-    else:
-        sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 4
-
 
 def matching_flow(sci_names):
     sci_names['sci_index'] = sci_names.index
@@ -211,8 +198,8 @@ def matching_flow(sci_names):
         if s_row.sourceScientificName:
             # matching_name, sci_name, original_name, original_taxonuuid, is_parent, match_stage, sci_names, source_family, source_class, source_order, sci_index
             match_name(matching_name=s_row.sourceScientificName,
-                       sci_name=s_row.sourceScientificName,
-                       original_name=s_row.originalVernacularName,
+                    #    sci_name=s_row.sourceScientificName,
+                    #    original_name=s_row.originalVernacularName,
                     #    original_taxonuuid=s_row.sourceTaxonID,
                        is_parent=False,
                        match_stage=1,
@@ -228,7 +215,7 @@ def matching_flow(sci_names):
         s_row = sci_names.loc[s]
         if s_row.scientificNameID:
             match_namecode(matching_namecode=s_row.get('scientificNameID'),
-                sci_name=s_row.sourceScientificName,
+                # sci_name=s_row.sourceScientificName,
                 match_stage=2,
                 sci_names=sci_names,
                 sci_index=s_row.sci_index)
@@ -255,8 +242,8 @@ def matching_flow(sci_names):
                 if not any(re.findall(r'[\u4e00-\u9fff]+', sl)):
                     # 英文
                     match_name(matching_name=sl, 
-                               sci_name=s_row.get('sourceScientificName'),
-                               original_name=s_row.get('originalVernacularName'),
+                            #    sci_name=s_row.get('sourceScientificName'),
+                            #    original_name=s_row.get('originalVernacularName'),
                             #    original_taxonuuid=sci_names.loc[nti,'sourceTaxonID'],
                                is_parent=False,
                                match_stage=3,
@@ -271,8 +258,8 @@ def matching_flow(sci_names):
                 else:
                     # 中文
                     match_name(matching_name=sl, 
-                               sci_name=s_row.get('sourceScientificName'),
-                               original_name=s_row.get('originalVernacularName'),
+                            #    sci_name=s_row.get('sourceScientificName'),
+                            #    original_name=s_row.get('originalVernacularName'),
                             #    original_taxonuuid=sci_names.loc[nti,'sourceTaxonID'],
                                is_parent=False,
                                match_stage=3,
@@ -290,8 +277,8 @@ def matching_flow(sci_names):
         if nt_str := s_row.get('sourceScientificName'):
             if len(nt_str.split(' ')) > 1: # 等於0的話代表上面已經對過了
                 match_name(matching_name=nt_str.split(' ')[0], 
-                           sci_name=s_row.get('sourceScientificName'),
-                           original_name=s_row.get('originalVernacularName'),
+                        #    sci_name=s_row.get('sourceScientificName'),
+                        #    original_name=s_row.get('originalVernacularName'),
                         #    original_taxonuuid=sci_names.loc[nti,'sourceTaxonID'],
                            is_parent=True,
                            match_stage=4,
@@ -321,8 +308,8 @@ def matching_flow(sci_names):
                 eng_part = ' '.join([s for s in str_list if not any(re.findall(r'[\u4e00-\u9fff]+', s))])
                 # if not any(re.findall(r'[\u4e00-\u9fff]+', eng_part)):
                 match_name(matching_name=eng_part.split(' ')[0], 
-                           sci_name=s_row.get('sourceScientificName'),
-                           original_name=s_row.get('originalVernacularName'),
+                        #    sci_name=s_row.get('sourceScientificName'),
+                        #    original_name=s_row.get('originalVernacularName'),
                         #    original_taxonuuid=sci_names.loc[nti,'sourceTaxonID'],
                            is_parent=True,
                            match_stage=5,
@@ -339,3 +326,18 @@ def matching_flow(sci_names):
     sci_names.loc[(sci_names.match_stage==5)&(sci_names.taxonID==''),'match_stage'] = None
     # sci_names.loc[(sci_names.match_stage==5)&(sci_names.taxonID=='')&(sci_names.parentTaxonID==''),'match_stage'] = None
     return sci_names
+
+
+# def match_namecode_tmp(matching_namecode, sci_name, match_stage, sci_names, sci_index):
+#     # 這邊不會有fuzzy的問題 因為直接用namecode對應
+#     # 也不考慮高階層
+#     try:
+#         matching_namecode = str(int(matching_namecode))
+#     except:
+#         pass
+#     if taxon_id:= get_namecode(matching_namecode):
+#         sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = taxon_id
+#         sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = None
+#     else:
+#         sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 4
+

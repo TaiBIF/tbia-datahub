@@ -129,17 +129,19 @@ for p in range(current_page,total_page,10):
             df.loc[i,'id'] = str(bson.objectid.ObjectId())
             row = df.loc[i]
             # associatedMedia
-            associatedMedia = ';'.join([am['url'] for am in row.associatedMedia])
-            mediaLicense = ';'.join([am['licence'] for am in row.associatedMedia])
-            df.loc[i, 'associatedMedia'] = associatedMedia
-            df.loc[i, 'mediaLicense'] = mediaLicense
-            if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
-                if not mediaLicense:
-                    df.loc[i,'associatedMedia'] = None
-                if df.loc[i, 'associatedMedia']:
-                    media_rule = get_media_rule(df.loc[i, 'associatedMedia'])
+            mediaLicense_list = []
+            associatedMedia_list = []
+            for am in row.associatedMedia:
+                if am.get('licence'):
+                    mediaLicense_list.append(am.get('licence'))
+                    associatedMedia_list.append(am.get('url'))
+                    media_rule = get_media_rule(am.get('url'))
                     if media_rule and media_rule not in media_rule_list:
                         media_rule_list.append(media_rule)
+            associatedMedia = ';'.join(associatedMedia_list)
+            mediaLicense = ';'.join(mediaLicense_list)
+            df.loc[i, 'associatedMedia'] = associatedMedia
+            df.loc[i, 'mediaLicense'] = mediaLicense
             # 因為沒有模糊化座標 所以grid_* & grid_*_blurred 欄位填一樣的
             grid_data = create_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude)
             df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
@@ -209,7 +211,7 @@ update_update_version(is_finished=True, update_version=update_version, rights_ho
 
 # 更新 datahub - dataset
 # 前面已經處理過新增了 最後只需要處理deprecated的部分
-update_dataset_deprecated(rights_holder=rights_holder)
+update_dataset_deprecated(rights_holder=rights_holder, update_verison=update_version)
 
 
 print('done!')
