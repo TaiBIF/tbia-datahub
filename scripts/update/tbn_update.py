@@ -145,7 +145,7 @@ for url in url_list[url_index:]:
             })
             # 資料集
             df['recordType'] = df.apply(lambda x: 'col' if '標本' in x.basisOfRecord else 'occ', axis=1)
-            ds_name = df[['datasetName','recordType','datasetUUID','datasetURL']].drop_duplicates()
+            ds_name = df[['datasetName','recordType','sourceDatasetID','datasetURL']].drop_duplicates()
             # ds_name = ds_name.rename(columns={'datasetUUID': 'sourceDatasetID'})
             ds_name = ds_name.to_dict(orient='records')
             update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
