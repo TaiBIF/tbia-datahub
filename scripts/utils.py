@@ -503,11 +503,11 @@ def delete_records(rights_holder,group,update_version):
     return execute_line
 
 
-def update_dataset_deprecated(rights_holder, update_verison):
+def update_dataset_deprecated(rights_holder, update_version):
     # 先抓出所有該rights_holder的dataset
     conn = psycopg2.connect(**db_settings)
     with conn.cursor() as cursor:     
-        update_query = "UPDATE dataset SET deprecated = 't' WHERE rights_holder = '{}' AND update_version != {}".format(rights_holder, update_verison)
+        update_query = "UPDATE dataset SET deprecated = 't' WHERE rights_holder = '{}' AND update_version != {}".format(rights_holder, update_version)
         execute_line = cursor.execute(update_query)
         conn.commit()
     # with conn.cursor() as cursor:     

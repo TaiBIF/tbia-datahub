@@ -290,6 +290,6 @@ update_update_version(is_finished=True, update_version=update_version, rights_ho
 
 # 更新 datahub - dataset
 # 前面已經處理過新增了 最後只需要處理deprecated的部分
-update_dataset_deprecated(rights_holder=rights_holder,update_verison=update_version)
+update_dataset_deprecated(rights_holder=rights_holder,update_version=update_version)
 
 print('done!')
