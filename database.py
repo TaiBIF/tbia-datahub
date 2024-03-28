@@ -128,6 +128,7 @@ class Records(Base):
     day: Mapped[Optional[str]] = mapped_column(String(50))
     # 資料是否刪除
     is_deleted: Mapped[bool] = mapped_column(server_default='f', index=True)
+    sourceDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True, server_default='')
 
     __table_args__ = (
         UniqueConstraint('tbiaID',name='records_unique'),

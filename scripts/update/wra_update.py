@@ -131,7 +131,7 @@ for d in dataset_list[d_list_index:]:
                 df = df.drop(columns=['taxonGroup','taxonBackbone','kingdom','phylum','genus','geodeticDatum',
                                     'countryCode', 'country', 'county',
                                     'habitatReserve', 'wildlifeReserve', 'occurrenceStatus', 'selfProduced',
-                                    'datasetShortName','sourceDatasetID','establishmentMeans', 'issue'])
+                                    'datasetShortName','establishmentMeans', 'issue'])
                 sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
                 sci_names = matching_flow(sci_names)
                 df = df.drop(columns=['taxonID'], errors='ignore')
