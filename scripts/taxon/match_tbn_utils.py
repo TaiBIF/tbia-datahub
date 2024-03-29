@@ -141,7 +141,7 @@ def match_name(matching_name, is_parent, match_stage, sci_names, source_family, 
                 #     sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 2 # none
 
 
-def match_namecode(matching_namecode, sci_name, match_stage, sci_names, sci_index):
+def match_namecode(matching_namecode, match_stage, sci_names, sci_index):
     # 這邊不會有fuzzy的問題 因為直接用namecode對應
     # 也不考慮高階層
     try:
