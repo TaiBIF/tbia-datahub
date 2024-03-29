@@ -149,9 +149,10 @@ def get_existed_records(ids, rights_holder, get_reference=False):
         # 只保留一對一的結果 若有一對多 則刪除舊的 給予新的tbiaID
         existed_records = existed_records[existed_records.occurrenceID.isin(a.occurrenceID.to_list())]
         existed_records = existed_records.reset_index(drop=True)
+        
     else:
         # existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
-        existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','references'])
+        existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
     return existed_records
 
 

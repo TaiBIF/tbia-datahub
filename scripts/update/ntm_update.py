@@ -191,7 +191,7 @@ for d in dataset_list[d_list_index:]:
                 existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder, get_reference=True)
                 existed_records = existed_records.replace({nan:''})
                 if len(existed_records):
-                    df =  df.merge(existed_records[['tbiaID', 'occurrenceID']],on=["occurrenceID"], how='left')
+                    df = df.merge(existed_records[['tbiaID', 'occurrenceID']],on=["occurrenceID"], how='left')
                     df = df.replace({nan: None})
                     # 如果已存在，取存在的tbiaID
                     df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
@@ -204,10 +204,15 @@ for d in dataset_list[d_list_index:]:
                     if row.gbifID:
                         df.loc[i, 'references'] = f"https://www.gbif.org/occurrence/{row.gbifID}" 
                     # 確認原本有沒有references
-                    elif not len(existed_records[(existed_records.tbiaID==row.id)&(existed_records.references!='')]):
+                    elif 'references' in existed_records.keys():
+                        if not len(existed_records[(existed_records.tbiaID==row.id)&(existed_records.references!='')]):
+                            gbif_id = get_gbif_id(row.gbifDatasetID, row.occurrenceID)
+                            if gbif_id:
+                                df.loc[i, 'references'] = f"https://www.gbif.org/occurrence/{gbif_id}"
+                    else:
                         gbif_id = get_gbif_id(row.gbifDatasetID, row.occurrenceID)
                         if gbif_id:
-                            df.loc[i, 'references'] = f"https://www.gbif.org/occurrence/{gbif_id}" 
+                            df.loc[i, 'references'] = f"https://www.gbif.org/occurrence/{gbif_id}"
                 # match_log要用更新的
                 match_log = df[['occurrenceID','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','group','rightsHolder','created','modified']]
                 match_log = match_log.reset_index(drop=True)
