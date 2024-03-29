@@ -151,7 +151,7 @@ def get_existed_records(ids, rights_holder, get_reference=False):
         existed_records = existed_records.reset_index(drop=True)
     else:
         # existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
-        existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
+        existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','references'])
     return existed_records
 
 
