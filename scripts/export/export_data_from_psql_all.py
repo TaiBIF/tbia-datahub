@@ -85,7 +85,10 @@ while has_more_data:
         if len(df[df.taxonID.notnull()]):
             taxon = get_taxon_df(taxon_ids=df[df.taxonID.notnull()].taxonID.unique())
             # taxonID
-            final_df = df.merge(taxon,on='taxonID',how='left')
+            if len(taxon):
+                final_df = df.merge(taxon,on='taxonID',how='left')
+            else:
+                final_df = df
         else:
             final_df = df
         # a = df[df.taxonID.notnull()].merge(taxon,on='taxonID',)
