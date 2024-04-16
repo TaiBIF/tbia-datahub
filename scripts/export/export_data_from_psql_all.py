@@ -91,14 +91,6 @@ while has_more_data:
                 final_df = df
         else:
             final_df = df
-        # a = df[df.taxonID.notnull()].merge(taxon,on='taxonID',)
-        # parentTaxonID
-        # b = df[df.parentTaxonID.notnull()].drop(columns=['taxonID']).merge(taxon, left_on='parentTaxonID', right_on='taxonID')
-        # b['taxonID'] = None
-        # null
-        # c = df[(df.taxonID.isnull()&df.parentTaxonID.isnull())]
-        # final_df = pd.concat([a,b,c],ignore_index=True)
-        
         if len(results) != len(final_df):
             print('error', min_id)
         final_df = final_df.rename(columns={'originalVernacularName': 'originalScientificName'})
