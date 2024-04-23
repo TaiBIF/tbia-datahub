@@ -33,6 +33,9 @@ class MatchLog(Base):
     stage_3: Mapped[Optional[str]] = mapped_column(String(20), index=True)
     stage_4: Mapped[Optional[str]] = mapped_column(String(20), index=True)
     stage_5: Mapped[Optional[str]] = mapped_column(String(20), index=True)
+    stage_6: Mapped[Optional[str]] = mapped_column(String(20), index=True)
+    stage_7: Mapped[Optional[str]] = mapped_column(String(20), index=True)
+    stage_8: Mapped[Optional[str]] = mapped_column(String(20), index=True)
     created: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     modified: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     

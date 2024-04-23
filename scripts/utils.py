@@ -426,6 +426,9 @@ def update_match_log(match_log, now):
     match_log['stage_3'] = match_log['stage_3'].apply(lambda x: issue_map[x] if x else x)
     match_log['stage_4'] = match_log['stage_4'].apply(lambda x: issue_map[x] if x else x)
     match_log['stage_5'] = match_log['stage_5'].apply(lambda x: issue_map[x] if x else x)
+    match_log['stage_6'] = match_log['stage_6'].apply(lambda x: issue_map[x] if x else x)
+    match_log['stage_7'] = match_log['stage_7'].apply(lambda x: issue_map[x] if x else x)
+    match_log['stage_8'] = match_log['stage_8'].apply(lambda x: issue_map[x] if x else x)
     match_log['created'] = now
     match_log['modified'] = now
     match_log = match_log.rename(columns={'id': 'tbiaID','rightsHolder':'rights_holder'})
@@ -735,3 +738,45 @@ def update_media_rule(media_rule, rights_holder):
     cur.execute(query, (rights_holder, media_rule, now, now))
     conn.commit()
     conn.close()
+
+
+def update_dataset_info():
+    # datasetName
+    # rightsHolder
+    # resourceContacts
+    # occurrenceCount
+    # created
+    # modified
+    # 先取得所有的資料集
+    # TODO 這邊還待修改dataset資料庫的架構 之後要把occ跟col合在同一筆資料
+    now = datetime.now() + timedelta(hours=8)
+    conn = psycopg2.connect(**db_settings)
+    query = ''' SELECT name, "sourceDatasetID", "gbifDatasetID", rights_holder, "datasetURL" FROM dataset WHERE deprecated = 'f'; '''
+    with conn.cursor() as cursor:     
+        cursor.execute(query)
+        df = pd.DataFrame(cursor.fetchall(), columns=['datasetName', 'sourceDatasetID', 'gbifDatasetID', 'rights_holder', 'datasetURL'])
+        df = df.replace({np.nan: '', None: ''})
+        for i in df.index:
+            # 先補上 TaiBIF系列的datasetURL
+            # 如果是 TaiBIF -> 補上 taibif.tw
+            # 如果是 GBIF, ntm, wra -> 補上gbif
+            row = df.iloc[i]
+            if row.rights_holder == '臺灣生物多樣性資訊機構 TaiBIF' and row.sourceDatasetID:
+                df.loc[i,'datasetURL'] = 'https://portal.taibif.tw/dataset/' + row.sourceDatasetID
+            elif row.rights_holder in ['GBIF','河川環境資料庫','國立臺灣博物館典藏'] and row.gbifDatasetID:
+                df.loc[i,'datasetURL'] = 'https://www.gbif.org/dataset/' + row.gbifDatasetID
+            # 取得resourceContacts, occurrenceCount
+            # 如果有sourceDatasetID 用rightsHolder + sourceDatasetID query
+            # 如果只有datasetName  用rightsHolder + datasetName query
+            if row.sourceDatasetID:
+                response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=resourceContacts&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{row.rights_holder}"&fq=sourceDatasetID:{row.sourceDatasetID}&q.op=OR&q=*%3A*&rows=0')
+            else:
+                response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=resourceContacts&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{row.rights_holder}"&fq=datasetName:"{row.datasetName}"&q.op=OR&q=*%3A*&rows=0')
+            if response.status_code == 200:
+                resp = response.json()
+                occurrenceCount = resp['response']['numFound']
+                data = resp['facet_counts']['facet_fields']['resourceContacts']
+                contact_list = [data[x] for x in range(0, len(data),2)]
+                resourceContacts = ';'.join(contact_list)
+                df.loc[i,'resourceContacts'] = resourceContacts
+                df.loc[i,'occurrenceCount'] = occurrenceCount
