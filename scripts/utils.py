@@ -339,6 +339,7 @@ def control_basis_of_record(basisOfRecord):
 
 
 def update_dataset_key(ds_name, rights_holder, update_version):
+    # 202404 這邊不需要考慮record_type了
     now = datetime.now() + timedelta(hours=8)
     conn = psycopg2.connect(**db_settings)
     for r in ds_name:
@@ -351,29 +352,29 @@ def update_dataset_key(ds_name, rights_holder, update_version):
             query ="""
                 DO $$
                 BEGIN
-                IF EXISTS(SELECT * FROM dataset WHERE "sourceDatasetID" = %s AND rights_holder = %s AND record_type = %s)
+                IF EXISTS(SELECT * FROM dataset WHERE "sourceDatasetID" = %s AND rights_holder = %s )
                     THEN
                         UPDATE dataset SET "name" = %s, "gbifDatasetID" = %s, "datasetURL" = %s, deprecated = %s, modified = %s, update_version = %s
-                            WHERE "sourceDatasetID" = %s AND rights_holder = %s AND record_type = %s;
-                ELSIF EXISTS(SELECT * FROM dataset WHERE "name" = %s AND rights_holder = %s AND record_type = %s)
+                            WHERE "sourceDatasetID" = %s AND rights_holder = %s;
+                ELSIF EXISTS(SELECT * FROM dataset WHERE "name" = %s AND rights_holder = %s )
                     THEN
                         UPDATE dataset SET "sourceDatasetID" = %s, "gbifDatasetID" = %s, "datasetURL" = %s, deprecated = %s, modified = %s, update_version = %s
-                            WHERE "name" = %s AND rights_holder = %s AND record_type = %s;
+                            WHERE "name" = %s AND rights_holder = %s;
                 ELSE 
-                    INSERT INTO dataset ("rights_holder", "name", "record_type", "sourceDatasetID", 
+                    INSERT INTO dataset ("rights_holder", "name", "sourceDatasetID", 
                     "datasetURL","gbifDatasetID", "update_version", "deprecated", created, modified) 
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
                 END IF;
                 END $$;
             """
             cur = conn.cursor()
-            cur.execute(query, (sourceDatasetID, rights_holder, r.get('recordType'),
+            cur.execute(query, (sourceDatasetID, rights_holder, 
                                 r.get('datasetName'), gbifDatasetID, r.get('datasetURL'), False, now, update_version,
-                                sourceDatasetID, rights_holder, r.get('recordType'),
-                                r.get('datasetName'), rights_holder, r.get('recordType'),
+                                sourceDatasetID, rights_holder, 
+                                r.get('datasetName'), rights_holder, 
                                 sourceDatasetID, gbifDatasetID, r.get('datasetURL'), False, now, update_version,
-                                r.get('datasetName'), rights_holder, r.get('recordType'),
-                                rights_holder, r.get('datasetName'), r.get('recordType'), sourceDatasetID, datasetURL,
+                                r.get('datasetName'), rights_holder, 
+                                rights_holder, r.get('datasetName'),  sourceDatasetID, datasetURL,
                                 gbifDatasetID, update_version, False, now, now))
             conn.commit()
         else:
@@ -381,25 +382,135 @@ def update_dataset_key(ds_name, rights_holder, update_version):
             query ="""
                 DO $$
                 BEGIN
-                IF EXISTS(SELECT * FROM dataset WHERE "name" = %s AND rights_holder = %s AND record_type = %s) 
+                IF EXISTS(SELECT * FROM dataset WHERE "name" = %s AND rights_holder = %s ) 
                 THEN
                     UPDATE dataset SET "sourceDatasetID" = %s, "gbifDatasetID" = %s, "datasetURL" = %s, deprecated = %s, modified = %s, update_version = %s
-                        WHERE "name" = %s AND rights_holder = %s AND record_type = %s;
+                        WHERE "name" = %s AND rights_holder = %s ;
                 ELSE 
-                    INSERT INTO dataset ("rights_holder", "name", "record_type", "sourceDatasetID", 
+                    INSERT INTO dataset ("rights_holder", "name", "sourceDatasetID", 
                     "datasetURL","gbifDatasetID", "update_version", "deprecated", created, modified) 
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
                 END IF;
                 END $$;
             """
             cur = conn.cursor()
-            cur.execute(query, (r.get('datasetName'), rights_holder, r.get('recordType'), # condition
+            cur.execute(query, (r.get('datasetName'), rights_holder,  # condition
                                 r.get('sourceDatasetID'), gbifDatasetID, r.get('datasetURL'), False, now, update_version,  # update
-                                r.get('datasetName'), rights_holder, r.get('recordType'),  # condition
-                                rights_holder, r.get('datasetName'), r.get('recordType'), sourceDatasetID, datasetURL,  # insert
+                                r.get('datasetName'), rights_holder,   # condition
+                                rights_holder, r.get('datasetName'),  sourceDatasetID, datasetURL,  # insert
                                 gbifDatasetID, update_version, False, now, now))
             conn.commit()
+    dataset_ids = []
+    query = '''SELECT id, "name", "sourceDatasetID" FROM dataset WHERE rights_holder = %s AND deprecated = 'f' ''';
+    with conn.cursor() as cursor:     
+        cursor.execute(query, (rights_holder, ))
+        dataset_ids = pd.DataFrame(cursor.fetchall(), columns=['tbiaDatasetID', 'datasetName', 'sourceDatasetID'])
+        dataset_ids = dataset_ids.merge(pd.DataFrame(ds_name))
     conn.close()
+    if len(dataset_ids):
+        dataset_ids = dataset_ids[['tbiaDatasetID', 'datasetName', 'sourceDatasetID']].drop_duplicates()
+    return dataset_ids
+
+
+
+
+def update_dataset_info(rights_holder):
+    # 改成直接用records裡面的groupby
+    query = '''SELECT count(*), string_agg(distinct "resourceContacts", ','),
+                string_agg(distinct "recordType", ','), "tbiaDatasetID" FROM records WHERE  "rightsHolder" = %s
+                GROUP BY "tbiaDatasetID";
+                 '''
+    conn = psycopg2.connect(**db_settings)
+    with conn.cursor() as cursor:     
+        cursor.execute(query, (rights_holder,))
+        df = pd.DataFrame(cursor.fetchall(), columns=['occurrenceCount','resourceContacts', 'record_type', 'tbiaDatasetID'])
+        df = df.replace({np.nan: '', None: ''})
+    if len(df):
+        df['occurrenceCount'] = df['occurrenceCount'].replace({'': 0})
+        # 更新
+        for i in df.index:
+            row = df.iloc[i]
+            with conn.cursor() as cursor:     
+                update_query = ''' UPDATE dataset SET "resourceContacts"='{}', "occurrenceCount"={}, "record_type"='{}' WHERE id = {} '''.format(row.resourceContacts, row.occurrenceCount, row.record_type, row.tbiaDatasetID)
+                execute_line = cursor.execute(update_query)
+                conn.commit()
+    # query = 'SELECT id, record_type, "resourceContacts", "occurrenceCount", "update_version" FROM dataset WHERE id IN %s '
+    # conn = psycopg2.connect(**db_settings)
+    # with conn.cursor() as cursor:     
+    #     cursor.execute(query, ([d['tbiadatasetID'] for d in dataset_info],))
+    #     df = pd.DataFrame(cursor.fetchall(), columns=['psql_id','record_type', 'resourceContacts', 'occurrenceCount'])
+    #     df = df.replace({np.nan: '', None: ''})
+
+
+    # # datasetName
+    # # record_type
+    # # rightsHolder
+    # # resourceContacts
+    # # occurrenceCount
+    # # created
+    # # modified
+    # # 先取得所有的資料集
+    # # now = datetime.now() + timedelta(hours=8)
+    # conn = psycopg2.connect(**db_settings)
+    # # 目前的id就等同於tbiaDatasetID
+    # query = ''' SELECT id, name, "sourceDatasetID", "gbifDatasetID", "datasetURL", "record_type" FROM dataset WHERE deprecated = 'f' AND rights_holder = %s; '''
+    # with conn.cursor() as cursor:     
+    #     cursor.execute(query, (rights_holder,))
+    #     df = pd.DataFrame(cursor.fetchall(), columns=['psql_id','datasetName', 'sourceDatasetID', 'gbifDatasetID', 'datasetURL', 'record_type'])
+    #     df = df.replace({np.nan: '', None: ''})
+    # for i in df.index:
+    #     # 先補上 TaiBIF系列的datasetURL
+    #     # 如果是 TaiBIF -> 補上 taibif.tw
+    #     # 如果是 GBIF, ntm, wra -> 補上gbif
+    #     row = df.iloc[i]
+    #     if rights_holder == '臺灣生物多樣性資訊機構 TaiBIF' and row.sourceDatasetID:
+    #         df.loc[i,'datasetURL'] = 'https://portal.taibif.tw/dataset/' + row.sourceDatasetID
+    #     elif rights_holder in ['GBIF','河川環境資料庫','國立臺灣博物館典藏'] and row.gbifDatasetID:
+    #         df.loc[i,'datasetURL'] = 'https://www.gbif.org/dataset/' + row.gbifDatasetID
+    #     # 取得resourceContacts, occurrenceCount
+    #     # 如果有sourceDatasetID 用rightsHolder + sourceDatasetID query
+    #     # 如果只有datasetName  用rightsHolder + datasetName query
+    #     if row.sourceDatasetID:
+    #         response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=resourceContacts&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{rights_holder}"&fq=sourceDatasetID:{row.sourceDatasetID}&q.op=OR&q=*%3A*&rows=0')
+    #     else:
+    #         response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=resourceContacts&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{rights_holder}"&fq=datasetName:"{row.datasetName}"&q.op=OR&q=*%3A*&rows=0')
+    #     # TODO 2024 06 更新時要 改成統一用tbiaDatasetID更新
+    #     if response.status_code == 200:
+    #         resp = response.json()
+    #         occurrenceCount = resp['response']['numFound']
+    #         # print(row.datasetName, occurrenceCount)
+    #         data = resp['facet_counts']['facet_fields']['resourceContacts']
+    #         contact_list = [data[x] for x in range(0, len(data),2)]
+    #         resourceContacts = ';'.join(contact_list)
+    #         df.loc[i,'resourceContacts'] = resourceContacts
+    #         df.loc[i,'occurrenceCount'] = occurrenceCount
+    #     # 取得record_type
+    #     if row.sourceDatasetID:
+    #         response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=record_type&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{rights_holder}"&fq=sourceDatasetID:{row.sourceDatasetID}&q.op=OR&q=*%3A*&rows=0')
+    #     else:
+    #         response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=record_type&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{rights_holder}"&fq=datasetName:"{row.datasetName}"&q.op=OR&q=*%3A*&rows=0')
+    #     if response.status_code == 200:
+    #         resp = response.json()
+    #         # occurrenceCount = resp['response']['numFound']
+    #         data = resp['facet_counts']['facet_fields']['recordType']
+    #         type_list = [data[x] for x in range(0, len(data),2)]
+    #         record_type = ','.join(type_list)
+    #         df.loc[i,'record_type'] = record_type
+    # # print(df)
+    # # if len(df):
+    # #     df = df.replace({np.nan: None})
+    # #     df['occurrenceCount'] = df['occurrenceCount'].replace({None: 0})
+    #     # 更新
+    #     conn = psycopg2.connect(**db_settings)
+    #     for i in df.index:
+    #         row = df.iloc[i]
+    #         with conn.cursor() as cursor:     
+    #             update_query = ''' UPDATE dataset SET "datasetURL"='{}', "resourceContacts"='{}', "occurrenceCount"={}, "record_type"='{}' WHERE id = {} '''.format(row.datasetURL, row.resourceContacts, row.occurrenceCount, row.record_type, row.psql_id)
+    #             execute_line = cursor.execute(update_query)
+    #             conn.commit()
+
+
+
 
 
 def matchlog_upsert(table, conn, keys, data_iter):
@@ -508,34 +619,13 @@ def delete_records(rights_holder,group,update_version):
 
 
 def update_dataset_deprecated(rights_holder, update_version):
-    # 先抓出所有該rights_holder的dataset
+    # update_version不等於這次的 改成 deprecated = 't' 
     conn = psycopg2.connect(**db_settings)
     with conn.cursor() as cursor:     
         update_query = "UPDATE dataset SET deprecated = 't' WHERE rights_holder = '{}' AND update_version != {}".format(rights_holder, update_version)
         execute_line = cursor.execute(update_query)
         conn.commit()
-    # with conn.cursor() as cursor:     
-    #     query = """SELECT "name", record_type, id FROM dataset WHERE rights_holder = '{}' """.format(rights_holder)
-    #     cursor.execute(query)
-    #     datasets = pd.DataFrame(cursor.fetchall(), columns=['datasetName', 'record_type', 'dataset_id'])
-    #     if len(datasets):
-    #         datasets['dataset_id'].values.astype(int)
-    #         for i in datasets.index:
-    #             # if i ==0:
-    #             row = datasets.iloc[i]
-    #             # 用 name + record_type + rights_holder 去 query 看在records表中存不存在
-    #             query = """SELECT EXISTS ( select id from records where "datasetName" = '{}' 
-    #                 and "recordType" = '{}' and "rightsHolder" = '{}');""".format(row.datasetName, row.record_type, rights_holder)
-    #             cursor.execute(query)
-    #             res = cursor.fetchone()
-    #             # 存在 -> deprecated 改成 f
-    #             # 不存在 -> deprecated 改成 t                
-    #             if res[0] == True:
-    #                 update_query = "UPDATE dataset SET deprecated = 'f' WHERE id = {}".format(row.dataset_id)
-    #             else:
-    #                 update_query = "UPDATE dataset SET deprecated = 't' WHERE id = {}".format(row.dataset_id)
-    #             execute_line = cursor.execute(update_query)
-    #             conn.commit()
+
 
 
 def update_update_version(update_version, rights_holder, current_page=0, note=None, is_finished=False):
@@ -740,43 +830,72 @@ def update_media_rule(media_rule, rights_holder):
     conn.close()
 
 
-def update_dataset_info():
-    # datasetName
-    # rightsHolder
-    # resourceContacts
-    # occurrenceCount
-    # created
-    # modified
-    # 先取得所有的資料集
-    # TODO 這邊還待修改dataset資料庫的架構 之後要把occ跟col合在同一筆資料
-    now = datetime.now() + timedelta(hours=8)
-    conn = psycopg2.connect(**db_settings)
-    query = ''' SELECT name, "sourceDatasetID", "gbifDatasetID", rights_holder, "datasetURL" FROM dataset WHERE deprecated = 'f'; '''
-    with conn.cursor() as cursor:     
-        cursor.execute(query)
-        df = pd.DataFrame(cursor.fetchall(), columns=['datasetName', 'sourceDatasetID', 'gbifDatasetID', 'rights_holder', 'datasetURL'])
-        df = df.replace({np.nan: '', None: ''})
-        for i in df.index:
-            # 先補上 TaiBIF系列的datasetURL
-            # 如果是 TaiBIF -> 補上 taibif.tw
-            # 如果是 GBIF, ntm, wra -> 補上gbif
-            row = df.iloc[i]
-            if row.rights_holder == '臺灣生物多樣性資訊機構 TaiBIF' and row.sourceDatasetID:
-                df.loc[i,'datasetURL'] = 'https://portal.taibif.tw/dataset/' + row.sourceDatasetID
-            elif row.rights_holder in ['GBIF','河川環境資料庫','國立臺灣博物館典藏'] and row.gbifDatasetID:
-                df.loc[i,'datasetURL'] = 'https://www.gbif.org/dataset/' + row.gbifDatasetID
-            # 取得resourceContacts, occurrenceCount
-            # 如果有sourceDatasetID 用rightsHolder + sourceDatasetID query
-            # 如果只有datasetName  用rightsHolder + datasetName query
-            if row.sourceDatasetID:
-                response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=resourceContacts&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{row.rights_holder}"&fq=sourceDatasetID:{row.sourceDatasetID}&q.op=OR&q=*%3A*&rows=0')
-            else:
-                response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=resourceContacts&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{row.rights_holder}"&fq=datasetName:"{row.datasetName}"&q.op=OR&q=*%3A*&rows=0')
-            if response.status_code == 200:
-                resp = response.json()
-                occurrenceCount = resp['response']['numFound']
-                data = resp['facet_counts']['facet_fields']['resourceContacts']
-                contact_list = [data[x] for x in range(0, len(data),2)]
-                resourceContacts = ';'.join(contact_list)
-                df.loc[i,'resourceContacts'] = resourceContacts
-                df.loc[i,'occurrenceCount'] = occurrenceCount
+# def update_dataset_info(rights_holder):
+#     # datasetName
+#     # record_type
+#     # rightsHolder
+#     # resourceContacts
+#     # occurrenceCount
+#     # created
+#     # modified
+#     # 先取得所有的資料集
+#     # now = datetime.now() + timedelta(hours=8)
+#     conn = psycopg2.connect(**db_settings)
+#     # 目前的id就等同於tbiaDatasetID
+#     query = ''' SELECT id, name, "sourceDatasetID", "gbifDatasetID", "datasetURL", "record_type" FROM dataset WHERE deprecated = 'f' AND rights_holder = %s; '''
+#     with conn.cursor() as cursor:     
+#         cursor.execute(query, (rights_holder,))
+#         df = pd.DataFrame(cursor.fetchall(), columns=['psql_id','datasetName', 'sourceDatasetID', 'gbifDatasetID', 'datasetURL', 'record_type'])
+#         df = df.replace({np.nan: '', None: ''})
+#     for i in df.index:
+#         # 先補上 TaiBIF系列的datasetURL
+#         # 如果是 TaiBIF -> 補上 taibif.tw
+#         # 如果是 GBIF, ntm, wra -> 補上gbif
+#         row = df.iloc[i]
+#         if rights_holder == '臺灣生物多樣性資訊機構 TaiBIF' and row.sourceDatasetID:
+#             df.loc[i,'datasetURL'] = 'https://portal.taibif.tw/dataset/' + row.sourceDatasetID
+#         elif rights_holder in ['GBIF','河川環境資料庫','國立臺灣博物館典藏'] and row.gbifDatasetID:
+#             df.loc[i,'datasetURL'] = 'https://www.gbif.org/dataset/' + row.gbifDatasetID
+#         # 取得resourceContacts, occurrenceCount
+#         # 如果有sourceDatasetID 用rightsHolder + sourceDatasetID query
+#         # 如果只有datasetName  用rightsHolder + datasetName query
+#         if row.sourceDatasetID:
+#             response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=resourceContacts&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{rights_holder}"&fq=sourceDatasetID:{row.sourceDatasetID}&q.op=OR&q=*%3A*&rows=0')
+#         else:
+#             response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=resourceContacts&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{rights_holder}"&fq=datasetName:"{row.datasetName}"&q.op=OR&q=*%3A*&rows=0')
+#         # TODO 2024 06 更新時要 改成統一用tbiaDatasetID更新
+#         if response.status_code == 200:
+#             resp = response.json()
+#             occurrenceCount = resp['response']['numFound']
+#             # print(row.datasetName, occurrenceCount)
+#             data = resp['facet_counts']['facet_fields']['resourceContacts']
+#             contact_list = [data[x] for x in range(0, len(data),2)]
+#             resourceContacts = ';'.join(contact_list)
+#             df.loc[i,'resourceContacts'] = resourceContacts
+#             df.loc[i,'occurrenceCount'] = occurrenceCount
+#         # 取得record_type
+#         if row.sourceDatasetID:
+#             response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=record_type&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{rights_holder}"&fq=sourceDatasetID:{row.sourceDatasetID}&q.op=OR&q=*%3A*&rows=0')
+#         else:
+#             response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=record_type&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{rights_holder}"&fq=datasetName:"{row.datasetName}"&q.op=OR&q=*%3A*&rows=0')
+#         if response.status_code == 200:
+#             resp = response.json()
+#             # occurrenceCount = resp['response']['numFound']
+#             data = resp['facet_counts']['facet_fields']['recordType']
+#             type_list = [data[x] for x in range(0, len(data),2)]
+#             record_type = ','.join(type_list)
+#             df.loc[i,'record_type'] = record_type
+#     # print(df)
+#     if len(df):
+#         df = df.replace({np.nan: None})
+#         df['occurrenceCount'] = df['occurrenceCount'].replace({None: 0})
+#         # 更新
+#         conn = psycopg2.connect(**db_settings)
+#         for i in df.index:
+#             row = df.iloc[i]
+#             with conn.cursor() as cursor:     
+#                 update_query = ''' UPDATE dataset SET "datasetURL"='{}', "resourceContacts"='{}', "occurrenceCount"={}, "record_type"='{}' WHERE id = {} '''.format(row.datasetURL, row.resourceContacts, row.occurrenceCount, row.record_type, row.psql_id)
+#                 execute_line = cursor.execute(update_query)
+#                 conn.commit()
+
+

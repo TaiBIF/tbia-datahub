@@ -307,7 +307,7 @@ class Dataset(Base):
     name: Mapped[str] = mapped_column(String(10000), index=True)
     datasetTaxonGroup: Mapped[Optional[str]] = mapped_column(String(10000))
     resourceContacts: Mapped[Optional[str]] = mapped_column(String(10000))
-    record_type: Mapped[str] = mapped_column(String(20), index=True) # 多值以逗號合併
+    record_type: Mapped[Optional[str]] = mapped_column(String(20), index=True) # 多值以逗號合併
     rights_holder:  Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     deprecated: Mapped[bool] = mapped_column(server_default='f', index=True)
     sourceDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True, server_default='')

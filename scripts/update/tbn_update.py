@@ -13,7 +13,8 @@ from dotenv import load_dotenv
 import os
 load_dotenv(override=True)
 
-from scripts.taxon.match_tbn_utils import matching_flow
+# from scripts.taxon.match_tbn_utils import matching_flow
+from scripts.taxon.match_utils import matching_flow
 from scripts.utils import *
 
 
@@ -111,16 +112,18 @@ for url in url_list[url_index:]:
         df = pd.DataFrame(data)
         # 排除無學名或上階層資訊的欄位
         # '原始資料無物種資訊'
-        df = df.replace({nan: '', None: ''})
+        df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': ''})
         df['originalVernacularName'] = df['originalVernacularName'].replace({'原始資料無物種資訊': ''})
         # 如果 'originalVernacularName','simplifiedScientificName','vernacularName','familyScientificName' 都是空值才排除
         df = df[~((df.originalVernacularName=='')&(df.simplifiedScientificName=='')&(df.vernacularName=='')&(df.familyScientificName=='')&(df.scientificNameID==''))]
         if 'sensitiveCategory' in df.keys():
             df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
+        if 'license' in df.keys():
+            df = df[(df.license!='')&(~df.license.str.contains('BY NC ND|BY-NC-ND',regex=True))]
         media_rule_list = []
         if len(df):
             df = df.reset_index(drop=True)
-            df = df.replace({nan: '', None: ''})
+            df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': ''})
             df['locality'] = df.apply(lambda x: x.county + x.municipality, axis = 1)
             df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
             # 若沒有individualCount 則用organismQuantity 
@@ -145,10 +148,12 @@ for url in url_list[url_index:]:
             })
             # 資料集
             df['recordType'] = df.apply(lambda x: 'col' if '標本' in x.basisOfRecord else 'occ', axis=1)
-            ds_name = df[['datasetName','recordType','sourceDatasetID','datasetURL']].drop_duplicates()
+            ds_name = df[['datasetName','sourceDatasetID','datasetURL']].drop_duplicates()
             # ds_name = ds_name.rename(columns={'datasetUUID': 'sourceDatasetID'})
             ds_name = ds_name.to_dict(orient='records')
-            update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
+            # return tbiaDatasetID 並加上去
+            return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
+            df = df.merge(return_dataset_id)
             df = df.drop(columns=['externalID','minimumElevationInMeters','gridID','adminareaCode',
                                 'county','municipality','hour','minute','protectedStatusTW',
                                     'categoryIUCN', 'categoryRedlistTW', 'endemism', 'nativeness',
@@ -289,7 +294,11 @@ zip_match_log(group=group,info_id=info_id)
 update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder)
 
 # 更新 datahub - dataset
-# 前面已經處理過新增了 最後只需要處理deprecated的部分
+# update if deprecated
 update_dataset_deprecated(rights_holder=rights_holder,update_version=update_version)
+
+# update dataset info
+update_dataset_info(rights_holder=rights_holder)
+
 
 print('done!')
