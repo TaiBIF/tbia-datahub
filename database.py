@@ -132,6 +132,7 @@ class Records(Base):
     # 資料是否刪除
     is_deleted: Mapped[bool] = mapped_column(server_default='f', index=True)
     sourceDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True, server_default='')
+    tbiaDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True, server_default='') # 202404 目前是對到Dataset表的id
 
     __table_args__ = (
         UniqueConstraint('tbiaID',name='records_unique'),
@@ -306,12 +307,12 @@ class Dataset(Base):
     name: Mapped[str] = mapped_column(String(10000), index=True)
     datasetTaxonGroup: Mapped[Optional[str]] = mapped_column(String(10000))
     resourceContacts: Mapped[Optional[str]] = mapped_column(String(10000))
-    record_type: Mapped[str] = mapped_column(String(20), index=True)
+    record_type: Mapped[str] = mapped_column(String(20), index=True) # 多值以逗號合併
     rights_holder:  Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     deprecated: Mapped[bool] = mapped_column(server_default='f', index=True)
     sourceDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True, server_default='')
     gbifDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True, server_default='')
-    tbiaDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True, server_default='')
+    tbiaDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True, server_default='') 
     dateCoverage: Mapped[Optional[str]] = mapped_column(String(10000))
     occurrenceCount: Mapped[Optional[int]] = mapped_column(server_default='0')
     datasetAuthor: Mapped[Optional[str]] = mapped_column(String(10000))

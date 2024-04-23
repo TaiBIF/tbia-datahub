@@ -536,6 +536,9 @@
   <!-- 202403新增 -->
   <field name="sourceDatasetID" type="string"/>
   
+  <!-- 202404新增 -->
+  <field name="tbiaDatasetID" type="string"/>
+  
     <!-- taxa fields start -->
     <field name="aberration" type="string"/>
     <field name="aberration_c" type="string"/>
