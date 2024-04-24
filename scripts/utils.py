@@ -340,6 +340,8 @@ def control_basis_of_record(basisOfRecord):
 
 def update_dataset_key(ds_name, rights_holder, update_version):
     # 202404 這邊不需要考慮record_type了
+    # TODO 不考慮record_type的話 可能會把原本deprecated的資料集打開 -> 應該改成直接刪掉deprecated的資料集 如果是之前重複的話
+    # 先確定之前的search_query再次查詢會不會有問題  or 只考慮把有兩個重複的資料集拿掉
     now = datetime.now() + timedelta(hours=8)
     conn = psycopg2.connect(**db_settings)
     for r in ds_name:
@@ -405,6 +407,7 @@ def update_dataset_key(ds_name, rights_holder, update_version):
     with conn.cursor() as cursor:     
         cursor.execute(query, (rights_holder, ))
         dataset_ids = pd.DataFrame(cursor.fetchall(), columns=['tbiaDatasetID', 'datasetName', 'sourceDatasetID'])
+        dataset_ids = dataset_ids.replace({None: '', np.nan: ''})
         dataset_ids = dataset_ids.merge(pd.DataFrame(ds_name))
     conn.close()
     if len(dataset_ids):
