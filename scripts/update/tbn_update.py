@@ -149,7 +149,6 @@ for url in url_list[url_index:]:
             # 資料集
             df['recordType'] = df.apply(lambda x: 'col' if '標本' in x.basisOfRecord else 'occ', axis=1)
             ds_name = df[['datasetName','sourceDatasetID','datasetURL']].drop_duplicates()
-            # ds_name = ds_name.rename(columns={'datasetUUID': 'sourceDatasetID'})
             ds_name = ds_name.to_dict(orient='records')
             # return tbiaDatasetID 並加上去
             return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
@@ -255,14 +254,14 @@ for url in url_list[url_index:]:
                 # df = df.drop(columns=['tbiaID','created_y','created_x'])
                 df = df.drop(columns=['tbiaID'])
             # match_log要用更新的
-            match_log = df[['occurrenceID','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','group','rightsHolder','created','modified']]
+            match_log = df[['occurrenceID','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','group','rightsHolder','created','modified']]
             match_log = match_log.reset_index(drop=True)
             match_log = update_match_log(match_log=match_log, now=now)
             match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{url_index}_{p}.csv',index=None)
             # records要用更新的
             # 已經串回原本的tbiaID，可以用tbiaID做更新
             df['is_deleted'] = False
-            df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','taxon_name_id','sci_index'],errors='ignore')
+            df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','taxon_name_id','sci_index', 'datasetURL','gbifDatasetID', 'gbifID'],errors='ignore')
             # 最後再一起匯出
             # # 在solr裡 要使用id當作名稱 而非tbiaID
             # df.to_csv(f'/solr/csvs/updated/{group}_{info_id}_{p}.csv', index=False)
@@ -295,7 +294,7 @@ update_update_version(is_finished=True, update_version=update_version, rights_ho
 
 # 更新 datahub - dataset
 # update if deprecated
-update_dataset_deprecated(rights_holder=rights_holder,update_version=update_version)
+update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
 
 # update dataset info
 update_dataset_info(rights_holder=rights_holder)

@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 import os
 load_dotenv(override=True)
 
-from scripts.taxon.match_taibif_utils import matching_flow
+from scripts.taxon.match_utils import matching_flow
 from scripts.utils import *
 
 
@@ -77,19 +77,19 @@ for p in range(current_page,total_page,10):
         c += 1
     df = pd.DataFrame(data)
     # 如果 'isPreferredName','scientificName',都是空值才排除
-    df = df.replace({nan: '', None: '', 'NA': ''})
+    df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': ''})
     df = df[~((df.isPreferredName=='')&(df.scientificName==''))]
     # df = df[~(df.isPreferredName.isin([nan,'',None])&df.scientificName.isin([nan,'',None]))]
     if 'sensitiveCategory' in df.keys():
         df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
     if 'license' in df.keys():
-        df = df[df.license!='']
+        df = df[(df.license!='')&(~df.license.str.contains('BY NC ND|BY-NC-ND',regex=True))]
     else:
         df = []
     media_rule_list = []
     if len(df):
         df = df.reset_index(drop=True)
-        df = df.replace({nan: '', 'NA': ''})
+        df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': ''})
         df = df.rename(columns={'modified': 'sourceModified', 'scientificName': 'sourceScientificName',
                                 'isPreferredName': 'sourceVernacularName', 'taxonRank': 'sourceTaxonRank'})
         sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
@@ -156,7 +156,9 @@ for p in range(current_page,total_page,10):
         # # 屏蔽原始資料 - 林試所目前的敏感資料是全部屏蔽 grid_*_blurred就維持用-1_-1
         # 資料集
         ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
-        update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
+        # return tbiaDatasetID 並加上去
+        return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
+        df = df.merge(return_dataset_id)
         # 更新match_log
         # 更新資料
         df['occurrenceID'] = df['occurrenceID'].astype('str')
@@ -173,14 +175,14 @@ for p in range(current_page,total_page,10):
             # df = df.drop(columns=['tbiaID','created_y','created_x'])
             df = df.drop(columns=['tbiaID'])
         # match_log要用更新的
-        match_log = df[['occurrenceID','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','group','rightsHolder','created','modified']]
+        match_log = df[['occurrenceID','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','group','rightsHolder','created','modified']]
         match_log = match_log.reset_index(drop=True)
         match_log = update_match_log(match_log=match_log, now=now)
         match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{p}.csv',index=None)
         # records要用更新的
         # 已經串回原本的tbiaID，可以用tbiaID做更新
         df['is_deleted'] = False
-        df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','taxon_name_id','sci_index'],errors='ignore')
+        df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','taxon_name_id','sci_index', 'datasetURL','gbifDatasetID', 'gbifID'],errors='ignore')
         # 最後再一起匯出
         # # 在solr裡 要使用id當作名稱 而非tbiaID
         # df.to_csv(f'/solr/csvs/updated/{group}_{info_id}_{p}.csv', index=False)
@@ -210,8 +212,11 @@ zip_match_log(group=group,info_id=info_id)
 update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder)
 
 # 更新 datahub - dataset
-# 前面已經處理過新增了 最後只需要處理deprecated的部分
+# update if deprecated
 update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
+
+# update dataset info
+update_dataset_info(rights_holder=rights_holder)
 
 
 print('done!')
