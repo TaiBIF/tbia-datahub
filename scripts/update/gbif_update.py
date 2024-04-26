@@ -259,7 +259,7 @@ for d in dataset_list[d_list_index:]: # 20
                 # df.to_csv(f'/solr/csvs/updated/{group}_{info_id}_{p}.csv', index=False)
                 # 存到records裏面
                 df = df.rename(columns=({'id': 'tbiaID'}))
-                df = df.drop(columns=['gbifID'])
+                # df = df.drop(columns=['gbifID'])
                 df['update_version'] = int(update_version)
                 df.to_sql('records', db, # schema='my_schema',
                         if_exists='append',
