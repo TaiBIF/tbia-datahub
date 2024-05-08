@@ -11,7 +11,7 @@ import glob
 import csv
 import json
 
-from scripts.taxon.match_taibif_utils import matching_flow
+from scripts.taxon.match_utils import matching_flow
 from scripts.utils import *
 
 
@@ -222,7 +222,7 @@ if 'sensitiveCategory' in df.keys():
     df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
 
 df = df.reset_index(drop=True)
-df = df.replace({nan: '', 'NA': '', '-99999': '', 'N/A': '', None: ''})
+df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': ''})
 
 df = df[~((df.sourceScientificName=='')&(df.sourceVernacularName=='')&(df.scientificNameID=='')&(df.sourceClass=='')&(df.sourceOrder=='')&(df.sourceFamily==''))]
 
@@ -299,7 +299,9 @@ for i in df.index:
     df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
 
 ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
-update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
+# return tbiaDatasetID 並加上去
+return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
+df = df.merge(return_dataset_id)
 
 df = df.replace({nan: None, '': None})
 
@@ -328,7 +330,7 @@ df = df.replace({nan: None, '': None})
 
 
 # match_log要用更新的
-match_log = df[['occurrenceID','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','group','rightsHolder','created','modified']]
+match_log = df[['occurrenceID','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','group','rightsHolder','created','modified']]
 match_log = match_log.reset_index(drop=True)
 # 須確認tbiaID為唯一值
 match_log = update_match_log(match_log=match_log, now=now)
@@ -337,7 +339,7 @@ match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}.csv',index=None)
 # records要用更新的
 # 已經串回原本的tbiaID，可以用tbiaID做更新
 df['is_deleted'] = False
-df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','taxon_name_id','sci_index'],errors='ignore')
+df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','taxon_name_id','sci_index', 'datasetURL','gbifDatasetID', 'gbifID'],errors='ignore')
 # 最後再一起匯出
 # # 在solr裡 要使用id當作名稱 而非tbiaID
 # df.to_csv(f'/solr/csvs/updated/{group}_{info_id}_{p}.csv', index=False)
@@ -366,7 +368,11 @@ zip_match_log(group=group,info_id=info_id)
 update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder)
 
 # 更新 datahub - dataset
-# 前面已經處理過新增了 最後只需要處理deprecated的部分
+# update if deprecated
 update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
+
+# update dataset info
+update_dataset_info(rights_holder=rights_holder)
+
 
 print('done!')
