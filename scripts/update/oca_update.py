@@ -210,7 +210,7 @@ for i in ocas.index:
         final_df = pd.concat([df,final_df])
 
 
-# final_df = final_df.drop(columns=['Fishing_Length'])
+final_df = final_df.drop(columns=[''],errors='ignore')
 final_df = final_df.replace({nan:None})
 
 df = final_df
