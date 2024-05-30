@@ -1,26 +1,24 @@
 # 重新比對的時候要抓回原始檔
 
-import requests
+# import requests
 import pandas as pd
 
 from numpy import nan
 from app import db
-
-# 2023-09-04 重新比對學名
 import pandas as pd
 
-from app import portal_db_settings
+# from app import portal_db_settings
 # 取得taxon資料
-import psycopg2
-import requests
-import re
-import urllib
-import numpy as np
+# import psycopg2
+# import requests
+# import re
+# import urllib
+# import numpy as np
 from datetime import datetime, timedelta
 import sqlalchemy as sa
 import time
 
-from scripts.taxon.match_taibif_utils import matching_flow
+from scripts.taxon.match_utils import matching_flow
 from scripts.utils import *
 
 
@@ -36,25 +34,25 @@ sci_col_map = {
     '中央研究院生物多樣性中心植物標本資料庫': {'sci_cols': ['sourceScientificName','sourceVernacularName'],
                                         'group': 'brmas',
                                         'info_id': 0},
-    'GBIF': {'sci_cols': ['taxonID','sourceVernacularName', 'sourceScientificName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily'],
+    'GBIF': {'sci_cols': ['taxonID','sourceVernacularName', 'sourceScientificName','originalVernacularName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily'],
              'group': 'gbif',
               'info_id': 0},
     '林業試驗所植物標本資料庫': {'sci_cols': ['sourceScientificName','sourceVernacularName'],
                              'group': 'taif',
                              'info_id': 0},
-    '國立臺灣博物館典藏': {'sci_cols': ['taxonID','sourceVernacularName', 'sourceScientificName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily'],
+    '國立臺灣博物館典藏': {'sci_cols': ['taxonID','sourceVernacularName', 'sourceScientificName','originalVernacularName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily'],
                         'group': 'ntm',
                         'info_id': 0},
-    '臺灣生物多樣性資訊機構 TaiBIF': {'sci_cols': ['taxonID','sourceVernacularName', 'sourceScientificName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily'],
+    '臺灣生物多樣性資訊機構 TaiBIF': {'sci_cols': ['taxonID','sourceVernacularName', 'sourceScientificName','originalVernacularName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily'],
                                    'group': 'brcas',
                                    'info_id': 0},
     '林業試驗所昆蟲標本館': {'sci_cols': ['sourceScientificName','sourceVernacularName'],
                           'group': 'fact',
                           'info_id': 0},
-    '河川環境資料庫': {'sci_cols': ['taxonID','sourceVernacularName', 'sourceScientificName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily'],
+    '河川環境資料庫': {'sci_cols': ['taxonID','sourceVernacularName', 'sourceScientificName','originalVernacularName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily'],
                     'group': 'wra',
                     'info_id': 0},
-    '海洋保育資料倉儲系統': {'sci_cols': ['sourceVernacularName', 'sourceScientificName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily'],
+    '海洋保育資料倉儲系統': {'sci_cols': ['sourceVernacularName','sourceScientificName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily'],
                          'group': 'oca',
                          'info_id': 0},
     '臺灣國家公園生物多樣性資料庫': {'sci_cols': ['sourceScientificName','sourceVernacularName'],
@@ -108,13 +106,15 @@ for r in rights_list:
                 df = df.merge(match_taxon_id, on=df_sci_cols, how='left')
                 df[sci_cols] = df[sci_cols].replace({'-999999': ''})
             # 更新match_log
-            match_log = df[['occurrenceID','tbiaID','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','group','rightsHolder','created','modified']]
+            # match_log = df[['occurrenceID','tbiaID','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','group','rightsHolder','created','modified']]
+            match_log = df[['occurrenceID','tbiaID','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','group','rightsHolder','created','modified']]
             match_log = match_log.reset_index(drop=True)
             match_log = update_match_log(match_log=match_log, now=now)
             match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{p}.csv',index=None)
             # 更新records
             df['modified'] = now
-            df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','taxon_name_id','sci_index'],errors='ignore')
+            # df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','taxon_name_id','sci_index'],errors='ignore')
+            df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','taxon_name_id','sci_index', 'datasetURL','gbifDatasetID', 'gbifID'],errors='ignore')
             # df = df.rename(columns=({'id': 'tbiaID'}))
             df.to_sql('records', db, # schema='my_schema',
                     if_exists='append',
