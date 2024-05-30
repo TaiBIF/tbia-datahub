@@ -553,6 +553,28 @@
     <field name="family" type="string"/>
     <field name="family_c" type="string"/>
     <!-- 帶有HTML格式的階層學名 -->
+    <field name="formatted_unranked" type="string"/>
+    <field name="formatted_realm" type="string"/>
+    <field name="formatted_kingdom" type="string"/>
+    <field name="formatted_subkingdom" type="string"/>
+    <field name="formatted_infrakingdom" type="string"/>
+    <field name="formatted_superphylum" type="string"/>
+    <field name="formatted_phylum" type="string"/>
+    <field name="formatted_subphylum" type="string"/>
+    <field name="formatted_infraphylum" type="string"/>
+    <field name="formatted_superclass" type="string"/>
+    <field name="formatted_class" type="string"/>
+    <field name="formatted_subclass" type="string"/>
+    <field name="formatted_infraclass" type="string"/>
+    <field name="formatted_superorder" type="string"/>
+    <field name="formatted_order" type="string"/>
+    <field name="formatted_family" type="string"/>
+    <field name="formatted_subfamily" type="string"/>
+    <field name="formatted_superfamily" type="string"/>
+    <field name="formatted_suborder" type="string"/>
+    <field name="formatted_infraorder" type="string"/>
+    <field name="formatted_tribe" type="string"/>
+    <field name="formatted_subtribe" type="string"/>
     <field name="formatted_genus" type="string"/>
     <field name="formatted_subgenus" type="string"/>
     <field name="formatted_section" type="string"/>
@@ -613,6 +635,8 @@
     <field name="phylum_c" type="string"/>
     <field name="race" type="string"/>
     <field name="race_c" type="string"/>
+    <field name="realm" type="string"/>
+    <field name="realm_c" type="string"/>
     <field name="scientificName" type="string" docValues="true"/>
     <field name="scientificNameID" type="string"/>
     <field name="section" type="string"/>
@@ -663,6 +687,8 @@
     <field name="taxonRank" type="string"/>
     <field name="tribe" type="string"/>
     <field name="tribe_c" type="string"/>
+    <field name="unranked" type="string"/>
+    <field name="unranked_c" type="string"/>
     <field name="variety" type="string"/>
     <field name="variety_c" type="string"/>
     <!-- taxa fields end -->
