@@ -1,64 +1,12 @@
 # 重新比對的時候要抓回原始檔
 
-import requests
 import pandas as pd
-
-from numpy import nan
 from app import db
-
-# 2023-09-04 重新比對學名
 import pandas as pd
-
-from app import portal_db_settings
-# 取得taxon資料
-import psycopg2
-import requests
-import re
-import urllib
-import numpy as np
-from datetime import datetime, timedelta
 import sqlalchemy as sa
-
 from scripts.utils import get_taxon_df
-# with db.begin() as conn:
-#     qry = sa.text("select * from taxon")
-#     resultset = conn.execute(qry)
-#     taxon = resultset.mappings().all()
-
-# taxon = pd.DataFrame(taxon)
-# taxon = taxon.drop(columns=['scientificNameID','id'])
-
-
-# url = "http://solr:8983/solr/taxa/select?indent=true&q.op=OR&q=*%3A*&rows=2147483647"
-# resp = requests.get(url)
-# taxon = resp.json()['response']['docs']
-
-
-# with db.begin() as conn:
-#     qry = sa.text("select * from taxon")
-#     resultset = conn.execute(qry)
-#     taxon = resultset.mappings().all()
-
-# taxon = pd.DataFrame(taxon)
-# taxon = taxon.rename(columns={'id': 'taxonID'})
-# taxon = taxon.drop(columns=['taxon_name_id','_version_'])
-# taxon = taxon.replace({nan:None})
-
-
-# group_list = ['brcas','brmas','cpami','fact','forest','ntm','oca','taif','tcd','wra'] 
-# gbif tbri 另外處理
-
-# 要join taxon的表
-
-# taxonID
-# parentTaxonID
-# null
-
 import time
 
-# taxonID
-
-# for group in group_list:
 
 total_count = 0
 

@@ -24,7 +24,9 @@ from scripts.utils import *
 
 # with db.begin() as conn:
 sci_col_map = {
-    # '台灣生物多樣性網絡 TBN': ['sourceScientificName','sourceVernacularName','originalScientificName','sourceTaxonID','scientificNameID','sourceFamily'],
+    '台灣生物多樣性網絡 TBN':  {'sci_cols': ['sourceScientificName','sourceVernacularName','originalVernacularName','sourceTaxonID','scientificNameID','sourceFamily'],
+                            'group': 'tbri',
+                        'info_id': 0},
     '生態調查資料庫系統': {'sci_cols': ['sourceScientificName','sourceVernacularName'],
                         'group': 'forest',
                         'info_id': 0},

@@ -1,9 +1,8 @@
-
 from datetime import datetime, timedelta
 import numpy as np
 import bisect
 import re
-from app import portal_db_settings, db, db_settings
+from app import db, db_settings
 import psycopg2
 import sqlalchemy as sa
 import requests
@@ -12,13 +11,13 @@ import json
 import pandas as pd
 from dateutil import parser
 import twd97
-
 import pymysql
-
 from dotenv import load_dotenv
 import os
-load_dotenv(override=True)
+import subprocess
 
+
+load_dotenv(override=True)
 
 
 taicol_db_settings = {
@@ -29,6 +28,39 @@ taicol_db_settings = {
     "database": os.getenv('TaiCOL_DB_DBNAME'),
 }
 
+
+issue_map = {
+    1: 'higherrank',
+    2: 'none',
+    3: 'fuzzy',
+    4: 'multiple'
+}
+
+
+date_formats = ['%Y/%m/%d','%Y%m%d','%Y-%m-%d','%Y/%m/%d %H:%M:%S','%Y-%m-%d %H:%M',
+                '%Y/%m/%d %H:%M','%Y-%m-%d %H:%M:%S','%Y/%m/%d %H:%M:%S',
+                '%Y/%m/%d %p %I:%M:%S', '%Y/%m/%d %H', '%Y-%m-%d %H', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%SZ', '%Y0%m0%d']
+
+
+basis_dict = {
+    "人為觀測": "HumanObservation",
+    "機器觀測": "MachineObservation",
+    "保存標本": "PreservedSpecimen",
+    "材料樣本": "MaterialSample",
+    "活體標本": "LivingSpecimen",
+    "化石標本": "FossilSpecimen",
+    "文獻紀錄": "MaterialCitation",
+    "材料實體": "MaterialEntity",
+    "分類群": "Taxon",
+    "出現紀錄": "Occurrence",
+    "調查活動": "Event",
+    "材料引用": "MaterialCitation", # GBIF資料
+    "組織樣本": "MaterialSample", # GBIF資料
+    "人類調查": "HumanObservation" # GBIF資料
+
+}
+
+
 def format_float(num):
     try:
         num = float(num)
@@ -36,6 +68,7 @@ def format_float(num):
     except:
         num = None
     return num
+
 
 def get_namecode(namecode):
     conn = pymysql.connect(**taicol_db_settings)
@@ -70,67 +103,22 @@ def get_namecode(namecode):
             df['taxon'] = df['taxon'].replace({np.nan:'[]'})
             df['taxon'] = df['taxon'].apply(json.loads)
         return df.to_dict('records')
-    
-
-
-# def get_namecode_tmp(namecode):
-#     conn = pymysql.connect(**taicol_db_settings)
-#     with conn.cursor() as cursor:     
-#         query = """
-#         SELECT taxon_name_id FROM api_namecode where namecode = %s;
-#         """
-#         cursor.execute(query, (namecode))
-#         resp = cursor.fetchone()
-#         if resp:
-#             taxon_name_id = resp[0]
-#             response = requests.get(f'http://solr:8983/solr/taxa/select?q=taxon_name_id:{taxon_name_id}&fl=id')
-#             resp = response.json()
-#             taxon = resp['response']['docs']
-#             if len(taxon):
-#                 return taxon[0]['id']
-#             else:
-#                 return None
-#         else:
-#             return None
-            # taxon = pd.DataFrame(taxon)
-            # taxon = taxon.rename(columns={'id': 'taxonID'})
-            # taxon = taxon.drop(columns=['taxon_name_id','_version_'],errors='ignore')
-
-            
-
-        # for i in df.index:
-        #     row = df.iloc[i]
-        #     taxon_tmp = json.loads(row.taxon)
-        #     taxon_final = []
-        #     for t in taxon_tmp:
-        #         if t.get('is_deleted'):
-        #             taxon_final.append({'taxon_id': t.get('taxon_id'), 'usage_status': 'deleted'})
-        #         elif t.get('taxon_id'):
-        #             taxon_final.append({'taxon_id': t.get('taxon_id'), 'usage_status': t.get('status')})
-        #     df.loc[i,'taxon'] = json.dumps(taxon_final)
-        # if len(df):
-        #     df['taxon'] = df['taxon'].replace({np.nan:'[]'})
-        #     df['taxon'] = df['taxon'].apply(json.loads)
-        # return df.to_dict('records')
-
 
 
 def get_existed_records(ids, rights_holder, get_reference=False):
-    # ids = [f'occurrenceID:"{t}"' for t in ids]
+
     ids = [f'occurrenceID:"{d}"' for d in ids]
     subset_list = []
     get_fields = ['id', 'occurrenceID']
+
     if get_reference:
         get_fields.append('references')
+
     for tt in range(0, len(ids), 20):
-        # print(tt)
-        # query = {'query': " OR ".join(ids[tt:tt+20]), 'limit': 20, "fields": ['id', 'occurrenceID', 'datasetName']}
         query = { "query": " OR ".join(ids[tt:tt+20]),
                 "offset": 0,
                 "filter": [f"rightsHolder:{rights_holder}"],
-                            # "{!terms f=occurrenceID} "+ ",".join(ids[tt:tt+20])],
                 "limit": 1000000,
-                # "fields": ['id', 'occurrenceID', 'datasetName']
                 "fields": get_fields
                 }
         response = requests.post(f'http://solr:8983/solr/tbia_records/select', data=json.dumps(query), headers={'content-type': "application/json" })
@@ -138,6 +126,7 @@ def get_existed_records(ids, rights_holder, get_reference=False):
             resp = response.json()
             if data := resp['response']['docs']:
                 subset_list += data
+
     if len(subset_list):
         existed_records = pd.DataFrame(subset_list)
         existed_records = existed_records.rename(columns={'id': 'tbiaID'})
@@ -149,16 +138,18 @@ def get_existed_records(ids, rights_holder, get_reference=False):
         # 只保留一對一的結果 若有一對多 則刪除舊的 給予新的tbiaID
         existed_records = existed_records[existed_records.occurrenceID.isin(a.occurrenceID.to_list())]
         existed_records = existed_records.reset_index(drop=True)
-        
     else:
         # existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
         existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
+
     return existed_records
 
 
 def get_taxon_df(taxon_ids):
+
     subset_taxon_list = []
     ids = [f"id:{d}" for d in taxon_ids]
+
     for tt in range(0, len(taxon_ids), 20):
         taxa_query = {'query': " OR ".join(ids[tt:tt+20]), 'limit': 20}
         response = requests.post(f'http://solr:8983/solr/taxa/select', data=json.dumps(taxa_query), headers={'content-type': "application/json" })
@@ -166,24 +157,13 @@ def get_taxon_df(taxon_ids):
             resp = response.json()
             if data := resp['response']['docs']:
                 subset_taxon_list += data
+
     taxon = pd.DataFrame(subset_taxon_list)
     taxon = taxon.rename(columns={'id': 'taxonID'})
     taxon = taxon.drop(columns=['taxon_name_id','_version_'],errors='ignore')
     taxon = taxon.replace({np.nan:None})
+
     return taxon
-
-
-issue_map = {
-    1: 'higherrank',
-    2: 'none',
-    3: 'fuzzy',
-    4: 'multiple'
-}
-
-
-date_formats = ['%Y/%m/%d','%Y%m%d','%Y-%m-%d','%Y/%m/%d %H:%M:%S','%Y-%m-%d %H:%M',
-                '%Y/%m/%d %H:%M','%Y-%m-%d %H:%M:%S','%Y/%m/%d %H:%M:%S',
-                '%Y/%m/%d %p %I:%M:%S', '%Y/%m/%d %H', '%Y-%m-%d %H', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%SZ', '%Y0%m0%d']
 
 def convert_date(date):
     formatted_date = None
@@ -229,9 +209,6 @@ def convert_date(date):
 #     # 1968-04-26/27
 #     # YYYY-MM-DD/DD
 #     pass
-
-
-
 
 
 def convert_coor_to_grid(x, y, grid):
@@ -299,37 +276,16 @@ def standardize_coor(lon,lat):
 
 def standardize_quantity(organismQuantity, individualCount=None):
     quantity = None
+
     try:
         if individualCount:
             quantity = int(individualCount)
         elif organismQuantity:
             quantity = float(organismQuantity)
-        # else:
-        #     quantity = None
     except:
         pass
-        # quantity = None
+
     return quantity
-
-
-
-basis_dict = {
-    "人為觀測": "HumanObservation",
-    "機器觀測": "MachineObservation",
-    "保存標本": "PreservedSpecimen",
-    "材料樣本": "MaterialSample",
-    "活體標本": "LivingSpecimen",
-    "化石標本": "FossilSpecimen",
-    "文獻紀錄": "MaterialCitation",
-    "材料實體": "MaterialEntity",
-    "分類群": "Taxon",
-    "出現紀錄": "Occurrence",
-    "調查活動": "Event",
-    "材料引用": "MaterialCitation", # GBIF資料
-    "組織樣本": "MaterialSample", # GBIF資料
-    "人類調查": "HumanObservation" # GBIF資料
-
-}
 
 
 def control_basis_of_record(basisOfRecord):
@@ -415,19 +371,21 @@ def update_dataset_key(ds_name, rights_holder, update_version):
     return dataset_ids
 
 
-
-
 def update_dataset_info(rights_holder):
     # 改成直接用records裡面的groupby
+
     query = '''SELECT count(*), string_agg(distinct "resourceContacts", ','),
                 string_agg(distinct "recordType", ','), "tbiaDatasetID" FROM records WHERE  "rightsHolder" = %s
                 GROUP BY "tbiaDatasetID";
                  '''
+    
     conn = psycopg2.connect(**db_settings)
+
     with conn.cursor() as cursor:     
         cursor.execute(query, (rights_holder,))
         df = pd.DataFrame(cursor.fetchall(), columns=['occurrenceCount','resourceContacts', 'record_type', 'tbiaDatasetID'])
         df = df.replace({np.nan: '', None: ''})
+
     if len(df):
         df['occurrenceCount'] = df['occurrenceCount'].replace({'': 0})
         # 更新
@@ -437,83 +395,6 @@ def update_dataset_info(rights_holder):
                 update_query = ''' UPDATE dataset SET "resourceContacts"='{}', "occurrenceCount"={}, "record_type"='{}' WHERE id = {} '''.format(row.resourceContacts, row.occurrenceCount, row.record_type, row.tbiaDatasetID)
                 execute_line = cursor.execute(update_query)
                 conn.commit()
-    # query = 'SELECT id, record_type, "resourceContacts", "occurrenceCount", "update_version" FROM dataset WHERE id IN %s '
-    # conn = psycopg2.connect(**db_settings)
-    # with conn.cursor() as cursor:     
-    #     cursor.execute(query, ([d['tbiadatasetID'] for d in dataset_info],))
-    #     df = pd.DataFrame(cursor.fetchall(), columns=['psql_id','record_type', 'resourceContacts', 'occurrenceCount'])
-    #     df = df.replace({np.nan: '', None: ''})
-
-
-    # # datasetName
-    # # record_type
-    # # rightsHolder
-    # # resourceContacts
-    # # occurrenceCount
-    # # created
-    # # modified
-    # # 先取得所有的資料集
-    # # now = datetime.now() + timedelta(hours=8)
-    # conn = psycopg2.connect(**db_settings)
-    # # 目前的id就等同於tbiaDatasetID
-    # query = ''' SELECT id, name, "sourceDatasetID", "gbifDatasetID", "datasetURL", "record_type" FROM dataset WHERE deprecated = 'f' AND rights_holder = %s; '''
-    # with conn.cursor() as cursor:     
-    #     cursor.execute(query, (rights_holder,))
-    #     df = pd.DataFrame(cursor.fetchall(), columns=['psql_id','datasetName', 'sourceDatasetID', 'gbifDatasetID', 'datasetURL', 'record_type'])
-    #     df = df.replace({np.nan: '', None: ''})
-    # for i in df.index:
-    #     # 先補上 TaiBIF系列的datasetURL
-    #     # 如果是 TaiBIF -> 補上 taibif.tw
-    #     # 如果是 GBIF, ntm, wra -> 補上gbif
-    #     row = df.iloc[i]
-    #     if rights_holder == '臺灣生物多樣性資訊機構 TaiBIF' and row.sourceDatasetID:
-    #         df.loc[i,'datasetURL'] = 'https://portal.taibif.tw/dataset/' + row.sourceDatasetID
-    #     elif rights_holder in ['GBIF','河川環境資料庫','國立臺灣博物館典藏'] and row.gbifDatasetID:
-    #         df.loc[i,'datasetURL'] = 'https://www.gbif.org/dataset/' + row.gbifDatasetID
-    #     # 取得resourceContacts, occurrenceCount
-    #     # 如果有sourceDatasetID 用rightsHolder + sourceDatasetID query
-    #     # 如果只有datasetName  用rightsHolder + datasetName query
-    #     if row.sourceDatasetID:
-    #         response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=resourceContacts&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{rights_holder}"&fq=sourceDatasetID:{row.sourceDatasetID}&q.op=OR&q=*%3A*&rows=0')
-    #     else:
-    #         response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=resourceContacts&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{rights_holder}"&fq=datasetName:"{row.datasetName}"&q.op=OR&q=*%3A*&rows=0')
-    #     # TODO 2024 06 更新時要 改成統一用tbiaDatasetID更新
-    #     if response.status_code == 200:
-    #         resp = response.json()
-    #         occurrenceCount = resp['response']['numFound']
-    #         # print(row.datasetName, occurrenceCount)
-    #         data = resp['facet_counts']['facet_fields']['resourceContacts']
-    #         contact_list = [data[x] for x in range(0, len(data),2)]
-    #         resourceContacts = ';'.join(contact_list)
-    #         df.loc[i,'resourceContacts'] = resourceContacts
-    #         df.loc[i,'occurrenceCount'] = occurrenceCount
-    #     # 取得record_type
-    #     if row.sourceDatasetID:
-    #         response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=record_type&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{rights_holder}"&fq=sourceDatasetID:{row.sourceDatasetID}&q.op=OR&q=*%3A*&rows=0')
-    #     else:
-    #         response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=record_type&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{rights_holder}"&fq=datasetName:"{row.datasetName}"&q.op=OR&q=*%3A*&rows=0')
-    #     if response.status_code == 200:
-    #         resp = response.json()
-    #         # occurrenceCount = resp['response']['numFound']
-    #         data = resp['facet_counts']['facet_fields']['recordType']
-    #         type_list = [data[x] for x in range(0, len(data),2)]
-    #         record_type = ','.join(type_list)
-    #         df.loc[i,'record_type'] = record_type
-    # # print(df)
-    # # if len(df):
-    # #     df = df.replace({np.nan: None})
-    # #     df['occurrenceCount'] = df['occurrenceCount'].replace({None: 0})
-    #     # 更新
-    #     conn = psycopg2.connect(**db_settings)
-    #     for i in df.index:
-    #         row = df.iloc[i]
-    #         with conn.cursor() as cursor:     
-    #             update_query = ''' UPDATE dataset SET "datasetURL"='{}', "resourceContacts"='{}', "occurrenceCount"={}, "record_type"='{}' WHERE id = {} '''.format(row.datasetURL, row.resourceContacts, row.occurrenceCount, row.record_type, row.psql_id)
-    #             execute_line = cursor.execute(update_query)
-    #             conn.commit()
-
-
-
 
 
 def matchlog_upsert(table, conn, keys, data_iter):
@@ -569,7 +450,6 @@ def get_gbif_id(gbifDatasetID, occurrenceID):
     gbifID = None
     if gbif_resp.status_code == 200:
         gbif_res = gbif_resp.json()
-        # occurrenceID = gbif_res.get('occurrenceID')
         gbifID = gbif_res.get('gbifID')
     return gbifID
 
@@ -588,7 +468,6 @@ def records_upsert(table, conn, keys, data_iter):
     )
     conn.execute(upsert_statement)
 
-import subprocess
 
 def zip_match_log(group, info_id):
     zip_file_path = f'/portal/media/match_log/{group}_{info_id}_match_log.zip'
@@ -784,9 +663,6 @@ def create_grid_data(verbatimLongitude, verbatimLatitude):
         grid_data['grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
         grid_data['grid_100_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
     return grid_data
-
-
-# 如果是有提供模糊化的座標
         
 
 # 取得影像網址前綴
@@ -806,19 +682,6 @@ def get_media_rule(media_url):
     # https://fact.tfri.gov.tw/files/muse_fact/muse_styles/w960_m/mcode/ad080b9a9c3f6a5146f91efcf7c24481.jpg?itok=QwFOo8_E
 
 
-# def csp_rule_upsert(table, conn, keys, data_iter):
-#     data = [dict(zip(keys, row)) for row in data_iter]
-#     set_list = ['modified']
-#     insert_statement = insert(table.table).values(data)
-#     upsert_statement = insert_statement.on_conflict_do_update(
-#         constraint=f"rule_unique",
-#         # 如果重複的時候，需要update的欄位
-#         set_={c.key: c for c in insert_statement.excluded if c.key in set_list},
-#     )
-#     conn.execute(upsert_statement)
-
-
-
 def update_media_rule(media_rule, rights_holder):
     now = datetime.now() + timedelta(hours=8)
     conn = psycopg2.connect(**db_settings)
@@ -831,74 +694,3 @@ def update_media_rule(media_rule, rights_holder):
     cur.execute(query, (rights_holder, media_rule, now, now))
     conn.commit()
     conn.close()
-
-
-# def update_dataset_info(rights_holder):
-#     # datasetName
-#     # record_type
-#     # rightsHolder
-#     # resourceContacts
-#     # occurrenceCount
-#     # created
-#     # modified
-#     # 先取得所有的資料集
-#     # now = datetime.now() + timedelta(hours=8)
-#     conn = psycopg2.connect(**db_settings)
-#     # 目前的id就等同於tbiaDatasetID
-#     query = ''' SELECT id, name, "sourceDatasetID", "gbifDatasetID", "datasetURL", "record_type" FROM dataset WHERE deprecated = 'f' AND rights_holder = %s; '''
-#     with conn.cursor() as cursor:     
-#         cursor.execute(query, (rights_holder,))
-#         df = pd.DataFrame(cursor.fetchall(), columns=['psql_id','datasetName', 'sourceDatasetID', 'gbifDatasetID', 'datasetURL', 'record_type'])
-#         df = df.replace({np.nan: '', None: ''})
-#     for i in df.index:
-#         # 先補上 TaiBIF系列的datasetURL
-#         # 如果是 TaiBIF -> 補上 taibif.tw
-#         # 如果是 GBIF, ntm, wra -> 補上gbif
-#         row = df.iloc[i]
-#         if rights_holder == '臺灣生物多樣性資訊機構 TaiBIF' and row.sourceDatasetID:
-#             df.loc[i,'datasetURL'] = 'https://portal.taibif.tw/dataset/' + row.sourceDatasetID
-#         elif rights_holder in ['GBIF','河川環境資料庫','國立臺灣博物館典藏'] and row.gbifDatasetID:
-#             df.loc[i,'datasetURL'] = 'https://www.gbif.org/dataset/' + row.gbifDatasetID
-#         # 取得resourceContacts, occurrenceCount
-#         # 如果有sourceDatasetID 用rightsHolder + sourceDatasetID query
-#         # 如果只有datasetName  用rightsHolder + datasetName query
-#         if row.sourceDatasetID:
-#             response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=resourceContacts&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{rights_holder}"&fq=sourceDatasetID:{row.sourceDatasetID}&q.op=OR&q=*%3A*&rows=0')
-#         else:
-#             response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=resourceContacts&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{rights_holder}"&fq=datasetName:"{row.datasetName}"&q.op=OR&q=*%3A*&rows=0')
-#         # TODO 2024 06 更新時要 改成統一用tbiaDatasetID更新
-#         if response.status_code == 200:
-#             resp = response.json()
-#             occurrenceCount = resp['response']['numFound']
-#             # print(row.datasetName, occurrenceCount)
-#             data = resp['facet_counts']['facet_fields']['resourceContacts']
-#             contact_list = [data[x] for x in range(0, len(data),2)]
-#             resourceContacts = ';'.join(contact_list)
-#             df.loc[i,'resourceContacts'] = resourceContacts
-#             df.loc[i,'occurrenceCount'] = occurrenceCount
-#         # 取得record_type
-#         if row.sourceDatasetID:
-#             response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=record_type&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{rights_holder}"&fq=sourceDatasetID:{row.sourceDatasetID}&q.op=OR&q=*%3A*&rows=0')
-#         else:
-#             response = requests.get(f'http://solr:8983/solr/tbia_records/select?facet.field=record_type&facet.mincount=1&facet.missing=false&facet=true&fq=rightsHolder:"{rights_holder}"&fq=datasetName:"{row.datasetName}"&q.op=OR&q=*%3A*&rows=0')
-#         if response.status_code == 200:
-#             resp = response.json()
-#             # occurrenceCount = resp['response']['numFound']
-#             data = resp['facet_counts']['facet_fields']['recordType']
-#             type_list = [data[x] for x in range(0, len(data),2)]
-#             record_type = ','.join(type_list)
-#             df.loc[i,'record_type'] = record_type
-#     # print(df)
-#     if len(df):
-#         df = df.replace({np.nan: None})
-#         df['occurrenceCount'] = df['occurrenceCount'].replace({None: 0})
-#         # 更新
-#         conn = psycopg2.connect(**db_settings)
-#         for i in df.index:
-#             row = df.iloc[i]
-#             with conn.cursor() as cursor:     
-#                 update_query = ''' UPDATE dataset SET "datasetURL"='{}', "resourceContacts"='{}', "occurrenceCount"={}, "record_type"='{}' WHERE id = {} '''.format(row.datasetURL, row.resourceContacts, row.occurrenceCount, row.record_type, row.psql_id)
-#                 execute_line = cursor.execute(update_query)
-#                 conn.commit()
-
-

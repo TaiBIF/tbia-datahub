@@ -225,5 +225,3 @@ update_dataset_info(rights_holder=rights_holder)
 
 
 print('done!')
-
-
