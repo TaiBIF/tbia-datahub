@@ -324,7 +324,7 @@ class Dataset(Base):
     update_version: Mapped[Optional[int]] = mapped_column(server_default='0', index=True)
 
     __table_args__ = (
-        UniqueConstraint('name','record_type','rights_holder','sourceDatasetID', name='dataset_unique'),
+        UniqueConstraint('name','rights_holder','sourceDatasetID', name='dataset_unique'),
     )
 
 
@@ -336,11 +336,13 @@ class SpeciesImages(Base):
     taxon_name_id: Mapped[Optional[str]] = mapped_column(String(1000))
     namecode: Mapped[Optional[str]] = mapped_column(String(1000))
     taieol_id: Mapped[Optional[str]] = mapped_column(String(1000))
+    taieol_url: Mapped[Optional[str]] = mapped_column(String(10000)) # 連接至taieol 物種頁
+    taxon_id: Mapped[Optional[str]] = mapped_column(String(20))
     images: Mapped[Optional[str]] = mapped_column(JSON)
     modified: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
-        UniqueConstraint('namecode','taxon_name_id', name='namecode'),
+        UniqueConstraint('taxon_id', name='taxon_images'),
     )
 
 
