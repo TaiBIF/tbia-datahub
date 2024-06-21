@@ -5,42 +5,53 @@ import pandas as pd
 import requests
 import json
 
+from dotenv import load_dotenv
+import os
+load_dotenv(override=True)
 
-def update_species_images(taxon_name_id, namecode, taieol_id, images):
+def update_species_images(taxon_id, taieol_id, images):
     conn = psycopg2.connect(**db_settings)
     query = """
-            INSERT INTO species_images ("taxon_name_id", "namecode", "taieol_id", "images", "modified")
-            VALUES (%s, %s, %s, %s, NOW())
-            ON CONFLICT ("taxon_name_id","namecode") 
+            INSERT INTO species_images ("taxon_id", "taieol_id", "images", "modified")
+            VALUES (%s, %s, %s, NOW())
+            ON CONFLICT ("taxon_id") 
             DO UPDATE SET taieol_id = %s, images = %s, modified = NOW();
             """
     cur = conn.cursor()
-    cur.execute(query, (taxon_name_id, namecode, taieol_id, images, taieol_id, images))
+    cur.execute(query, (taxon_id, taieol_id, images, taieol_id, images))
     conn.commit()
     conn.close()
 
 
-df = pd.read_csv('/bucket/taicol-web-namecode-2024-1-31.csv')
+has_more_data = True
+token = os.getenv('TAIEOL_TOKEN')
 
-for i in df.index:
-    if i % 100 == 0:
-        print(i)
-    images = []
-    row = df.loc[i]
-    taxon_name_id = str(row.taxon_name_id)
-    namecode = row.namecode
-    taieol_id = None
-    # 圖片
-    url = 'https://data.taieol.tw/eol/endpoint/image/species/{}'.format(namecode)
-    r = requests.get(url)
-    img = r.json()
-    if img:
-        for ii in img:
-            images += [{'author':ii['author'], 'src':ii['image_big'], 'provider':ii['provider'], 'license': ii['license']}]
-    images = json.dumps(images)
-    url = 'https://data.taieol.tw/eol/endpoint/taxondesc/species/{}'.format(namecode)
-    r = requests.get(url)
-    tid = r.json()
-    if tid:
-        taieol_id = tid['tid']
-    update_species_images(taxon_name_id, namecode, taieol_id, images)
+start = 0
+while has_more_data:
+    print(start)
+    response = requests.get('http://solr:8983/solr/taxa/select?&q=*%3A*&fl=id&start={}'.format(start))
+    if response.status_code == 200:
+        resp = response.json()
+        for dd in resp['response']['docs']:
+            url = 'https://data.taieol.tw/api/v2/taieol_object/taxon_id/{}?token={}'.format(dd.get('id'), token)
+            taieol_resp = requests.get(url, headers={'user-agent':"TaiCOL"})
+            images = []
+            taieol_id = None
+            if taieol_resp.status_code == 200:
+                try:
+                    taieol_id = taieol_resp.json()['meta']['q']['scientificNameID']
+                except:
+                    pass
+                obj = taieol_resp.json()['data']
+                for oo in obj:
+                    img = oo.get('associatedMedia')
+                    for ii in img:
+                        foto = {'author': ii['authors'].replace('作者：',''), 'src': ii['url'], 
+                                'provider': oo['sourceName'], 'permalink': oo['permanentLink'], 
+                                'license': ii['licence']}
+                        images.append(foto)
+            update_species_images(dd.get('id'), taieol_id, json.dumps(images))
+        if len(resp['response']['docs']) < 10:
+            has_more_data = False
+        start += 10
+    
