@@ -15,6 +15,7 @@ import pymysql
 from dotenv import load_dotenv
 import os
 import subprocess
+import math
 
 
 load_dotenv(override=True)
@@ -173,7 +174,7 @@ def convert_date(date):
         for ff in date_formats:
             try:
                 formatted_date = datetime.strptime(date, ff)
-                # return formatted_date
+                break
             except:
                 formatted_date = None
         if not formatted_date:
@@ -377,7 +378,7 @@ def update_dataset_info(rights_holder):
     query = '''SELECT count(*), string_agg(distinct "resourceContacts", ','),
                 string_agg(distinct "recordType", ','), "tbiaDatasetID" FROM records WHERE  "rightsHolder" = %s
                 GROUP BY "tbiaDatasetID";
-                 '''
+            '''
     
     conn = psycopg2.connect(**db_settings)
 
@@ -551,7 +552,6 @@ def insert_new_update_version(update_version, rights_holder):
         return 0, None
 
 
-import math
 
 # 如果是需要幫忙做模糊化的 進來的 orignal_lon & orignal_lat 一定是未模糊化資料
 def create_blurred_grid_data(verbatimLongitude, verbatimLatitude, coordinatePrecision, is_full_hidden=False):
