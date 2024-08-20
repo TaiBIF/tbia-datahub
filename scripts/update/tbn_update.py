@@ -19,7 +19,7 @@ from scripts.utils import *
 
 
 # 比對學名時使用的欄位
-sci_cols = ['sourceScientificName','sourceVernacularName','originalVernacularName','sourceTaxonID','scientificNameID','sourceFamily']
+sci_cols = ['taxonID','sourceScientificName','sourceVernacularName','originalVernacularName','sourceTaxonID','sourceFamily']
 
 # 若原資料庫原本就有提供taxonID 在這段要拿掉 避免merge時產生衝突
 df_sci_cols = [s for s in sci_cols if s != 'taxonID'] 
@@ -115,7 +115,7 @@ for url in url_list[url_index:]:
         df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': ''})
         df['originalVernacularName'] = df['originalVernacularName'].replace({'原始資料無物種資訊': ''})
         # 如果 'originalVernacularName','simplifiedScientificName','vernacularName','familyScientificName' 都是空值才排除
-        df = df[~((df.originalVernacularName=='')&(df.simplifiedScientificName=='')&(df.vernacularName=='')&(df.familyScientificName=='')&(df.scientificNameID==''))]
+        df = df[~((df.originalVernacularName=='')&(df.simplifiedScientificName=='')&(df.vernacularName=='')&(df.familyScientificName=='')&(df.taiCOLTaxonID==''))]
         if 'sensitiveCategory' in df.keys():
             df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
         if 'license' in df.keys():
@@ -139,6 +139,7 @@ for url in url_list[url_index:]:
                 # 'year': 'sourceYear',
                 # 'month': 'sourceMonth',
                 # 'day': 'sourceDay',
+                'taiCOLTaxonID': 'taxonID',
                 'taxonUUID': 'sourceTaxonID',
                 # 'originalVernacularName': 'originalScientificName',
                 'taxonRank': 'sourceTaxonRank',
@@ -162,7 +163,7 @@ for url in url_list[url_index:]:
                                     'identificationVerificationStatus', 'identifiedBy', 'dataSensitiveCategory',
                                     'eventID', 'samplingProtocol','source','selfProduced',
                                     'collectionID','verbatimEventDate','eventTime', 'eventPlaceAdminarea',
-                                    'countyCode','tfNameCode'],errors='ignore')
+                                    'countyCode','tfNameCode', 'scientificNameID'],errors='ignore')
             sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
             sci_names = matching_flow(sci_names)
             df = df.drop(columns=['taxonID'], errors='ignore')
