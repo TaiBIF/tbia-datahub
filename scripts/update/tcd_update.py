@@ -18,7 +18,7 @@ from scripts.utils import *
 
 
 # 比對學名時使用的欄位
-sci_cols = ['sourceScientificName','sourceVernacularName','scientificNameID']
+sci_cols = ['taxonID','sourceScientificName','sourceVernacularName','scientificNameID']
 
 # 若原資料庫原本就有提供taxonID 在這段要拿掉 避免merge時產生衝突
 df_sci_cols = [s for s in sci_cols if s != 'taxonID'] 

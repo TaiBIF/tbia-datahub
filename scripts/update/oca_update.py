@@ -16,7 +16,7 @@ from scripts.utils import *
 
 
 # 比對學名時使用的欄位
-sci_cols = ['sourceVernacularName','sourceScientificName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily']
+sci_cols = ['taxonID', 'sourceVernacularName','sourceScientificName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily']
 
 # 若原資料庫原本就有提供taxonID 在這段要拿掉 避免merge時產生衝突
 df_sci_cols = [s for s in sci_cols if s != 'taxonID'] 
@@ -155,53 +155,94 @@ if r.status_code == 200:
 
 # 結構化檔案
 
-d_names = ["珊瑚調查相關結構化檔案","硨磲貝及其他重要螺貝類調查相關結構化檔案","三棘鱟調查相關結構化檔案","軟骨魚調查相關結構化檔案","海鳥調查相關結構化檔案","海鳥調查相關結構化檔案",
-"海馬調查相關結構化檔案","鯨豚調查相關結構化檔案","白海豚調查相關結構化檔案","白海豚調查相關結構化檔案","白海豚調查相關結構化檔案","白海豚調查相關結構化檔案",
-"海域棲地調查相關結構化檔案","海域棲地調查相關結構化檔案","海域棲地調查相關結構化檔案","海域棲地調查相關結構化檔案","海域棲地調查相關結構化檔案","海域棲地調查相關結構化檔案"]
+# d_names = ["珊瑚調查相關結構化檔案","硨磲貝及其他重要螺貝類調查相關結構化檔案","三棘鱟調查相關結構化檔案","軟骨魚調查相關結構化檔案","海鳥調查相關結構化檔案","海鳥調查相關結構化檔案",
+# "海馬調查相關結構化檔案","鯨豚調查相關結構化檔案","白海豚調查相關結構化檔案","白海豚調查相關結構化檔案","白海豚調查相關結構化檔案","白海豚調查相關結構化檔案",
+# "海域棲地調查相關結構化檔案","海域棲地調查相關結構化檔案","海域棲地調查相關結構化檔案","海域棲地調查相關結構化檔案","海域棲地調查相關結構化檔案","海域棲地調查相關結構化檔案"]
 
-d_ids = ["553522f0-e39c-46a0-bf78-78e12135d647","4e891143-b14f-4702-928d-bfe9ec3d8f70",
-"28dd1c19-98c3-4045-918a-1329f1a71c28","8efa70b8-fe17-498e-8fc1-7f3906d7e75c","00f89ccc-1e97-427c-bd58-5d64ceeaaf16","625d6e09-7ee2-4810-b603-449b99874499",
-"1eb771e2-8459-4149-8d8f-156044b44896","48ab136d-1734-45f3-856e-99f7ebf8c96f","f7be4196-5435-4e5e-a335-9a51ccec4d65","4884e92b-151e-4bd7-8dac-d3b7fa873e8d",
-"5d0c1d2a-23e9-449d-bd4d-9134b0145859","09d227de-f7e4-4ac5-b2df-bfbf8da40ec8","b40ed072-1ed7-4624-9727-7b628e46c40c","0599360b-6ded-4ae9-af52-9b029a45ef04",
-"88c1f6d6-acb5-479f-810b-b9f537cbc560","3f51cb2a-2068-4bbb-b002-78c4320b0108","45a4b4a1-2f7d-4902-9e3e-c1fc7876a42f","63af9fe5-6ea7-4692-b1c5-720481c85500"]
+# d_ids = ["553522f0-e39c-46a0-bf78-78e12135d647","4e891143-b14f-4702-928d-bfe9ec3d8f70",
+# "28dd1c19-98c3-4045-918a-1329f1a71c28","8efa70b8-fe17-498e-8fc1-7f3906d7e75c","00f89ccc-1e97-427c-bd58-5d64ceeaaf16","625d6e09-7ee2-4810-b603-449b99874499",
+# "1eb771e2-8459-4149-8d8f-156044b44896","48ab136d-1734-45f3-856e-99f7ebf8c96f","f7be4196-5435-4e5e-a335-9a51ccec4d65","4884e92b-151e-4bd7-8dac-d3b7fa873e8d",
+# "5d0c1d2a-23e9-449d-bd4d-9134b0145859","09d227de-f7e4-4ac5-b2df-bfbf8da40ec8","b40ed072-1ed7-4624-9727-7b628e46c40c","0599360b-6ded-4ae9-af52-9b029a45ef04",
+# "88c1f6d6-acb5-479f-810b-b9f537cbc560","3f51cb2a-2068-4bbb-b002-78c4320b0108","45a4b4a1-2f7d-4902-9e3e-c1fc7876a42f","63af9fe5-6ea7-4692-b1c5-720481c85500"]
 
-ocas = pd.DataFrame({'d_name': d_names, 'd_id': d_ids})
+ocas = pd.read_csv('海保署資料集清單_202408.csv')
 
-unused_keys = ['界中文名','門中文名','綱中文名','目中文名','科中文名','屬中文名','\ufeff計畫/案件名稱','計畫/案件名稱','調查方法','所處位置', '備註', '界2','物種俗名','界','門','屬','屬 (Genus)']
+# 112年岩礁及人工海岸生物多樣性資料分析計畫-生態調查標準資料 中研院調查 -> 空的
+
+# for i in ocas[ocas.data_type=='csv'].index:
+#     row = ocas.iloc[i]
+#     filename = row.project_name.replace("\t","")
+#     try:
+#         df = pd.read_csv(f'oca_dataset/{filename}.csv')
+#         final_df = pd.concat([df, final_df])
+#         print(row.project_name, len(df))
+#     except:
+#         print(row.project_name, 'error')
+
+
+
+# 校定物種學名編碼 -> 裡面有可能是taxonID也有可能是namecode 如果不是t開頭的七位數
+# ocas = pd.DataFrame({'d_name': d_names, 'd_id': d_ids})
+
+unused_keys = ['界中文名','門中文名','綱中文名','目中文名','科中文名','屬中文名','\ufeff計畫/案件名稱','計畫/案件名稱','調查方法','調查方式','所處位置', '備註', '界2','物種俗名','界','門','屬','屬 (Genus)']
 
 for i in ocas.index:
     print(i)
     row = ocas.iloc[i]
-    url = f"https://iocean.oca.gov.tw/oca_datahub/WebService/GetData.ashx?id={row.d_id}"
-    r = requests.post(url, data=json.dumps(payload), headers=headers)
-    if r.status_code == 200:
-        x = r.text
-        x = x.split('\r\n')
-        # 前一行是header
-        header = [xx.replace('"','') for xx in x[0].split(',')]
-        rows = []
-        for rr in x[1:-1] :
-            rows.append([ '{}'.format(x) for x in list(csv.reader([rr], delimiter=',', quotechar='"'))[0] ])
-        df = pd.DataFrame(rows, columns=header)
-        # df = df.map(lambda x: x.replace('"', ''))
+    df = pd.DataFrame()
+    if row.data_type == 'api':
+        url = f"https://iocean.oca.gov.tw/oca_datahub/WebService/GetData.ashx?id={row.d_id}"
+        r = requests.post(url, data=json.dumps(payload), headers=headers)
+        if r.status_code == 200:
+            x = r.text
+            x = x.split('\r\n')
+            # 前一行是header
+            header = [xx.replace('"','') for xx in x[0].split(',')]
+            rows = []
+            for rr in x[1:-1] :
+                rows.append([ '{}'.format(x) for x in list(csv.reader([rr], delimiter=',', quotechar='"'))[0] ])
+            df = pd.DataFrame(rows, columns=header)
+    else:
+        filename = row.project_name.replace("\t","")
+        try:
+            df = pd.read_csv(f'oca_dataset/{filename}.csv')
+            # final_df = pd.concat([df, final_df])
+            # print(row.project_name, len(df))
+        except:
+            pass
+    if len(df):
         df = df.replace({nan: None, '#N/A': None})
         df = df.rename(columns={'經度': 'verbatimLongitude', '緯度': 'verbatimLatitude', 
+                                '東經（E）': 'verbatimLongitude', '北緯（N）': 'verbatimLatitude', 
+                                'GPS位置-東經（E）': 'verbatimLongitude', 'GPS位置-北緯（N）': 'verbatimLatitude', 
+                                '坐標系統': 'verbatimCoordinateSystem', '調查日期': 'eventDate',
                                 '直轄市或省轄縣市': 'locality', '縣市': 'locality',
                                 '鑑定層級': 'sourceTaxonRank', '原始物種名稱': 'sourceVernacularName', '原始物種名稱 (中文)': 'sourceVernacularName',
                                 '原始物種學名': 'sourceScientificName',
                                 '校定物種學名編碼': 'scientificNameID', '數量': 'organismQuantity', '數量單位': 'organismQuantityType', 
                                 # '界': 'kingdom', '門': 'phylum',
-                                '綱': 'sourceClass', '綱 (class)': 'sourceClass', 
-                                '目': 'sourceOrder', '目 (Order)': 'sourceOrder', 
-                                '科': 'sourceFamily', '科 (Family)': 'sourceFamily',
+                                '綱名': 'sourceClass', '綱': 'sourceClass', '綱 (class)': 'sourceClass', 
+                                '目名': 'sourceOrder', '目': 'sourceOrder', '目 (Order)': 'sourceOrder', 
+                                '科名': 'sourceFamily', '科': 'sourceFamily', '科 (Family)': 'sourceFamily',
                                 # '屬':'genus', '屬 (Genus)': 'genus',
-                                '西元年': 'year', '月': 'month', '日': 'day'})
+                                '西元年': 'year', '年': 'year', '月': 'month', '日': 'day'})
+        # 這邊要處理scientificNameID 裡面可能有一些是taxonID
+        if 'scientificNameID' in df.keys():
+            df['taxonID'] = df['scientificNameID']
+            df['taxonID'] = df['taxonID'].apply(lambda x: x if x and len(str(x)) == 8 and str(x).startswith('t0') else None)
+            df['scientificNameID'] = df['scientificNameID'].apply(lambda x: None if x and len(str(x)) == 8 and str(x).startswith('t0') else x)
         # print(df.keys(), i)
         # if '計畫/案件名稱' in df.keys():
         #     print(df['計畫/案件名稱'].unique())
         if '物種俗名' in df.keys():
+            df['sourceVernacularName'] = df['sourceVernacularName'].replace({None: ''})
             df['sourceVernacularName'] = df.apply(lambda x: x.sourceVernacularName + ';' + x.物種俗名 if x.物種俗名 else x.sourceVernacularName, axis=1)
-        df['eventDate'] = df.apply(lambda x: f"{x.year}-{x.month}-{x.day}", axis=1) 
+            df['sourceVernacularName'] = df['sourceVernacularName'].apply(lambda x: x.lstrip(';'))
+        # 如果有eventDate 則優先採用eventDate
+        if 'eventDate' in df.keys():
+            df['eventDate'] = df.apply(lambda x: f"{int(x.year)}-{int(x.month)}-{int(x.day)}" if not x.eventDate else x.eventDate, axis=1) 
+        else:
+            df['eventDate'] = df.apply(lambda x: f"{int(x.year)}-{int(x.month)}-{int(x.day)}", axis=1) 
         df['datasetName'] = row.d_name
         # df = df[~(df.sourceVernacularName.isin([nan,'',None])&df.sourceScientificName.isin([nan,'',None]))] 
         drop_keys = [k for k in df.keys() if k in unused_keys]
@@ -224,7 +265,7 @@ if 'sensitiveCategory' in df.keys():
 df = df.reset_index(drop=True)
 df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': ''})
 
-df = df[~((df.sourceScientificName=='')&(df.sourceVernacularName=='')&(df.scientificNameID=='')&(df.sourceClass=='')&(df.sourceOrder=='')&(df.sourceFamily==''))]
+df = df[~((df.taxonID=='')&(df.sourceScientificName=='')&(df.sourceVernacularName=='')&(df.scientificNameID=='')&(df.sourceClass=='')&(df.sourceOrder=='')&(df.sourceFamily==''))]
 
 
 sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
@@ -258,6 +299,10 @@ df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standard
 # basisOfRecord 無資料
 # dataGeneralizations 無資料
 
+# 全部都補上敏感層級
+df['dataGeneralizations'] = True
+df['sensitiveCategory'] = '縣市'
+is_hidden = True
 
 # 經緯度
 # df['grid_1'] = '-1_-1'
@@ -285,7 +330,10 @@ for i in df.index:
         lon, lat = convert_to_decimal(row.verbatimLongitude, row.verbatimLatitude)
     else:
         lon, lat = row.verbatimLongitude, row.verbatimLatitude
-    grid_data = create_grid_data(verbatimLongitude=lon, verbatimLatitude=lat)
+    grid_data = create_blurred_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude, coordinatePrecision=None, is_full_hidden=is_hidden)
+    df.loc[i,'standardRawLongitude'] = grid_data.get('standardRawLon')
+    df.loc[i,'standardRawLatitude'] = grid_data.get('standardRawLat')
+    df.loc[i,'raw_location_rpt'] = grid_data.get('raw_location_rpt')
     df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
     df.loc[i,'standardLatitude'] = grid_data.get('standardLat')
     df.loc[i,'location_rpt'] = grid_data.get('location_rpt')
