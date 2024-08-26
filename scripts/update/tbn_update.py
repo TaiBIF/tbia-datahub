@@ -34,7 +34,7 @@ rights_holder = '台灣生物多樣性網絡 TBN'
 # 在portal.Partner.info裡面的id
 info_id = 0
 
-response = requests.get(f'http://solr:8983/solr/tbia_records/select?fl=update_version&fq=rightsHolder:{rights_holder}&q.op=OR&q=*%3A*&rows=1&sort=update_version%20desc')
+response = requests.get(f'http://solr:8983/solr/tbia_records/select?fl=update_version&fq=rightsHolder:"{rights_holder}"&q.op=OR&q=*%3A*&rows=1&sort=update_version%20desc')
 if response.status_code == 200:
     resp = response.json()
     if data := resp['response']['docs']:

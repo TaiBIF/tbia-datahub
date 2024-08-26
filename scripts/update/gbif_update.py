@@ -38,7 +38,7 @@ info_id = 0
 #     qry = sa.text("""update records set is_deleted = 't' where "rightsHolder" = '{}' and "group" = '{}';""".format(rights_holder, group))
 #     resultset = conn.execute(qry)
 
-response = requests.get(f'http://solr:8983/solr/tbia_records/select?fl=update_version&fq=rightsHolder:{rights_holder}&q.op=OR&q=*%3A*&rows=1&sort=update_version%20desc')
+response = requests.get(f'http://solr:8983/solr/tbia_records/select?fl=update_version&fq=rightsHolder:"{rights_holder}"&q.op=OR&q=*%3A*&rows=1&sort=update_version%20desc')
 if response.status_code == 200:
     resp = response.json()
     if data := resp['response']['docs']:
@@ -112,7 +112,7 @@ for d in dataset_list[d_list_index:]: # 20
     # test_count = 0
     total_count = d[1]
     total_page = math.ceil (total_count / 1000)
-    for p in range(0,total_page,10):
+    for p in range(current_page,total_page,10):
         data = []
         c = p
         while c < p + 10 and c < total_page:
@@ -162,6 +162,7 @@ for d in dataset_list[d_list_index:]: # 20
                     'countryCode', 'country', 'county',
                     'habitatReserve', 'wildlifeReserve', 'occurrenceStatus', 'selfProduced',
                     'datasetShortName','establishmentMeans', 'issue'])
+                df = df.drop_duplicates().reset_index(drop=True)
                 sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
                 sci_names = matching_flow(sci_names)
                 df = df.drop(columns=['taxonID'], errors='ignore')

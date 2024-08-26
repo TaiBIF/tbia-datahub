@@ -38,7 +38,7 @@ info_id = 0
 #     qry = sa.text("""update records set is_deleted = 't' where "rightsHolder" = '{}' and "group" = '{}';""".format(rights_holder, group))
 #     resultset = conn.execute(qry)
 
-response = requests.get(f'http://solr:8983/solr/tbia_records/select?fl=update_version&fq=rightsHolder:{rights_holder}&q.op=OR&q=*%3A*&rows=1&sort=update_version%20desc')
+response = requests.get(f'http://solr:8983/solr/tbia_records/select?fl=update_version&fq=rightsHolder:"{rights_holder}"&q.op=OR&q=*%3A*&rows=1&sort=update_version%20desc')
 if response.status_code == 200:
     resp = response.json()
     if data := resp['response']['docs']:
@@ -166,7 +166,7 @@ for p in range(current_page,total_page,10):
         existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder)
         existed_records = existed_records.replace({nan:''})
         if len(existed_records):
-            df =  df.merge(existed_records,on=["occurrenceID"], how='left')
+            df = df.merge(existed_records,on=["occurrenceID"], how='left')
             df = df.replace({nan: None})
             # 如果已存在，取存在的tbiaID
             df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)

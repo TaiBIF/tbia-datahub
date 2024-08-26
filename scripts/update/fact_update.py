@@ -33,7 +33,7 @@ rights_holder = '林業試驗所昆蟲標本館'
 # 在portal.Partner.info裡面的id
 info_id = 0
 
-response = requests.get(f'http://solr:8983/solr/tbia_records/select?fl=update_version&fq=rightsHolder:{rights_holder}&q.op=OR&q=*%3A*&rows=1&sort=update_version%20desc')
+response = requests.get(f'http://solr:8983/solr/tbia_records/select?fl=update_version&fq=rightsHolder:"{rights_holder}"&q.op=OR&q=*%3A*&rows=1&sort=update_version%20desc')
 if response.status_code == 200:
     resp = response.json()
     if data := resp['response']['docs']:
@@ -59,7 +59,7 @@ response = requests.get(url, verify=False)
 if response.status_code == 200:
     result = response.json()
     total = result['meta']['total']
-    total_page = math.ceil(total / 1000)
+    total_page = math.ceil(total / 100)
 
 now = datetime.now() + timedelta(hours=8)
 
@@ -71,7 +71,7 @@ for p in range(current_page,total_page,10):
         c+=1
         print('page:',c)
         time.sleep(5)
-        url = f"https://fact.tfri.gov.tw/api/1/occurrence/?token={os.getenv('FACT_KEY')}&page={c}&per_page=1000"
+        url = f"https://fact.tfri.gov.tw/api/1/occurrence/?token={os.getenv('FACT_KEY')}&page={c}&per_page=100"
         # commands = f''' curl "https://fact.tfri.gov.tw/api/1/occurrence/?token={os.getenv('FACT_KEY')}&page={c}&per_page=1000" ''' 
         # process = subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         # a = process.communicate()

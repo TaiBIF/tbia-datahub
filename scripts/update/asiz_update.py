@@ -15,9 +15,10 @@ load_dotenv(override=True)
 
 from scripts.taxon.match_utils import matching_flow
 from scripts.utils import *
+import json
 
 # 比對學名時使用的欄位
-sci_cols = ['sourceScientificName','sourceVernacularName',]
+sci_cols = ['sourceScientificName','sourceVernacularName','sourceFamily']
 
 # 若原資料庫原本就有提供taxonID 在這段要拿掉 避免merge時產生衝突
 df_sci_cols = [s for s in sci_cols if s != 'taxonID'] 
@@ -26,14 +27,13 @@ df_sci_cols = [s for s in sci_cols if s != 'taxonID']
 # psql_records_key = [k for k in taxon.keys() if k != 'taxonID']
 
 # 單位資訊
-group = 'brmas'
-rights_holder = '中央研究院生物多樣性中心植物標本資料庫'
+group = 'asiz'
+rights_holder = '中央研究院生物多樣性中心動物標本館'
 
 # 在portal.Partner.info裡面的id
 info_id = 0
 
-
-response = requests.get(f'http://solr:8983/solr/tbia_records/select?fl=update_version&fq=rightsHolder:{rights_holder}&q.op=OR&q=*%3A*&rows=1&sort=update_version%20desc')
+response = requests.get(f'http://solr:8983/solr/tbia_records/select?fl=update_version&fq=rightsHolder:"{rights_holder}"&q.op=OR&q=*%3A*&rows=1&sort=update_version%20desc')
 if response.status_code == 200:
     resp = response.json()
     if data := resp['response']['docs']:
@@ -46,32 +46,34 @@ if response.status_code == 200:
 current_page, note = insert_new_update_version(rights_holder=rights_holder,update_version=update_version)
 
 
-url = f"https://hast.biodiv.tw/api/v1/occurrence"
+url = f"https://brmas.openmuseum.tw/api/v2/specimen_brmas/list?token={os.getenv('ASIZ_KEY')}&page=1&per_page=1000"
 response = requests.get(url, verify=False)
+
+
 if response.status_code == 200:
     result = response.json()
     total = result['meta']['total']
-    total_page = result['meta']['pagination']['num_pages']
+    total_page = math.ceil(total / 100)
 
-now = datetime.now() + timedelta(hours=8) 
+now = datetime.now() + timedelta(hours=8)
 
 for p in range(current_page,total_page,10):
     print(p)
     data = []
     c = p
     while c < p + 10 and c < total_page:
-        offset = 300 * c
-        print('page:',c , ' , offset:', offset)
-        time.sleep(1)
-        url = f"https://hast.biodiv.tw/api/v1/occurrence?offset={offset}"
+        c+=1
+        print('page:',c)
+        time.sleep(5)
+        url = f"https://brmas.openmuseum.tw/api/v2/specimen_brmas/list?token={os.getenv('ASIZ_KEY')}&page={c}&per_page=1000"
         response = requests.get(url, verify=False)
         if response.status_code == 200:
             result = response.json()
-            data += result.get('data')
-        c+=1
+        data += result.get('data')
     df = pd.DataFrame(data)
+    # 如果 'isPreferredName','scientificName',都是空值才排除
     df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': ''})
-    df = df[~((df.isPreferredName=='')&(df.scientificName==''))]
+    df = df[~(df.scientificName=='')]
     if 'sensitiveCategory' in df.keys():
         df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
     if 'license' in df.keys():
@@ -80,9 +82,21 @@ for p in range(current_page,total_page,10):
         df = []
     media_rule_list = []
     if len(df):
-        df = df.rename(columns={'created': 'sourceCreated', 'modified': 'sourceModified', 'scientificName': 'sourceScientificName', 
-        'isPreferredName': 'sourceVernacularName', 'collectionID': 'catalogNumber', 'taxonRank': 'sourceTaxonRank'})
+        df = df.rename(columns={'created': 'sourceCreated', 
+                                'modified': 'sourceModified', 
+                                'scientificName': 'sourceScientificName', 
+                                'permanentLink': 'references', 
+                                'isPreferredName': 'sourceVernacularName', 
+                                'collectionID': 'catalogNumber', 
+                                'taxonRank': 'sourceTaxonRank',
+                                'familyName': 'sourceFamily'})
         df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': ''})
+        df = df.drop(columns=['identificationTime','developmentalStage','subject','strata','provider'])
+        if 'sourceVernacularName' not in df.keys():
+            df['sourceVernacularName'] = ''
+        # familyName 是英文+中文
+        if 'sourceFamily' in df.keys():
+            df['sourceFamily'] = df['sourceFamily'].apply(lambda x: x.split(' ')[0])
         sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
         sci_names = matching_flow(sci_names)
         df = df.drop(columns=['taxonID'], errors='ignore')
@@ -106,21 +120,31 @@ for p in range(current_page,total_page,10):
         # 日期
         df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))
         # 數量 
-        df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
+        if 'organismQuantity' in df.keys():
+            df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
         # basisOfRecord 無資料
-        # 敏感層級 無資料
+        # dataGeneralizations 無資料
         df['id'] = ''
+        df['mediaLicense'] = None
         for i in df.index:
             # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
             df.loc[i,'id'] = str(bson.objectid.ObjectId())
             row = df.loc[i]
-            if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
-                if not row.mediaLicense:
-                    df.loc[i,'associatedMedia'] = None
-                if df.loc[i, 'associatedMedia']:
-                    media_rule = get_media_rule(df.loc[i, 'associatedMedia'])
+            # associatedMedia
+            mediaLicense_list = []
+            associatedMedia_list = []
+            for am in row.associatedMedia:
+                if am.get('licence'):
+                    mediaLicense_list.append(am.get('licence'))
+                    associatedMedia_list.append(am.get('url'))
+                    media_rule = get_media_rule(am.get('url'))
                     if media_rule and media_rule not in media_rule_list:
                         media_rule_list.append(media_rule)
+            associatedMedia = ';'.join(associatedMedia_list)
+            mediaLicense = ';'.join(mediaLicense_list)
+            df.loc[i, 'associatedMedia'] = associatedMedia
+            df.loc[i, 'mediaLicense'] = mediaLicense
+            # 因為沒有模糊化座標 所以grid_* & grid_*_blurred 欄位填一樣的
             grid_data = create_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude)
             df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
             df.loc[i,'standardLatitude'] = grid_data.get('standardLat')
@@ -140,15 +164,19 @@ for p in range(current_page,total_page,10):
         df = df.merge(return_dataset_id)
         # 更新match_log
         # 更新資料
+        df['occurrenceID'] = df['catalogNumber']
         df['occurrenceID'] = df['occurrenceID'].astype('str')
         existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
         existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder)
         existed_records = existed_records.replace({nan:''})
         if len(existed_records):
-            df = df.merge(existed_records,on=["occurrenceID"], how='left')
+            df =  df.merge(existed_records,on=["occurrenceID"], how='left')
             df = df.replace({nan: None})
             # 如果已存在，取存在的tbiaID
             df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
+            # 如果已存在，取存在的建立日期
+            # df['created'] = df.apply(lambda x: x.created_y if x.tbiaID else now, axis=1)
+            # df = df.drop(columns=['tbiaID','created_y','created_x'])
             df = df.drop(columns=['tbiaID'])
         # match_log要用更新的
         match_log = df[['occurrenceID','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','group','rightsHolder','created','modified']]
@@ -158,27 +186,28 @@ for p in range(current_page,total_page,10):
         # records要用更新的
         # 已經串回原本的tbiaID，可以用tbiaID做更新
         df['is_deleted'] = False
-        df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','taxon_name_id','sci_index', 'datasetURL','gbifDatasetID', 'gbifID'],errors='ignore')        # 最後再一起匯出
+        df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','taxon_name_id','sci_index', 'datasetURL','gbifDatasetID', 'gbifID'],errors='ignore')
+        # 最後再一起匯出
         # # 在solr裡 要使用id當作名稱 而非tbiaID
         # df.to_csv(f'/solr/csvs/updated/{group}_{info_id}_{p}.csv', index=False)
         # 存到records裏面
         df = df.rename(columns=({'id': 'tbiaID'}))
         df['update_version'] = int(update_version)
         # df = df.drop(columns=psql_records_key,errors='ignore')
-        df.to_sql('records', db, # schema='my_schema',
-                if_exists='append',
-                index=False,
-                method=records_upsert)
+        for l in range(0, len(df), 1000):
+            df[l:l+1000].to_sql('records', db, # schema='my_schema',
+                    if_exists='append',
+                    index=False,
+                    method=records_upsert)
     # 成功之後 更新update_update_version
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
     for mm in media_rule_list:
         update_media_rule(media_rule=mm,rights_holder=rights_holder)
 
 
-
 # 刪除is_deleted的records & match_log
 delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version))
-
+    
 # 打包match_log
 zip_match_log(group=group,info_id=info_id)
 
