@@ -91,7 +91,7 @@ for p in range(current_page,total_page,10):
                                 'taxonRank': 'sourceTaxonRank',
                                 'familyName': 'sourceFamily'})
         df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': ''})
-        df = df.drop(columns=['identificationTime','developmentalStage','subject','strata','provider'])
+        df = df.drop(columns=['identificationTime','developmentalStage','subject','strata','provider'], errors='ignore')
         if 'sourceVernacularName' not in df.keys():
             df['sourceVernacularName'] = ''
         # familyName 是英文+中文

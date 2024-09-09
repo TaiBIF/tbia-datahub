@@ -26,7 +26,7 @@ df_sci_cols = [s for s in sci_cols if s != 'taxonID']
 # psql_records_key = [k for k in taxon.keys() if k != 'taxonID']
 
 # 單位資訊
-group = 'brmas'
+group = 'hast'
 rights_holder = '中央研究院生物多樣性中心植物標本資料庫'
 
 # 在portal.Partner.info裡面的id
