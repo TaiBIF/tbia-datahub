@@ -53,7 +53,7 @@ response = requests.get(url, verify=False)
 if response.status_code == 200:
     result = response.json()
     total = result['meta']['total']
-    total_page = math.ceil(total / 100)
+    total_page = math.ceil(total / 1000)
 
 now = datetime.now() + timedelta(hours=8)
 
