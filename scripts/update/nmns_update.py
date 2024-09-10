@@ -130,6 +130,7 @@ for now_category in category_list[category_index:]:
         if len(data) > 9999 or not has_more_data:
             print(now_category, len(data), all_count)
             df = pd.DataFrame(data)
+            data = [] # 重新下一個loop
             for fl in field_list:
                 if fl not in df.keys():
                     df[fl] = ''
@@ -233,7 +234,6 @@ for now_category in category_list[category_index:]:
             update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=None, note=json.dumps({'catogory_index': category_index, 'offset': offset}))
             for mm in media_rule_list:
                 update_media_rule(media_rule=mm,rights_holder=rights_holder)
-            data = [] # 重新下一個loop
 
 
 # 刪除is_deleted的records & match_log
