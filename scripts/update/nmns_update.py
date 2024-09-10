@@ -215,7 +215,7 @@ for now_category in category_list[category_index:]:
                 match_log = df[['occurrenceID','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','group','rightsHolder','created','modified']]
                 match_log = match_log.reset_index(drop=True)
                 match_log = update_match_log(match_log=match_log, now=now)
-                match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{p}.csv',index=None)
+                match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{now_category}.csv',index=None)
                 # records要用更新的
                 # 已經串回原本的tbiaID，可以用tbiaID做更新
                 df['is_deleted'] = False
