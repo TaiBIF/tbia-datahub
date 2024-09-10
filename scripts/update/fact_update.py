@@ -59,7 +59,7 @@ response = requests.get(url, verify=False)
 if response.status_code == 200:
     result = response.json()
     total = result['meta']['total']
-    total_page = math.ceil(total / 100)
+    total_page = math.ceil(total / 1000)
 
 now = datetime.now() + timedelta(hours=8)
 
@@ -71,7 +71,7 @@ for p in range(current_page,total_page,10):
         c+=1
         print('page:',c)
         time.sleep(5)
-        url = f"https://fact.tfri.gov.tw/api/1/occurrence/?token={os.getenv('FACT_KEY')}&page={c}&per_page=100"
+        url = f"https://fact.tfri.gov.tw/api/1/occurrence/?token={os.getenv('FACT_KEY')}&page={c}&per_page=1000"
         # commands = f''' curl "https://fact.tfri.gov.tw/api/1/occurrence/?token={os.getenv('FACT_KEY')}&page={c}&per_page=1000" ''' 
         # process = subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         # a = process.communicate()

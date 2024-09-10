@@ -54,14 +54,15 @@ current_page, note = insert_new_update_version(rights_holder=rights_holder,updat
 now = datetime.now() + timedelta(hours=8)
 
 payload = {'API-KEY': os.getenv('OCA_KEY')}
-headers = {'content-type': 'application/json'}
+# payload = {'API-KEY': 'e6864c05-4647-45a4-a2aa-6520e41e49ae'}
+headers = {'content-type': 'application/json','API-KEY': os.getenv('OCA_KEY')}
 
 final_df = pd.DataFrame()
 
 # iocean 目擊回報
 # 時間格式 YYYY-MM-DD
 url = f"https://iocean.oca.gov.tw/oca_datahub/WebService/GetData.ashx?id=efb09ebd-1191-43be-ab52-80285c61d703"
-r = requests.post(url, data=json.dumps(payload), headers=headers)
+r = requests.post(url, headers=headers)
 if r.status_code == 200:
     x = r.text
     x = x.split('\r\n')

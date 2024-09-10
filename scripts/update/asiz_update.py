@@ -73,7 +73,7 @@ for p in range(current_page,total_page,10):
     df = pd.DataFrame(data)
     # 如果 'isPreferredName','scientificName',都是空值才排除
     df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': ''})
-    df = df[~(df.scientificName=='')]
+    df = df[~((df.isPreferredName=='')&(df.scientificName==''))]
     if 'sensitiveCategory' in df.keys():
         df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
     if 'license' in df.keys():
