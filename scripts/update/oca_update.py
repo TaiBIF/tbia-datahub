@@ -241,9 +241,9 @@ for i in ocas.index:
             df['sourceVernacularName'] = df['sourceVernacularName'].apply(lambda x: x.lstrip(';'))
         # 如果有eventDate 則優先採用eventDate
         if 'eventDate' in df.keys():
-            df['eventDate'] = df.apply(lambda x: f"{int(x.year)}-{int(x.month)}-{int(x.day)}" if not x.eventDate else x.eventDate, axis=1) 
+            df['eventDate'] = df.apply(lambda x: f"{int(x.year)}-{int(x.month)}-{int(x.day)}" if not x.eventDate and x.year and x.month and x.day else x.eventDate, axis=1) 
         else:
-            df['eventDate'] = df.apply(lambda x: f"{int(x.year)}-{int(x.month)}-{int(x.day)}", axis=1) 
+            df['eventDate'] = df.apply(lambda x: f"{int(x.year)}-{int(x.month)}-{int(x.day)}" if x.year and x.month and x.day else None, axis=1) 
         df['datasetName'] = row.d_name
         # df = df[~(df.sourceVernacularName.isin([nan,'',None])&df.sourceScientificName.isin([nan,'',None]))] 
         drop_keys = [k for k in df.keys() if k in unused_keys]
@@ -397,7 +397,7 @@ df = df.rename(columns=({'id': 'tbiaID'}))
 df['update_version'] = int(update_version)
 # df = df.drop(columns=psql_records_key,errors='ignore')
 for l in range(0, len(df), 1000):
-    # print(l)
+    print(l)
     df[l:l+1000].to_sql('records', db, # schema='my_schema',
             if_exists='append',
             index=False,
