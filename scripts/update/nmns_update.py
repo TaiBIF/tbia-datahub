@@ -219,7 +219,7 @@ for now_category in category_list[category_index:]:
                 # records要用更新的
                 # 已經串回原本的tbiaID，可以用tbiaID做更新
                 df['is_deleted'] = False
-                df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','taxon_name_id','sci_index', 'datasetURL','gbifDatasetID', 'gbifID', 'locality_1', 'locality_2', 'locality_3'],errors='ignore')        # 最後再一起匯出
+                df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','taxon_name_id','sci_index', 'datasetURL','gbifDatasetID', 'gbifID', 'locality_1', 'locality_2', 'locality_3','genus','specificEpithet'],errors='ignore')        # 最後再一起匯出
                 # # 在solr裡 要使用id當作名稱 而非tbiaID
                 # df.to_csv(f'/solr/csvs/updated/{group}_{info_id}_{p}.csv', index=False)
                 # 存到records裏面
