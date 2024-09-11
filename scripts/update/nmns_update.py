@@ -234,7 +234,7 @@ for now_category in category_list[category_index:]:
             update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=None, note=json.dumps({'catogory_index': category_index, 'offset': offset}))
             for mm in media_rule_list:
                 update_media_rule(media_rule=mm,rights_holder=rights_holder)
-
+    category_index += 1
 
 # 刪除is_deleted的records & match_log
 delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version))
