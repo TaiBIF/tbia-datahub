@@ -231,7 +231,7 @@ for now_category in category_list[category_index:]:
                         index=False,
                         method=records_upsert)
             # 成功之後 更新update_update_version
-            update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=None, note=json.dumps({'catogory_index': category_index, 'offset': offset}))
+            update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=None, note=json.dumps({'category_index': category_index, 'offset': offset}))
             for mm in media_rule_list:
                 update_media_rule(media_rule=mm,rights_holder=rights_holder)
     category_index += 1
