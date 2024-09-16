@@ -346,6 +346,13 @@ for i in df.index:
     df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
     df.loc[i, 'grid_100'] = grid_data.get('grid_100')
     df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
+    # 要考慮是不是本來就要完全屏蔽 不然有可能是無法轉換座標 就必須要顯示原始座標 (從grid_data的回傳的是)
+    if grid_data.get('standardLon') or is_hidden:
+        df.loc[i, 'verbatimLongitude'] = grid_data.get('standardLon')
+    if grid_data.get('standardLat') or is_hidden:
+        df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
+
+
 
 ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
 # return tbiaDatasetID 並加上去
