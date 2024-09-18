@@ -300,20 +300,7 @@ df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standard
 # basisOfRecord 無資料
 # dataGeneralizations 無資料
 
-# 全部都補上敏感層級
-df['dataGeneralizations'] = True
-df['sensitiveCategory'] = '縣市'
-is_hidden = True
-
-# 經緯度
-# df['grid_1'] = '-1_-1'
-# df['grid_5'] = '-1_-1'
-# df['grid_10'] = '-1_-1'
-# df['grid_100'] = '-1_-1'
 df['id'] = ''
-# df['standardLongitude'] = None
-# df['standardLatitude'] = None
-# df['location_rpt'] = None
 
 media_rule_list = []
 for i in df.index:
@@ -331,6 +318,16 @@ for i in df.index:
         lon, lat = convert_to_decimal(row.verbatimLongitude, row.verbatimLatitude)
     else:
         lon, lat = row.verbatimLongitude, row.verbatimLatitude
+    # 敏感資料才需要屏蔽
+    if row.datasetName in ocas.d_name.unique():
+        # 全部都補上敏感層級
+        df.loc[i, 'dataGeneralizations'] = True
+        df.loc[i, 'sensitiveCategory'] = '縣市'
+        is_hidden = True
+    else:
+        df.loc[i, 'dataGeneralizations'] = False
+        df.loc[i, 'sensitiveCategory'] = None
+        is_hidden = False
     grid_data = create_blurred_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude, coordinatePrecision=None, is_full_hidden=is_hidden)
     df.loc[i,'standardRawLongitude'] = grid_data.get('standardRawLon')
     df.loc[i,'standardRawLatitude'] = grid_data.get('standardRawLat')
