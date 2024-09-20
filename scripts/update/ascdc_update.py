@@ -110,7 +110,7 @@ for p in range(current_page,total_page,10):
         df['rightsHolder'] = rights_holder
         df['created'] = now
         df['modified'] = now
-        df['recordType'] = 'col'
+        df['recordType'] = 'occ'
         # 出現地
         if 'locality' in df.keys():
             df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
