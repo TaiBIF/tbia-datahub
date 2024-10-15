@@ -454,6 +454,7 @@
 
   <field name="id" type="string" multiValued="false" indexed="true" required="true" stored="true"/>
   <field name="occurrenceID" type="string"/>
+  <field name="catalogNumber" type="string"/>
   <field name="rights_holder" type="string"/>
   <field name="group" type="string"/>
   <field name="deleted" type="pdates"/>

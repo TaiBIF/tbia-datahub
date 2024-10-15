@@ -17,6 +17,7 @@ class MatchLog(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     occurrenceID: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
+    catalogNumber: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     tbiaID: Mapped[str] = mapped_column(String(50), index=True)
     group: Mapped[str] = mapped_column(String(50), index=True)
     rights_holder:  Mapped[Optional[str]] = mapped_column(String(10000), index=True)
@@ -296,6 +297,7 @@ class DeletedRecords(Base):
     group: Mapped[str] = mapped_column(String(50), index=True)
     rights_holder:  Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     occurrenceID: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
+    catalogNumber: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     deleted: Mapped[datetime] = mapped_column(DateTime(timezone=True)) # 刪除時間
 
 
