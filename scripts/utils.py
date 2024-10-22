@@ -106,17 +106,35 @@ def get_namecode(namecode):
         return df.to_dict('records')
 
 
-def get_existed_records(ids, rights_holder, get_reference=False):
+def get_existed_records(occ_ids, rights_holder, get_reference=False, cata_ids=[]):
 
-    ids = [f'occurrenceID:"{d}"' for d in ids]
+    if occ_ids:
+        occ_ids = [f'occurrenceID:"{d}"' for d in occ_ids]
+
+    if cata_ids:
+        cata_ids = [f'catalogNumber:"{d}"' for d in cata_ids]
+
     subset_list = []
     get_fields = ['id', 'occurrenceID', 'catalogNumber']
 
     if get_reference:
         get_fields.append('references')
 
-    for tt in range(0, len(ids), 20):
-        query = { "query": " OR ".join(ids[tt:tt+20]),
+    for tt in range(0, len(occ_ids), 20):
+        query = { "query": " OR ".join(occ_ids[tt:tt+20]),
+                "offset": 0,
+                "filter": [f"rightsHolder:{rights_holder}"],
+                "limit": 1000000,
+                "fields": get_fields
+                }
+        response = requests.post(f'http://solr:8983/solr/tbia_records/select', data=json.dumps(query), headers={'content-type': "application/json" })
+        if response.status_code == 200:
+            resp = response.json()
+            if data := resp['response']['docs']:
+                subset_list += data
+
+    for tt in range(0, len(cata_ids), 20):
+        query = { "query": " OR ".join(cata_ids[tt:tt+20]),
                 "offset": 0,
                 "filter": [f"rightsHolder:{rights_holder}"],
                 "limit": 1000000,
@@ -133,17 +151,19 @@ def get_existed_records(ids, rights_holder, get_reference=False):
         existed_records = existed_records.rename(columns={'id': 'tbiaID'})
         # 排除掉一個occurrenceID對到多個tbiaID的情況
         # 這邊要多考慮catalogNumber的情況
-        for kk in [['occurrenceID', 'catalogNumber']]:
+        for kk in ['occurrenceID', 'catalogNumber']:
             if kk not in existed_records.keys():
-                existed_records.loc[kk] = ''
-        existed_records = existed_records.replace({nan: '', None: ''})
+                existed_records[kk] = ''
+        existed_records = existed_records.replace({np.nan: '', None: ''})
         a = existed_records[['occurrenceID','tbiaID','catalogNumber']].groupby(['occurrenceID','catalogNumber'], as_index=False).count()
         # a = existed_records[['occurrenceID','tbiaID','datasetName']].groupby(['occurrenceID','datasetName'], as_index=False).count()
         a = a[a.tbiaID==1]
         # a = a.reset_index(drop=True)
         # 只保留一對一的結果 若有一對多 則刪除舊的 給予新的tbiaID
         # existed_records = existed_records[existed_records.occurrenceID.isin(a.occurrenceID.to_list())]
-        existed_records = existed_records[existed_records.tbiaID.isin(a.tbiaID.to_list())]
+        a = a.drop(columns=['tbiaID'])
+        # existed_records = existed_records[existed_records.tbiaID.isin(a.tbiaID.to_list())]
+        existed_records = existed_records.merge(a)
         existed_records = existed_records.reset_index(drop=True)
     else:
         # existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
