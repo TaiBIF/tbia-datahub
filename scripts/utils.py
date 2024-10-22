@@ -110,7 +110,7 @@ def get_existed_records(ids, rights_holder, get_reference=False):
 
     ids = [f'occurrenceID:"{d}"' for d in ids]
     subset_list = []
-    get_fields = ['id', 'occurrenceID']
+    get_fields = ['id', 'occurrenceID', 'catalogNumber']
 
     if get_reference:
         get_fields.append('references')
@@ -132,16 +132,22 @@ def get_existed_records(ids, rights_holder, get_reference=False):
         existed_records = pd.DataFrame(subset_list)
         existed_records = existed_records.rename(columns={'id': 'tbiaID'})
         # 排除掉一個occurrenceID對到多個tbiaID的情況
-        a = existed_records[['occurrenceID','tbiaID']].groupby(['occurrenceID'], as_index=False).count()
+        # 這邊要多考慮catalogNumber的情況
+        for kk in [['occurrenceID', 'catalogNumber']]:
+            if kk not in existed_records.keys():
+                existed_records.loc[kk] = ''
+        existed_records = existed_records.replace({nan: '', None: ''})
+        a = existed_records[['occurrenceID','tbiaID','catalogNumber']].groupby(['occurrenceID','catalogNumber'], as_index=False).count()
         # a = existed_records[['occurrenceID','tbiaID','datasetName']].groupby(['occurrenceID','datasetName'], as_index=False).count()
         a = a[a.tbiaID==1]
         # a = a.reset_index(drop=True)
         # 只保留一對一的結果 若有一對多 則刪除舊的 給予新的tbiaID
-        existed_records = existed_records[existed_records.occurrenceID.isin(a.occurrenceID.to_list())]
+        # existed_records = existed_records[existed_records.occurrenceID.isin(a.occurrenceID.to_list())]
+        existed_records = existed_records[existed_records.tbiaID.isin(a.tbiaID.to_list())]
         existed_records = existed_records.reset_index(drop=True)
     else:
         # existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
-        existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
+        existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
 
     return existed_records
 
@@ -486,12 +492,12 @@ def delete_records(rights_holder,group,update_version):
                 WITH moved_rows AS (
                     DELETE FROM records a
                     WHERE a.update_version != {} and a."rightsHolder" = '{}' and a."group" = '{}'
-                    RETURNING a."tbiaID", a."occurrenceID", a."rightsHolder", a."group"
+                    RETURNING a."tbiaID", a."occurrenceID", a."rightsHolder", a."group", a."catalogNumber"
                 ), delete_match_log AS (
                     DELETE FROM match_log 
                     WHERE "tbiaID" IN (select "tbiaID" from moved_rows)
                 )
-                INSERT INTO deleted_records ("tbiaID", "occurrenceID", "rights_holder", "group", "deleted")
+                INSERT INTO deleted_records ("tbiaID", "occurrenceID","rights_holder", "group", "catalogNumber", "deleted")
                 SELECT *, NOW() as deleted FROM moved_rows;
                 """.format(update_version, rights_holder, group)
     conn = psycopg2.connect(**db_settings)
