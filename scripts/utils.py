@@ -165,6 +165,7 @@ def get_existed_records(occ_ids, rights_holder, get_reference=False, cata_ids=[]
         # existed_records = existed_records[existed_records.tbiaID.isin(a.tbiaID.to_list())]
         existed_records = existed_records.merge(a)
         existed_records = existed_records.reset_index(drop=True)
+        existed_records = existed_records[['tbiaID', 'occurrenceID', 'catalogNumber']]
     else:
         # existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
         existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
