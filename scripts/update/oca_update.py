@@ -53,8 +53,6 @@ current_page, note = insert_new_update_version(rights_holder=rights_holder,updat
 
 now = datetime.now() + timedelta(hours=8)
 
-payload = {'API-KEY': os.getenv('OCA_KEY')}
-# payload = {'API-KEY': 'e6864c05-4647-45a4-a2aa-6520e41e49ae'}
 headers = {'content-type': 'application/json','API-KEY': os.getenv('OCA_KEY')}
 
 final_df = pd.DataFrame()
@@ -84,7 +82,7 @@ if r.status_code == 200:
 
 # iocean 垂釣回報
 url = f"https://iocean.oca.gov.tw/oca_datahub/WebService/GetData.ashx?id=b46468f7-eaff-40ac-96ec-a404ad0bea9f"
-r = requests.post(url, data=json.dumps(payload), headers=headers)
+r = requests.post(url, headers=headers)
 if r.status_code == 200:
     x = r.text
     x = x.split('\r\n')
@@ -112,7 +110,7 @@ if r.status_code == 200:
 # MARN鯨豚擱淺資料
 # 時間格式 2020/1/4 下午 04:39:00 
 url = f"https://iocean.oca.gov.tw/oca_datahub/WebService/GetData.ashx?id=571f4642-79d5-49f2-87c6-25a00d05c32e"
-r = requests.post(url, data=json.dumps(payload), headers=headers)
+r = requests.post(url, headers=headers)
 if r.status_code == 200:
     x = r.text
     x = x.split('\r\n')
@@ -134,7 +132,7 @@ if r.status_code == 200:
 
 # MARN海龜擱淺資料
 url = f"https://iocean.oca.gov.tw/oca_datahub/WebService/GetData.ashx?id=7bd7b385-94d6-4b1e-a16d-08f9bcab031d"
-r = requests.post(url, data=json.dumps(payload), headers=headers)
+r = requests.post(url, headers=headers)
 if r.status_code == 200:
     x = r.text
     x = x.split('\r\n')
@@ -188,14 +186,15 @@ ocas = pd.read_csv('海保署資料集清單_202408.csv')
 unused_keys = ['界中文名','門中文名','綱中文名','目中文名','科中文名','屬中文名','\ufeff計畫/案件名稱','計畫/案件名稱','調查方法','調查方式','所處位置', '備註', '界2','物種俗名','界','門','屬','屬 (Genus)']
 
 for i in ocas.index:
-    print(i)
     row = ocas.iloc[i]
+    print(row.project_name)
     df = pd.DataFrame()
     if row.data_type == 'api':
         url = f"https://iocean.oca.gov.tw/oca_datahub/WebService/GetData.ashx?id={row.d_id}"
-        r = requests.post(url, data=json.dumps(payload), headers=headers)
+        r = requests.post(url, headers=headers)
         if r.status_code == 200:
             x = r.text
+            # print(x[:100])
             x = x.split('\r\n')
             # 前一行是header
             header = [xx.replace('"','') for xx in x[0].split(',')]
