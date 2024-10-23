@@ -357,17 +357,22 @@ return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_hol
 df = df.merge(return_dataset_id)
 
 df = df.replace({nan: None, '': None})
+df['catalogNumber'] = ''
 
 # 更新match_log
 # 更新資料
 if 'occurrenceID' in df.keys():
     df['occurrenceID'] = df['occurrenceID'].replace({ None: ''})
     df['occurrenceID'] = df['occurrenceID'].astype('str')
-    existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
-    existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder)
+    # existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
+    # existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder, )
+    # existed_records = existed_records.replace({nan:''})
+    existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
+    existed_records = get_existed_records(occ_ids=df[df.occurrenceID!='']['occurrenceID'].to_list(), rights_holder=rights_holder, cata_ids=df[df.catalogNumber!='']['catalogNumber'].to_list())
     existed_records = existed_records.replace({nan:''})
     if len(existed_records):
-        df = df.merge(existed_records,on=["occurrenceID"], how='left')
+        # df = df.merge(existed_records,on=["occurrenceID"], how='left')
+        df = df.merge(existed_records, how='left')
         df = df.replace({nan: None})
         # 如果已存在，取存在的tbiaID
         df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
@@ -383,7 +388,7 @@ df = df.replace({nan: None, '': None})
 
 
 # match_log要用更新的
-match_log = df[['occurrenceID','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','group','rightsHolder','created','modified']]
+match_log = df[['occurrenceID','catalogNumber','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','group','rightsHolder','created','modified']]
 match_log = match_log.reset_index(drop=True)
 # 須確認tbiaID為唯一值
 match_log = update_match_log(match_log=match_log, now=now)

@@ -65,7 +65,7 @@ for p in range(current_page,total_page,10):
         c+=1
         print('page:',c)
         time.sleep(5)
-        url = f"https://brmas.openmuseum.tw/api/v2/fishdb_occurrence/list?token={os.getenv('ASCDC_KEY')}&page={c}&per_page=100"
+        url = f"https://datahub.openmuseum.tw/api/v2/fishdb_occurrence/list?token={os.getenv('ASCDC_KEY')}&page={c}&per_page=100"
         response = requests.get(url, verify=False)
         if response.status_code == 200:
             result = response.json()
@@ -88,8 +88,9 @@ for p in range(current_page,total_page,10):
                                 # 'permanentLink': 'references', 
                                 # 'isPreferredName': 'sourceVernacularName', 
                                 # 'collectionID': 'catalogNumber', 
-                                'taxonRank': 'sourceTaxonRank',
-                                'familyName': 'sourceFamily'})
+                                # 'taxonRank': 'sourceTaxonRank',
+                                # 'familyName': 'sourceFamily'
+                                })
         df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': ''})
         df = df.drop(columns=['subject','planningAgency','executiveAgency','provider'], errors='ignore')
         if 'sourceVernacularName' not in df.keys():
@@ -161,13 +162,15 @@ for p in range(current_page,total_page,10):
         df = df.merge(return_dataset_id)
         # 更新match_log
         # 更新資料
-        df['occurrenceID'] = df['catalogNumber']
+        # df['occurrenceID'] = df['catalogNumber']
+        df['catalogNumber'] = df['catalogNumber'].astype('str')
         df['occurrenceID'] = df['occurrenceID'].astype('str')
-        existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
-        existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder)
+        existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','catalogNumber'])
+        existed_records = get_existed_records(occ_ids=df[df.occurrenceID!='']['occurrenceID'].to_list(), rights_holder=rights_holder, cata_ids=df[df.catalogNumber!='']['catalogNumber'].to_list())
         existed_records = existed_records.replace({nan:''})
         if len(existed_records):
-            df =  df.merge(existed_records,on=["occurrenceID"], how='left')
+            # df =  df.merge(existed_records,on=["occurrenceID"], how='left')
+            df = df.merge(existed_records, how='left')
             df = df.replace({nan: None})
             # 如果已存在，取存在的tbiaID
             df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
@@ -176,7 +179,7 @@ for p in range(current_page,total_page,10):
             # df = df.drop(columns=['tbiaID','created_y','created_x'])
             df = df.drop(columns=['tbiaID'])
         # match_log要用更新的
-        match_log = df[['occurrenceID','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','group','rightsHolder','created','modified']]
+        match_log = df[['occurrenceID','catalogNumber','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','group','rightsHolder','created','modified']]
         match_log = match_log.reset_index(drop=True)
         match_log = update_match_log(match_log=match_log, now=now)
         match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{p}.csv',index=None)
