@@ -187,7 +187,7 @@ for p in range(current_page,total_page,10):
         # records要用更新的
         # 已經串回原本的tbiaID，可以用tbiaID做更新
         df['is_deleted'] = False
-        df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','taxon_name_id','sci_index', 'datasetURL','gbifDatasetID', 'gbifID'],errors='ignore')
+        df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','taxon_name_id','sci_index', 'datasetURL','gbifDatasetID', 'gbifID','measurement'],errors='ignore')
         # 最後再一起匯出
         # # 在solr裡 要使用id當作名稱 而非tbiaID
         # df.to_csv(f'/solr/csvs/updated/{group}_{info_id}_{p}.csv', index=False)
@@ -195,8 +195,8 @@ for p in range(current_page,total_page,10):
         df = df.rename(columns=({'id': 'tbiaID'}))
         df['update_version'] = int(update_version)
         # df = df.drop(columns=psql_records_key,errors='ignore')
-        for l in range(0, len(df), 1000):
-            df[l:l+1000].to_sql('records', db, # schema='my_schema',
+        for l in range(0, len(df), 100):
+            df[l:l+100].to_sql('records', db, # schema='my_schema',
                     if_exists='append',
                     index=False,
                     method=records_upsert)
