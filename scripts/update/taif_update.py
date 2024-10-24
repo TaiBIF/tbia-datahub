@@ -153,6 +153,7 @@ for p in range(current_page,total_page,10):
                 df.loc[i, 'verbatimLongitude'] = grid_data.get('standardLon')
             if grid_data.get('standardLat') or is_hidden:
                 df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
+            df.loc[i, 'dataQuality'] = calculate_data_quality(row)
         # # 屏蔽原始資料 - 林試所目前的敏感資料是全部屏蔽 grid_*_blurred就維持用-1_-1
         # 資料集
         ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')

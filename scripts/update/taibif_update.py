@@ -249,6 +249,7 @@ for d in dataset_list[d_list_index:]: # 20
                     df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
                     df.loc[i, 'grid_100'] = grid_data.get('grid_100')
                     df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
+                    df.loc[i, 'dataQuality'] = calculate_data_quality(row)
                 # 資料集
                 df['datasetURL'] = df['sourceDatasetID'].apply(lambda x: 'https://portal.taibif.tw/dataset/' + x if x else '')
                 ds_name = df[['datasetName','gbifDatasetID','sourceDatasetID','datasetURL']].drop_duplicates().to_dict(orient='records')

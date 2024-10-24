@@ -721,3 +721,25 @@ def update_media_rule(media_rule, rights_holder):
     cur.execute(query, (rights_holder, media_rule, now, now))
     conn.commit()
     conn.close()
+
+
+
+# 0: 未達標準
+# 1: 銅 scientificName, latitude, longitude 和 year。
+# 2: 銀 scientificName, latitude, longitude, year 和 coordinatesUncertaintyInMeters / coordinatePrecision 其一。
+# 3: 金 scientificName, latitude, longitude, year, month, coordinatesUncertaintyInMeters / coordinatePrecision 其一，以及 basisOfRecord。
+
+# 這邊sourceScientificName擴大到originalVernacularName
+
+def calculate_data_quality(row):
+    row = row.to_dict()
+    if (row.get('sourceScientificName') or row.get('originalVernacularName')) and (row.get('standardDate') or (row.get('year') and row.get('month'))) and ((row.get('standardLatitude') and row.get('standardLongitude')) or (row.get('standardRawLatitude') and row.get('standardRawLongitude'))) and (row.get('coordinatesUncertaintyInMeters') or row.get('coordinatePrecision')) and row.get('basisOfRecord'):
+        data_quality = 3
+    elif (row.get('sourceScientificName') or row.get('originalVernacularName')) and (row.get('standardDate') or row.get('year') )  and ((row.get('standardLatitude') and row.get('standardLongitude')) or (row.get('standardRawLatitude') and row.get('standardRawLongitude'))) and (row.get('coordinatesUncertaintyInMeters') or row.get('coordinatePrecision')):
+        data_quality = 2
+    elif (row.get('sourceScientificName') or row.get('originalVernacularName')) and (row.get('standardDate') or row.get('year') ) and ((row.get('standardLatitude') and row.get('standardLongitude')) or (row.get('standardRawLatitude') and row.get('standardRawLongitude'))):
+        data_quality = 1
+    else:
+        data_quality = 0
+    return data_quality
+

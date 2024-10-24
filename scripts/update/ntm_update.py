@@ -187,6 +187,7 @@ for d in dataset_list[d_list_index:]:
                     df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
                     df.loc[i, 'grid_100'] = grid_data.get('grid_100')
                     df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
+                    df.loc[i, 'dataQuality'] = calculate_data_quality(row)
                 # 更新match_log
                 # 更新資料
                 df['occurrenceID'] = df['occurrenceID'].astype('str')

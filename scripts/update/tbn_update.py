@@ -238,6 +238,7 @@ for url in url_list[url_index:]:
                     df.loc[i, 'verbatimLongitude'] = grid_data.get('standardLon')
                 if grid_data.get('standardLat') or is_hidden:
                     df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
+                df.loc[i, 'dataQuality'] = calculate_data_quality(row)
             # 更新match_log
             # 更新資料
             df['occurrenceID'] = df['occurrenceID'].astype('str')

@@ -159,6 +159,7 @@ for p in range(current_page,total_page,10):
             df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
             df.loc[i, 'grid_100'] = grid_data.get('grid_100')
             df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
+            df.loc[i, 'dataQuality'] = calculate_data_quality(row)
         # 資料集
         ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
         # return tbiaDatasetID 並加上去

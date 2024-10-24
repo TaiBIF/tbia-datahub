@@ -187,6 +187,7 @@ for p in range(current_page,total_page,10):
                 df.loc[i, 'verbatimLongitude'] = grid_data.get('standardLon')
             if grid_data.get('standardLat') or is_hidden:
                 df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
+            df.loc[i, 'dataQuality'] = calculate_data_quality(row)
         # 資料集
         ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
         # return tbiaDatasetID 並加上去
