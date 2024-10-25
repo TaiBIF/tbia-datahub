@@ -194,6 +194,12 @@ for d in dataset_list[d_list_index:]: # 20
                     # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
                     df.loc[i,'id'] = str(bson.objectid.ObjectId())
                     row = df.loc[i]
+                    if (not row.get('year') or math.isnan(row.get('year'))) and row.get('standardDate'):
+                        df.loc[i, 'year'] = row.get('standardDate').year
+                    if (not row.get('month') or math.isnan(row.get('month'))) and row.get('standardDate'):
+                        df.loc[i, 'month'] = row.get('standardDate').month
+                    if (not row.get('day') or math.isnan(row.get('day'))) and row.get('standardDate'):
+                        df.loc[i, 'day'] = row.get('standardDate').day
                     # basisOfRecord 有可能是空值
                     if row.basisOfRecord:
                         if 'Specimen' in row.basisOfRecord:
@@ -224,7 +230,7 @@ for d in dataset_list[d_list_index:]: # 20
                     df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
                     df.loc[i, 'grid_100'] = grid_data.get('grid_100')
                     df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
-                    df.loc[i, 'dataQuality'] = calculate_data_quality(row)
+                df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
                 # 資料集
                 df['datasetURL'] = df['gbifDatasetID'].apply(lambda x: 'https://www.gbif.org/dataset/' + x if x else '')
                 ds_name = df[['datasetName','recordType','gbifDatasetID','sourceDatasetID', 'datasetURL']].drop_duplicates().to_dict(orient='records')

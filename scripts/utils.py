@@ -732,7 +732,7 @@ def update_media_rule(media_rule, rights_holder):
 # 這邊sourceScientificName擴大到originalVernacularName
 
 def calculate_data_quality(row):
-    row = row.to_dict()
+    # row = row.to_dict()
     if (row.get('sourceScientificName') or row.get('originalVernacularName')) and (row.get('standardDate') or (row.get('year') and row.get('month'))) and ((row.get('standardLatitude') and row.get('standardLongitude')) or (row.get('standardRawLatitude') and row.get('standardRawLongitude'))) and (row.get('coordinatesUncertaintyInMeters') or row.get('coordinatePrecision')) and row.get('basisOfRecord'):
         data_quality = 3
     elif (row.get('sourceScientificName') or row.get('originalVernacularName')) and (row.get('standardDate') or row.get('year') )  and ((row.get('standardLatitude') and row.get('standardLongitude')) or (row.get('standardRawLatitude') and row.get('standardRawLongitude'))) and (row.get('coordinatesUncertaintyInMeters') or row.get('coordinatePrecision')):

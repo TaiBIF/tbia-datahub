@@ -194,6 +194,12 @@ for url in url_list[url_index:]:
                 # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
                 df.loc[i,'id'] = str(bson.objectid.ObjectId())
                 row = df.loc[i]
+                if (not row.get('year') or math.isnan(row.get('year'))) and row.get('standardDate'):
+                    df.loc[i, 'year'] = row.get('standardDate').year
+                if (not row.get('month') or math.isnan(row.get('month'))) and row.get('standardDate'):
+                    df.loc[i, 'month'] = row.get('standardDate').month
+                if (not row.get('day') or math.isnan(row.get('day'))) and row.get('standardDate'):
+                    df.loc[i, 'day'] = row.get('standardDate').day
                 # 如果有mediaLicense才放associatedMedia
                 if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
                     if not row.mediaLicense:
@@ -238,7 +244,7 @@ for url in url_list[url_index:]:
                     df.loc[i, 'verbatimLongitude'] = grid_data.get('standardLon')
                 if grid_data.get('standardLat') or is_hidden:
                     df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
-                df.loc[i, 'dataQuality'] = calculate_data_quality(row)
+            df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
             # 更新match_log
             # 更新資料
             df['occurrenceID'] = df['occurrenceID'].astype('str')

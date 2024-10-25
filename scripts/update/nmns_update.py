@@ -178,6 +178,12 @@ for now_category in category_list[category_index:]:
                     # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
                     df.loc[i,'id'] = str(bson.objectid.ObjectId())
                     row = df.loc[i]
+                    if (not row.get('year') or math.isnan(row.get('year'))) and row.get('standardDate'):
+                        df.loc[i, 'year'] = row.get('standardDate').year
+                    if (not row.get('month') or math.isnan(row.get('month'))) and row.get('standardDate'):
+                        df.loc[i, 'month'] = row.get('standardDate').month
+                    if (not row.get('day') or math.isnan(row.get('day'))) and row.get('standardDate'):
+                        df.loc[i, 'day'] = row.get('standardDate').day
                     # 在這邊處理出現地的問題
                     locality_list = []
                     for locality_ in ['locality', 'locality_1', 'locality_2', 'locality_3']:
@@ -192,7 +198,7 @@ for now_category in category_list[category_index:]:
                             media_rule = get_media_rule(df.loc[i, 'associatedMedia'])
                             if media_rule and media_rule not in media_rule_list:
                                 media_rule_list.append(media_rule)
-                    df.loc[i, 'dataQuality'] = calculate_data_quality(row)
+                df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
                     # 目前沒有經緯度資料
                 # 資料集
                 ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
