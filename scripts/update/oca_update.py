@@ -354,6 +354,7 @@ for i in df.index:
     if grid_data.get('standardLat') or is_hidden:
         df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
 
+df = df.replace({nan: None})
 df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
 
 

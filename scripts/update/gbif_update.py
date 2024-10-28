@@ -230,6 +230,7 @@ for d in dataset_list[d_list_index:]: # 20
                     df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
                     df.loc[i, 'grid_100'] = grid_data.get('grid_100')
                     df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
+                df = df.replace({nan: None})
                 df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
                 # 資料集
                 df['datasetURL'] = df['gbifDatasetID'].apply(lambda x: 'https://www.gbif.org/dataset/' + x if x else '')

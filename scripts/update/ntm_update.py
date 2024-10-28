@@ -193,6 +193,7 @@ for d in dataset_list[d_list_index:]:
                     df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
                     df.loc[i, 'grid_100'] = grid_data.get('grid_100')
                     df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
+                df = df.replace({nan: None})
                 df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
                 # 更新match_log
                 # 更新資料

@@ -244,6 +244,7 @@ for url in url_list[url_index:]:
                     df.loc[i, 'verbatimLongitude'] = grid_data.get('standardLon')
                 if grid_data.get('standardLat') or is_hidden:
                     df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
+            df = df.replace({nan: None})
             df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
             # 更新match_log
             # 更新資料

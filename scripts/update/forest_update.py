@@ -166,6 +166,7 @@ for p in range(current_page,total_page,10):
                 df.loc[i, 'verbatimLongitude'] = grid_data.get('standardLon')
             if grid_data.get('standardLat'):
                 df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
+        df = df.replace({nan: None})
         df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
         # 資料集
         ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')

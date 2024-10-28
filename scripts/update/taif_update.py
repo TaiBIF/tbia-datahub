@@ -159,6 +159,7 @@ for p in range(current_page,total_page,10):
                 df.loc[i, 'verbatimLongitude'] = grid_data.get('standardLon')
             if grid_data.get('standardLat') or is_hidden:
                 df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
+        df = df.replace({nan: None})
         df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
         # # 屏蔽原始資料 - 林試所目前的敏感資料是全部屏蔽 grid_*_blurred就維持用-1_-1
         # 資料集

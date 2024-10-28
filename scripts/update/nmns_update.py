@@ -198,6 +198,7 @@ for now_category in category_list[category_index:]:
                             media_rule = get_media_rule(df.loc[i, 'associatedMedia'])
                             if media_rule and media_rule not in media_rule_list:
                                 media_rule_list.append(media_rule)
+                df = df.replace({nan: None})
                 df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
                     # 目前沒有經緯度資料
                 # 資料集
