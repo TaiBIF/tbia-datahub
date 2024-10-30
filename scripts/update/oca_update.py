@@ -301,15 +301,17 @@ df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standard
 
 df['id'] = ''
 
+
+
 media_rule_list = []
 for i in df.index:
     df.loc[i,'id'] = str(bson.objectid.ObjectId())
     row = df.loc[i]
-    if (not row.get('year') or math.isnan(row.get('year'))) and row.get('standardDate'):
+    if not row.get('year') and row.get('standardDate'):
         df.loc[i, 'year'] = row.get('standardDate').year
-    if (not row.get('month') or math.isnan(row.get('month'))) and row.get('standardDate'):
+    if not row.get('month') and row.get('standardDate'):
         df.loc[i, 'month'] = row.get('standardDate').month
-    if (not row.get('day') or math.isnan(row.get('day'))) and row.get('standardDate'):
+    if not row.get('day') and row.get('standardDate'):
         df.loc[i, 'day'] = row.get('standardDate').day
     # 如果有mediaLicense才放associatedMedia
     if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
