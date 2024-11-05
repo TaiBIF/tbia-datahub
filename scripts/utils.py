@@ -151,7 +151,7 @@ def get_existed_records(occ_ids, rights_holder, get_reference=False, cata_ids=[]
         existed_records = existed_records.rename(columns={'id': 'tbiaID'})
         # 排除掉一個occurrenceID對到多個tbiaID的情況
         # 這邊要多考慮catalogNumber的情況
-        for kk in ['occurrenceID', 'catalogNumber']:
+        for kk in ['occurrenceID', 'catalogNumber', 'references']:
             if kk not in existed_records.keys():
                 existed_records[kk] = ''
         existed_records = existed_records.replace({np.nan: '', None: ''})
@@ -165,7 +165,10 @@ def get_existed_records(occ_ids, rights_holder, get_reference=False, cata_ids=[]
         # existed_records = existed_records[existed_records.tbiaID.isin(a.tbiaID.to_list())]
         existed_records = existed_records.merge(a)
         existed_records = existed_records.reset_index(drop=True)
-        existed_records = existed_records[['tbiaID', 'occurrenceID', 'catalogNumber']]
+        if get_reference:
+            existed_records = existed_records[['tbiaID', 'occurrenceID', 'catalogNumber', 'references']]
+        else:
+            existed_records = existed_records[['tbiaID', 'occurrenceID', 'catalogNumber']]
     else:
         # existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID','datasetName'])
         existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
