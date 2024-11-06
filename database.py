@@ -55,7 +55,7 @@ class Records(Base):
     update_version: Mapped[Optional[int]] = mapped_column(server_default='0', index=True)
     associatedMedia: Mapped[Optional[str]] = mapped_column(String(10000))
     basisOfRecord: Mapped[Optional[str]] = mapped_column(String(10000))
-    catalogNumber: Mapped[Optional[str]] = mapped_column(String(10000))
+    catalogNumber: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     coordinatePrecision: Mapped[Optional[str]] = mapped_column(String(10000))
     coordinateUncertaintyInMeters: Mapped[Optional[str]] = mapped_column(String(10000))
     created: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
@@ -123,7 +123,7 @@ class Records(Base):
     sourceFamily: Mapped[Optional[str]] = mapped_column(String(10000))
     sourceOrder: Mapped[Optional[str]] = mapped_column(String(10000))
     sourceClass: Mapped[Optional[str]] = mapped_column(String(10000))
-    # 日期改存年月日
+    # 日期改存年月日 (pending)
     standardYear: Mapped[Optional[float]]
     standardMonth: Mapped[Optional[float]]
     standardDay: Mapped[Optional[float]]
@@ -134,6 +134,8 @@ class Records(Base):
     is_deleted: Mapped[bool] = mapped_column(server_default='f', index=True)
     sourceDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True, server_default='')
     tbiaDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True, server_default='') # 202404 目前是對到Dataset表的id
+
+    dataQuality: Mapped[Optional[int]]
 
     __table_args__ = (
         UniqueConstraint('tbiaID',name='records_unique'),
