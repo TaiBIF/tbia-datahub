@@ -309,7 +309,6 @@ class Dataset(Base):
     
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(10000), index=True)
-    datasetTaxonGroup: Mapped[Optional[str]] = mapped_column(String(10000))
     resourceContacts: Mapped[Optional[str]] = mapped_column(String(10000))
     record_type: Mapped[Optional[str]] = mapped_column(String(20), index=True) # 多值以逗號合併
     rights_holder:  Mapped[Optional[str]] = mapped_column(String(10000), index=True)
@@ -317,12 +316,17 @@ class Dataset(Base):
     sourceDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True, server_default='')
     gbifDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True, server_default='')
     tbiaDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True, server_default='') 
-    dateCoverage: Mapped[Optional[str]] = mapped_column(String(10000))
+    # datasetDateCoverage: Mapped[Optional[str]] = mapped_column(String(10000)) # 回傳時再用下面兩個欄位組合就好
+    datasetDateStart: Mapped[Optional[str]] = mapped_column(String(10000)) # 涵蓋時間 - 始
+    datasetDateEnd: Mapped[Optional[str]] = mapped_column(String(10000)) # 涵蓋時間 - 末
     occurrenceCount: Mapped[Optional[int]] = mapped_column(server_default='0')
-    datasetAuthor: Mapped[Optional[str]] = mapped_column(String(10000))
+    # datasetAuthor: Mapped[Optional[str]] = mapped_column(String(10000))
     datasetURL: Mapped[Optional[str]] = mapped_column(String(10000))
     datasetLicense: Mapped[Optional[str]] = mapped_column(String(10000))
     datasetPublisher: Mapped[Optional[str]] = mapped_column(String(10000))
+    datasetTaxonGroup: Mapped[Optional[str]] = mapped_column(String(10000)) # 只存類群文字
+    datasetTaxonStat: Mapped[Optional[str]] = mapped_column(JSON) # 包含類群+count
+
     created: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     modified: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     update_version: Mapped[Optional[int]] = mapped_column(server_default='0', index=True)
