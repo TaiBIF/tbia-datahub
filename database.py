@@ -309,6 +309,7 @@ class Dataset(Base):
     
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(10000), index=True)
+    group: Mapped[Optional[str]] = mapped_column(String(50), index=True)
     resourceContacts: Mapped[Optional[str]] = mapped_column(String(10000))
     record_type: Mapped[Optional[str]] = mapped_column(String(20), index=True) # 多值以逗號合併
     rights_holder:  Mapped[Optional[str]] = mapped_column(String(10000), index=True)
@@ -330,6 +331,7 @@ class Dataset(Base):
     created: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     modified: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     update_version: Mapped[Optional[int]] = mapped_column(server_default='0', index=True)
+    downloadCount: Mapped[Optional[int]] = mapped_column(server_default='0')
 
     __table_args__ = (
         UniqueConstraint('name','rights_holder','sourceDatasetID', name='dataset_unique'),
