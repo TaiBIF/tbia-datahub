@@ -454,9 +454,7 @@
 
   <field name="id" type="string" multiValued="false" indexed="true" required="true" stored="true"/> 
   <field name="name" type="string"/>
-
-  <field name="datasetTaxonGroup" type="string"/>
-  <field name="resourceContacts" type="string"/>
+  <field name="group" type="string"/>
   <field name="record_type" type="string"/>
   <field name="rights_holder" type="string"/>
   <field name="deprecated" type="boolean"/>
@@ -464,17 +462,24 @@
   <field name="sourceDatasetID" type="string"/>
   <field name="gbifDatasetID" type="string"/>
   <field name="tbiaDatasetID" type="string"/>
-  <field name="dateCoverage" type="string"/>
 
+  <field name="resourceContacts" type="string"/>
+  <field name="datasetDateStart" type="string"/>
+  <field name="datasetDateEnd" type="string"/>
   <field name="occurrenceCount" type="pdouble"/>
 
-  <field name="datasetAuthor" type="string"/>
   <field name="datasetURL" type="string"/>
   <field name="datasetLicense" type="string"/>
   <field name="datasetPublisher" type="string"/>
+  <field name="datasetTaxonGroup" type="string"/>
+  <field name="datasetTaxonStat" type="string"/>
 
   <field name="created" type="pdates"/>
   <field name="modified" type="pdates"/>
+
+  <!-- <field name="update_version" type="string"/> -->
+  <field name="downloadCount" type="string"/>
+
 
   <dynamicField name="*_txt_en_split_tight" type="text_en_splitting_tight" indexed="true" stored="true"/>
   <dynamicField name="*_descendent_path" type="descendent_path" indexed="true" stored="true"/>
