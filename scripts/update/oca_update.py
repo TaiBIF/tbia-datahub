@@ -238,11 +238,6 @@ for i in ocas.index:
             df['sourceVernacularName'] = df['sourceVernacularName'].replace({None: ''})
             df['sourceVernacularName'] = df.apply(lambda x: x.sourceVernacularName + ';' + x.物種俗名 if x.物種俗名 else x.sourceVernacularName, axis=1)
             df['sourceVernacularName'] = df['sourceVernacularName'].apply(lambda x: x.lstrip(';'))
-        # 如果有eventDate 則優先採用eventDate
-        if 'eventDate' in df.keys():
-            df['eventDate'] = df.apply(lambda x: f"{int(x.year)}-{int(x.month)}-{int(x.day)}" if not x.eventDate and x.year and x.month and x.day else x.eventDate, axis=1) 
-        else:
-            df['eventDate'] = df.apply(lambda x: f"{int(x.year)}-{int(x.month)}-{int(x.day)}" if x.year and x.month and x.day else None, axis=1) 
         df['datasetName'] = row.d_name
         # df = df[~(df.sourceVernacularName.isin([nan,'',None])&df.sourceScientificName.isin([nan,'',None]))] 
         drop_keys = [k for k in df.keys() if k in unused_keys]
@@ -291,8 +286,6 @@ df['license'] = 'CC0' # 因為是完全開放 所以直接帶入CC0
 if 'locality' in df.keys():
     df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
 
-# 日期
-df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))
 # 數量
 df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
 
@@ -307,12 +300,6 @@ media_rule_list = []
 for i in df.index:
     df.loc[i,'id'] = str(bson.objectid.ObjectId())
     row = df.loc[i]
-    if not row.get('year') and row.get('standardDate'):
-        df.loc[i, 'year'] = row.get('standardDate').year
-    if not row.get('month') and row.get('standardDate'):
-        df.loc[i, 'month'] = row.get('standardDate').month
-    if not row.get('day') and row.get('standardDate'):
-        df.loc[i, 'day'] = row.get('standardDate').day
     # 如果有mediaLicense才放associatedMedia
     if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
         if not row.mediaLicense:
@@ -336,9 +323,12 @@ for i in df.index:
         df.loc[i, 'sensitiveCategory'] = None
         is_hidden = False
     grid_data = create_blurred_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude, coordinatePrecision=None, is_full_hidden=is_hidden)
-    df.loc[i,'standardRawLongitude'] = grid_data.get('standardRawLon')
-    df.loc[i,'standardRawLatitude'] = grid_data.get('standardRawLat')
-    df.loc[i,'raw_location_rpt'] = grid_data.get('raw_location_rpt')
+    county, town = return_town(grid_data)
+    df.loc[i,'county'] = county
+    df.loc[i,'town'] = town
+    df.loc[i,'standardRawLongitude'] = grid_data.get('standardRawLon') if df.loc[i,'dataGeneralizations'] else None
+    df.loc[i,'standardRawLatitude'] = grid_data.get('standardRawLat') if df.loc[i,'dataGeneralizations'] else None
+    df.loc[i,'raw_location_rpt'] = grid_data.get('raw_location_rpt') if df.loc[i,'dataGeneralizations'] else None
     df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
     df.loc[i,'standardLatitude'] = grid_data.get('standardLat')
     df.loc[i,'location_rpt'] = grid_data.get('location_rpt')
@@ -355,6 +345,13 @@ for i in df.index:
         df.loc[i, 'verbatimLongitude'] = grid_data.get('standardLon')
     if grid_data.get('standardLat') or is_hidden:
         df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
+    # 日期
+    df.loc[i, ['eventDate','standardDate','year','month','day']] = convert_year_month_day(row)
+
+
+for d_col in ['year','month','day']:
+    if d_col in df.keys():
+        df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
 
 df = df.replace({nan: None})
 df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
@@ -440,7 +437,7 @@ update_update_version(is_finished=True, update_version=update_version, rights_ho
 update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
 
 # update dataset info
-update_dataset_info(rights_holder=rights_holder)
+# update_dataset_info(rights_holder=rights_holder)
 
 
 print('done!')

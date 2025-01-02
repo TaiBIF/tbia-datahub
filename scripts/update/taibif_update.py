@@ -56,77 +56,82 @@ else:
     dataset_list = note.get('dataset_list')
 
 
+
+# 改用id
+# partners = ['Taiwan Forestry Bureau', 
+#            'Taiwan Endemic Species Research Institute',  
+#             'Taiwan Forestry Research Institute',
+#             'Marine National Park Headquarters', 
+#             'Yushan National Park Headquarters', 
+#             'National Taiwan Museum', 
+#             'Water Resources Agency,Ministry of Economic Affairs']
+partners = ['6ddd1cf5-0655-44ac-a572-cb581a054992', # 林保署
+            '7c07cec1-2925-443c-81f1-333e4187bdea', # 生多所
+            '898ba450-1627-11df-bd84-b8a03c50a862', # 林試所
+            '7f2ff82e-193e-48eb-8fb5-bad64c84782a', # 國家公園
+            'f40c7fe5-e64a-450c-b229-21d674ef3c28', # 國家公園
+            'c57cd401-ff9e-43bd-9403-089b88a97dea', # 台博館
+            'b6b89e2d-e881-41f3-bc57-213815cb9742'] # 水利署
+# 排除重複資料集
+# 單位間
+# 改用id
+# duplicated_dataset_list = ['Database of Native Plants in Taiwan',
+#                             # 'Digital Archives of Taiwan Malacofauna Database',
+#                             # 'ntou_db',
+#                             # 'nthu_db',
+#                             'The Fish Database of Taiwan',
+#                             'A dataset from bottom trawl survey around Taiwan',
+#                             'National Museum of Natural Science',
+#                             # 'taijiang_national_park_beamtrawling_2016-2018', 確認後不排除
+#                             '珊瑚健康指標之建立與保護區管理應用: 以墾丁國家公園珊瑚礁生態系為例 ',
+#                             '國家公園生物多樣性資料流通(2015)',
+#                             '國家公園生物資訊流通(2014)',
+#                             '國家公園資料集',
+#                             'national_parts_taiwan-2016',
+#                             # 'National vegetation diversity inventory and mapping plan',  確認後不排除
+#                             'National Taiwan Museum']
+duplicated_dataset_list = [
+    '36c38933-a03b-4f8b-9ba3-6987e5528179',
+    '489b921b-88fe-40ca-9efc-dbb3270bfa9e',
+    'ec70c946-482c-4e10-ab56-9e190c9d40f9',
+    'fddbabb3-7386-4a1c-a086-f12bbabe9eb6',
+    '44a761b5-5adf-4b67-adad-c5ae04637fb9',
+    '06b55da4-bfb9-453d-be18-a1d1ae68ed5d',
+    '836a5bd1-d440-4ebd-bb1e-0d83f91bd21a',
+    'af48a08e-f523-443d-9d4d-505a01be11a4',
+    '07b06590-6ecc-489e-a565-73c1f2081a02',
+    '73f63477-81be-4661-8d71-003597a701c0',
+    'e7b6eb08-1380-40c7-9a2e-60d2ac9b00c2',
+    'c6552cda-cdb3-4711-84c1-347c6fe8ba86',
+]
+# 單位內
+# duplicated_dataset_list += ['tad_db']
+duplicated_dataset_list += ['6e54a298-6358-4994-ae50-df9a8dd4efc6']
+# 取得所有台灣發布者
+url = "https://portal.taibif.tw/api/v2/publisher?countryCode=TW"
+response = requests.get(url)
+if response.status_code == 200:
+    data = response.json()
+    pub = pd.DataFrame(data)
+    pub = pub[~pub.publisherID.isin(partners)]
+
+    
+dataset_list = []
+# 取得所有資料集
+url = "https://portal.taibif.tw/api/v2/dataset"
+response = requests.get(url)
+if response.status_code == 200:
+    data = response.json()
+    dataset = pd.DataFrame(data)
+    dataset = dataset[dataset.source!='GBIF']
+    dataset = dataset[dataset.core.isin(['OCCURRENCE','SAMPLINGEVENT'])]
+    # dataset = dataset[~dataset.publisherID.isin(pub[pub.publisherName.isin(partners)].publisherID.to_list())]
+    dataset = dataset[dataset.publisherID.isin(pub.publisherID.to_list())]
+    dataset = dataset[~dataset.taibifDatasetID.isin(duplicated_dataset_list)]
+    dataset = dataset.rename(columns={'publisherName': 'datasetPublisher', 'license': 'datasetLicense'})
+
 if not dataset_list:
-    # 改用id
-    # partners = ['Taiwan Forestry Bureau', 
-    #            'Taiwan Endemic Species Research Institute',  
-    #             'Taiwan Forestry Research Institute',
-    #             'Marine National Park Headquarters', 
-    #             'Yushan National Park Headquarters', 
-    #             'National Taiwan Museum', 
-    #             'Water Resources Agency,Ministry of Economic Affairs']
-    partners = ['6ddd1cf5-0655-44ac-a572-cb581a054992', # 林保署
-                '7c07cec1-2925-443c-81f1-333e4187bdea', # 生多所
-                '898ba450-1627-11df-bd84-b8a03c50a862', # 林試所
-                '7f2ff82e-193e-48eb-8fb5-bad64c84782a', # 國家公園
-                'f40c7fe5-e64a-450c-b229-21d674ef3c28', # 國家公園
-                'c57cd401-ff9e-43bd-9403-089b88a97dea', # 台博館
-                'b6b89e2d-e881-41f3-bc57-213815cb9742'] # 水利署
-    # 排除重複資料集
-    # 單位間
-    # 改用id
-    # duplicated_dataset_list = ['Database of Native Plants in Taiwan',
-    #                             # 'Digital Archives of Taiwan Malacofauna Database',
-    #                             # 'ntou_db',
-    #                             # 'nthu_db',
-    #                             'The Fish Database of Taiwan',
-    #                             'A dataset from bottom trawl survey around Taiwan',
-    #                             'National Museum of Natural Science',
-    #                             # 'taijiang_national_park_beamtrawling_2016-2018', 確認後不排除
-    #                             '珊瑚健康指標之建立與保護區管理應用: 以墾丁國家公園珊瑚礁生態系為例 ',
-    #                             '國家公園生物多樣性資料流通(2015)',
-    #                             '國家公園生物資訊流通(2014)',
-    #                             '國家公園資料集',
-    #                             'national_parts_taiwan-2016',
-    #                             # 'National vegetation diversity inventory and mapping plan',  確認後不排除
-    #                             'National Taiwan Museum']
-    duplicated_dataset_list = [
-        '36c38933-a03b-4f8b-9ba3-6987e5528179',
-        '489b921b-88fe-40ca-9efc-dbb3270bfa9e',
-        'ec70c946-482c-4e10-ab56-9e190c9d40f9',
-        'fddbabb3-7386-4a1c-a086-f12bbabe9eb6',
-        '44a761b5-5adf-4b67-adad-c5ae04637fb9',
-        '06b55da4-bfb9-453d-be18-a1d1ae68ed5d',
-        '836a5bd1-d440-4ebd-bb1e-0d83f91bd21a',
-        'af48a08e-f523-443d-9d4d-505a01be11a4',
-        '07b06590-6ecc-489e-a565-73c1f2081a02',
-        '73f63477-81be-4661-8d71-003597a701c0',
-        'e7b6eb08-1380-40c7-9a2e-60d2ac9b00c2',
-        'c6552cda-cdb3-4711-84c1-347c6fe8ba86',
-    ]
-    # 單位內
-    # duplicated_dataset_list += ['tad_db']
-    duplicated_dataset_list += ['6e54a298-6358-4994-ae50-df9a8dd4efc6']
-    # 取得所有台灣發布者
-    url = "https://portal.taibif.tw/api/v2/publisher?countryCode=TW"
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()
-        pub = pd.DataFrame(data)
-        pub = pub[~pub.publisherID.isin(partners)]
-    dataset_list = []
-    # 取得所有資料集
-    url = "https://portal.taibif.tw/api/v2/dataset"
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()
-        dataset = pd.DataFrame(data)
-        dataset = dataset[dataset.source!='GBIF']
-        dataset = dataset[dataset.core.isin(['OCCURRENCE','SAMPLINGEVENT'])]
-        # dataset = dataset[~dataset.publisherID.isin(pub[pub.publisherName.isin(partners)].publisherID.to_list())]
-        dataset = dataset[dataset.publisherID.isin(pub.publisherID.to_list())]
-        dataset = dataset[~dataset.taibifDatasetID.isin(duplicated_dataset_list)]
-        dataset_list = dataset[['taibifDatasetID','numberOccurrence']].to_dict('tight')['data']
+    dataset_list = dataset[['taibifDatasetID','numberOccurrence']].to_dict('tight')['data']
 
 
 now = datetime.now() + timedelta(hours=8)
@@ -179,7 +184,7 @@ for d in dataset_list[d_list_index:]: # 20
             if 'sensitiveCategory' in df.keys():
                 df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
             if 'license' in df.keys():
-                df = df[(df.license!='')&(~df.license.str.contains('BY NC ND|BY-NC-ND',regex=True))]
+                df = df[(df.license!='')&(~df.license.str.contains('ND|nd',regex=True))]
             else:
                 df = []
             # df = df[~(df.sourceVernacularName.isin([nan,'',None])&df.sourceScientificName.isin([nan,'',None]))]
@@ -208,8 +213,6 @@ for d in dataset_list[d_list_index:]: # 20
                 # 出現地
                 if 'locality' in df.keys():
                     df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
-                # 日期
-                df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))
                 # 數量 
                 df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
                 # dataGeneralizations
@@ -220,12 +223,6 @@ for d in dataset_list[d_list_index:]: # 20
                     # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
                     df.loc[i,'id'] = str(bson.objectid.ObjectId())
                     row = df.loc[i]
-                    if (not row.get('year') or math.isnan(row.get('year'))) and row.get('standardDate'):
-                        df.loc[i, 'year'] = row.get('standardDate').year
-                    if (not row.get('month') or math.isnan(row.get('month'))) and row.get('standardDate'):
-                        df.loc[i, 'month'] = row.get('standardDate').month
-                    if (not row.get('day') or math.isnan(row.get('day'))) and row.get('standardDate'):
-                        df.loc[i, 'day'] = row.get('standardDate').day
                     # basisOfRecord 有可能是空值
                     if row.basisOfRecord:
                         if 'Specimen' in row.basisOfRecord:
@@ -244,6 +241,9 @@ for d in dataset_list[d_list_index:]: # 20
                             if media_rule and media_rule not in media_rule_list:
                                 media_rule_list.append(media_rule)
                     grid_data = create_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude)
+                    county, town = return_town(grid_data)
+                    df.loc[i,'county'] = county
+                    df.loc[i,'town'] = town
                     df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
                     df.loc[i,'standardLatitude'] = grid_data.get('standardLat')
                     df.loc[i,'location_rpt'] = grid_data.get('location_rpt')
@@ -255,11 +255,18 @@ for d in dataset_list[d_list_index:]: # 20
                     df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
                     df.loc[i, 'grid_100'] = grid_data.get('grid_100')
                     df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
+                    # 日期
+                    df.loc[i, ['eventDate','standardDate','year','month','day']] = convert_year_month_day(row)
+                for d_col in ['year','month','day']:
+                    if d_col in df.keys():
+                        df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
                 df = df.replace({nan: None})
                 df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
                 # 資料集
                 df['datasetURL'] = df['sourceDatasetID'].apply(lambda x: 'https://portal.taibif.tw/dataset/' + x if x else '')
-                ds_name = df[['datasetName','gbifDatasetID','sourceDatasetID','datasetURL']].drop_duplicates().to_dict(orient='records')
+                ds_name = df[['datasetName','gbifDatasetID','sourceDatasetID','datasetURL']]
+                ds_name = ds_name.merge(dataset[['taibifDatasetID','datasetPublisher','datasetLicense']], left_on='sourceDatasetID', right_on='taibifDatasetID')
+                ds_name = ds_name.drop_duplicates().to_dict(orient='records')
                 # return tbiaDatasetID 並加上去
                 return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
                 df = df.merge(return_dataset_id)
@@ -327,7 +334,7 @@ update_update_version(is_finished=True, update_version=update_version, rights_ho
 update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
 
 # update dataset info
-update_dataset_info(rights_holder=rights_holder)
+# update_dataset_info(rights_holder=rights_holder)
 
 
 print('done!')

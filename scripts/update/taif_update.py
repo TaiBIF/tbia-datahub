@@ -83,7 +83,7 @@ for p in range(current_page,total_page,10):
     if 'sensitiveCategory' in df.keys():
         df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
     if 'license' in df.keys():
-        df = df[(df.license!='')&(~df.license.str.contains('BY NC ND|BY-NC-ND',regex=True))]
+        df = df[(df.license!='')&(~df.license.str.contains('ND|nd',regex=True))]
     else:
         df = []
     media_rule_list = []
@@ -111,8 +111,6 @@ for p in range(current_page,total_page,10):
         # 出現地
         if 'locality' in df.keys():
             df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
-        # 日期
-        df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))
         # 數量 
         if 'organismQuantity' in df.keys():
             df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
@@ -123,12 +121,6 @@ for p in range(current_page,total_page,10):
             # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
             df.loc[i,'id'] = str(bson.objectid.ObjectId())
             row = df.loc[i]
-            if (not row.get('year') or math.isnan(row.get('year'))) and row.get('standardDate'):
-                df.loc[i, 'year'] = row.get('standardDate').year
-            if (not row.get('month') or math.isnan(row.get('month'))) and row.get('standardDate'):
-                df.loc[i, 'month'] = row.get('standardDate').month
-            if (not row.get('day') or math.isnan(row.get('day'))) and row.get('standardDate'):
-                df.loc[i, 'day'] = row.get('standardDate').day
             # 如果有mediaLicense才放associatedMedia
             if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
                 if not row.mediaLicense:
@@ -140,9 +132,14 @@ for p in range(current_page,total_page,10):
             # 幫忙補dataGeneralizations
             is_hidden = True
             grid_data = create_blurred_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude, coordinatePrecision=None, is_full_hidden=is_hidden)
+            county, town = return_town(grid_data)
+            df.loc[i,'county'] = county
+            df.loc[i,'town'] = town
+            # 一定有模糊化
             df.loc[i,'standardRawLongitude'] = grid_data.get('standardRawLon')
             df.loc[i,'standardRawLatitude'] = grid_data.get('standardRawLat')
             df.loc[i,'raw_location_rpt'] = grid_data.get('raw_location_rpt')
+            df.loc[i,'dataGeneralizations'] = True if grid_data.get('standardRawLon') or grid_data.get('standardRawLat') else None
             df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
             df.loc[i,'standardLatitude'] = grid_data.get('standardLat')
             df.loc[i,'location_rpt'] = grid_data.get('location_rpt')
@@ -159,6 +156,11 @@ for p in range(current_page,total_page,10):
                 df.loc[i, 'verbatimLongitude'] = grid_data.get('standardLon')
             if grid_data.get('standardLat') or is_hidden:
                 df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
+            # 日期
+            df.loc[i, ['eventDate','standardDate','year','month','day']] = convert_year_month_day(row)
+        for d_col in ['year','month','day']:
+            if d_col in df.keys():
+                df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
         df = df.replace({nan: None})
         df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
         # # 屏蔽原始資料 - 林試所目前的敏感資料是全部屏蔽 grid_*_blurred就維持用-1_-1
@@ -232,7 +234,7 @@ update_update_version(is_finished=True, update_version=update_version, rights_ho
 update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
 
 # update dataset info
-update_dataset_info(rights_holder=rights_holder)
+# update_dataset_info(rights_holder=rights_holder)
 
 
 print('done!')

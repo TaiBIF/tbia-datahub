@@ -105,7 +105,7 @@ for p in range(current_page,total_page,10):
     # 排除重複資料集
     df = df[~df.datasetName.isin(duplicated_dataset_list)]
     if 'license' in df.keys():
-        df = df[(df.license!='')&(~df.license.str.contains('BY NC ND|BY-NC-ND',regex=True))]
+        df = df[(df.license!='')&(~df.license.str.contains('ND|nd',regex=True))]
     else:
         df = []
     media_rule_list = []
@@ -130,8 +130,6 @@ for p in range(current_page,total_page,10):
         # 地點
         df['locality'] = df['locality'].apply(lambda x: locality_map[x] if x in locality_map.keys() else x)
         df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
-        # 日期
-        df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))
         # 數量 
         df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
         # basisOfRecord
@@ -139,16 +137,11 @@ for p in range(current_page,total_page,10):
         df['basisOfRecord'] = df['basisOfRecord'].apply(lambda x: control_basis_of_record(x))
         # dataGeneralizations 已標準化
         df['id'] = ''
+        df = df.replace({nan:None})
         for i in df.index:
             # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
             df.loc[i,'id'] = str(bson.objectid.ObjectId())
             row = df.loc[i]
-            if (not row.get('year') or math.isnan(row.get('year'))) and row.get('standardDate'):
-                df.loc[i, 'year'] = row.get('standardDate').year
-            if (not row.get('month') or math.isnan(row.get('month'))) and row.get('standardDate'):
-                df.loc[i, 'month'] = row.get('standardDate').month
-            if (not row.get('day') or math.isnan(row.get('day'))) and row.get('standardDate'):
-                df.loc[i, 'day'] = row.get('standardDate').day
             if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
                 if not row.mediaLicense:
                     df.loc[i,'associatedMedia'] = None
@@ -174,9 +167,12 @@ for p in range(current_page,total_page,10):
                 is_hidden = True
                 df.loc[i,'dataGeneralizations'] = True
             grid_data = create_blurred_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude, coordinatePrecision=coordinatePrecision, is_full_hidden=is_hidden)
-            df.loc[i,'standardRawLongitude'] = grid_data.get('standardRawLon')
-            df.loc[i,'standardRawLatitude'] = grid_data.get('standardRawLat')
-            df.loc[i,'raw_location_rpt'] = grid_data.get('raw_location_rpt')
+            county, town = return_town(grid_data)
+            df.loc[i,'county'] = county
+            df.loc[i,'town'] = town
+            df.loc[i,'standardRawLongitude'] = grid_data.get('standardRawLon') if df.loc[i,'dataGeneralizations'] else None
+            df.loc[i,'standardRawLatitude'] = grid_data.get('standardRawLat') if df.loc[i,'dataGeneralizations'] else None
+            df.loc[i,'raw_location_rpt'] = grid_data.get('raw_location_rpt') if df.loc[i,'dataGeneralizations'] else None
             df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
             df.loc[i,'standardLatitude'] = grid_data.get('standardLat')
             df.loc[i,'location_rpt'] = grid_data.get('location_rpt')
@@ -188,11 +184,16 @@ for p in range(current_page,total_page,10):
             df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
             df.loc[i, 'grid_100'] = grid_data.get('grid_100')
             df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
-            # TODO 這邊要考慮是不是本來就要完全屏蔽 不然有可能是無法轉換座標 就必須要顯示原始座標
+            # 這邊要考慮是不是本來就要完全屏蔽 不然有可能是無法轉換座標 就必須要顯示原始座標
             if grid_data.get('standardLon') or is_hidden:
                 df.loc[i, 'verbatimLongitude'] = grid_data.get('standardLon')
             if grid_data.get('standardLat') or is_hidden:
                 df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
+            # 日期
+            df.loc[i, ['eventDate','standardDate','year','month','day']] = convert_year_month_day(row)
+        for d_col in ['year','month','day']:
+            if d_col in df.keys():
+                df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
         df = df.replace({nan: None})
         df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
         # 資料集
@@ -264,7 +265,7 @@ update_update_version(is_finished=True, update_version=update_version, rights_ho
 update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
 
 # update dataset info
-update_dataset_info(rights_holder=rights_holder)
+# update_dataset_info(rights_holder=rights_holder)
 
 
 print('done!')

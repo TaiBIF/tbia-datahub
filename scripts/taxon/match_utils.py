@@ -27,7 +27,7 @@ rank_map = {
     'Nothosubspecies', 37: 'Variety', 38: 'Subvariety', 39: 'Nothovariety', 40: 'Form', 41: 'Subform', 42: 'Special Form', 43: 'Race', 44: 'Stirp', 45: 'Morph', 46: 'Aberration', 47: 'Hybrid Formula'}
 
 
-def match_name(matching_name, is_parent, match_stage, sci_names, source_family, source_class, source_order, sci_index):
+def match_name(matching_name, is_parent, match_stage, sci_names, source_family, source_class, source_order, sci_index, specific_rank):
     if matching_name:
         # 先確定是不是中文
         is_chinese = False
@@ -46,59 +46,80 @@ def match_name(matching_name, is_parent, match_stage, sci_names, source_family, 
                 filtered_rss = []
                 if len(filtered_rs):
                     # 排除掉同個taxonID但有不同name的情況
-                    filtered_rs = pd.DataFrame(filtered_rs)[['accepted_namecode','family','order','class','name_status','score']].drop_duplicates()
+                    filtered_rs = pd.DataFrame(filtered_rs)[['accepted_namecode','family','order','class','name_status','score','taxon_rank']].drop_duplicates()
+                    if specific_rank: # 這邊的rank都是小寫
+                        filtered_rs = filtered_rs[filtered_rs.taxon_rank==specific_rank]
                     # 如果有accepted，僅考慮accepted
                     if len(filtered_rs[filtered_rs.name_status=='accepted']):
                         filtered_rs = filtered_rs[filtered_rs.name_status=='accepted']
                     # 如果沒有accepted，但有not-accepted，僅考慮not-accepted
                     elif len(filtered_rs[filtered_rs.name_status=='not-accepted']):
                         filtered_rs = filtered_rs[filtered_rs.name_status=='not-accepted']
-                    filtered_rs = filtered_rs.drop(columns=['name_status'])
-                    filtered_rs = filtered_rs.to_dict(orient='records')
-                    # NomenMatch 有比對到有效taxon
-                    # 是否有上階層資訊
-                    has_parent = False
-                    if source_class or source_family or source_order:
-                        has_parent = True
-                    # 若有上階層資訊，加上比對上階層                    
-                    if has_parent:
-                        has_nm_parent = False # True代表有比對到
-                        for frs in filtered_rs:
-                            if frs.get('family') or frs.get('order') or frs.get('class'):
-                                if frs.get('family') == source_family or frs.get('class') == source_class or frs.get('order') == source_order:
-                                    filtered_rss.append(frs)
-                                    has_nm_parent = True                            # if t_rank in ['種','種下階層']: # 直接比對family
-                        # 如果有任何有nm上階層 且filtered_rss > 0 就代表有上階層比對成功的結果
-                        if has_nm_parent:
-                            if len(filtered_rss) == 1:
-                                # 根據NomenMatch給的score確認名字是不是完全一樣
-                                # 如果是中文有可能是0.95
-                                match_score = filtered_rss[0]['score']
-                                if is_chinese and match_score == 0.95:
-                                    match_score = 1
-                                if is_parent:
-                                    sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 1
-                                    # sci_names.loc[sci_names.sci_index==sci_index,'parentTaxonID'] = filtered_rss[0]['accepted_namecode']
-                                    sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rss[0]['accepted_namecode']
-                                    sci_names.loc[sci_names.sci_index==sci_index,'match_higher_taxon'] = True
-                                else:
-                                    if match_score < 1:
-                                        sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 3
+                    if len(filtered_rs):
+                        filtered_rs = filtered_rs.drop(columns=['name_status','taxon_rank'])
+                        filtered_rs = filtered_rs.to_dict(orient='records')
+                        # NomenMatch 有比對到有效taxon
+                        # 是否有上階層資訊
+                        has_parent = False
+                        if source_class or source_family or source_order:
+                            has_parent = True
+                        # 若有上階層資訊，加上比對上階層 
+                        if has_parent:
+                            has_nm_parent = False # True代表有比對到
+                            for frs in filtered_rs:
+                                if frs.get('family') or frs.get('order') or frs.get('class'):
+                                    if frs.get('family') == source_family or frs.get('class') == source_class or frs.get('order') == source_order:
+                                        filtered_rss.append(frs)
+                                        has_nm_parent = True                            # if t_rank in ['種','種下階層']: # 直接比對family
+                            # 如果有任何有nm上階層 且filtered_rss > 0 就代表有上階層比對成功的結果
+                            if has_nm_parent:
+                                if len(filtered_rss) == 1:
+                                    # 根據NomenMatch給的score確認名字是不是完全一樣
+                                    # 如果是中文有可能是0.95
+                                    match_score = filtered_rss[0]['score']
+                                    if is_chinese and match_score == 0.95:
+                                        match_score = 1
+                                    if is_parent:
+                                        sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 1
+                                        # sci_names.loc[sci_names.sci_index==sci_index,'parentTaxonID'] = filtered_rss[0]['accepted_namecode']
+                                        sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rss[0]['accepted_namecode']
+                                        sci_names.loc[sci_names.sci_index==sci_index,'match_higher_taxon'] = True
                                     else:
-                                        sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = None
-                                    sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rss[0]['accepted_namecode']
+                                        if match_score < 1:
+                                            sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 3
+                                        else:
+                                            sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = None
+                                        sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rss[0]['accepted_namecode']
+                                else:
+                                    sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 4
+                                    # sci_names.loc[((sci_names.scientificName==sci_name)&(sci_names.sourceVernacularName==original_name)),'more_than_one'] = True
                             else:
-                                sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 4
-                                # sci_names.loc[((sci_names.scientificName==sci_name)&(sci_names.sourceVernacularName==original_name)),'more_than_one'] = True
+                                # 如果沒有任何nm上階層的結果，則直接用filtered_rs
+                                if len(filtered_rs) == 1:
+                                    match_score = filtered_rs[0]['score']
+                                    if is_chinese and match_score == 0.95:
+                                        match_score = 1
+                                    if is_parent:
+                                        sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 1
+                                        # sci_names.loc[sci_names.sci_index==sci_index,'parentTaxonID'] = filtered_rs[0]['accepted_namecode']
+                                        sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rs[0]['accepted_namecode']
+                                        sci_names.loc[sci_names.sci_index==sci_index,'match_higher_taxon'] = True
+                                    else:
+                                        if match_score < 1:
+                                            sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 3
+                                        else:
+                                            sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = None
+                                        sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rs[0]['accepted_namecode']
+                                else:
+                                    sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 4
+                        # 若沒有上階層資訊，就直接取比對結果
                         else:
-                            # 如果沒有任何nm上階層的結果，則直接用filtered_rs
                             if len(filtered_rs) == 1:
                                 match_score = filtered_rs[0]['score']
                                 if is_chinese and match_score == 0.95:
                                     match_score = 1
                                 if is_parent:
                                     sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 1
-                                    # sci_names.loc[sci_names.sci_index==sci_index,'parentTaxonID'] = filtered_rs[0]['accepted_namecode']
                                     sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rs[0]['accepted_namecode']
                                     sci_names.loc[sci_names.sci_index==sci_index,'match_higher_taxon'] = True
                                 else:
@@ -109,24 +130,6 @@ def match_name(matching_name, is_parent, match_stage, sci_names, source_family, 
                                     sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rs[0]['accepted_namecode']
                             else:
                                 sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 4
-                    # 若沒有上階層資訊，就直接取比對結果
-                    else:
-                        if len(filtered_rs) == 1:
-                            match_score = filtered_rs[0]['score']
-                            if is_chinese and match_score == 0.95:
-                                match_score = 1
-                            if is_parent:
-                                sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 1
-                                sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rs[0]['accepted_namecode']
-                                sci_names.loc[sci_names.sci_index==sci_index,'match_higher_taxon'] = True
-                            else:
-                                if match_score < 1:
-                                    sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 3
-                                else:
-                                    sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = None
-                                sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rs[0]['accepted_namecode']
-                        else:
-                            sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 4
 
 
 def match_namecode(matching_namecode, match_stage, sci_names, sci_index):
@@ -185,7 +188,8 @@ def matching_flow(sci_names):
                        source_family=s_row.get('sourceFamily'), 
                        source_class=s_row.get('sourceClass'), 
                        source_order=s_row.get('sourceOrder'),
-                       sci_index=s_row.sci_index)
+                       sci_index=s_row.sci_index,
+                       specific_rank=None)
     ## 第二階段比對 沒有taxonID的 試抓TaiCOL namecode
     sci_names.loc[sci_names.taxonID=='','match_stage'] = 2
     no_taxon = sci_names[sci_names.taxonID=='']
@@ -212,8 +216,10 @@ def matching_flow(sci_names):
                                source_family=s_row.get('sourceFamily'), 
                                source_class=s_row.get('sourceClass'), 
                                source_order=s_row.get('sourceOrder'),
-                               sci_index=s_row.get('sci_index'))
+                               sci_index=s_row.get('sci_index'),
+                               specific_rank=None)
     ## 第四階段比對 - scientificName第一個英文單詞 (為了至少可以補階層)
+    ## 這邊要限定只能比對屬
     ## 這個情況要給的是parentTaxonID
     sci_names.loc[sci_names.taxonID=='','match_stage'] = 4
     no_taxon = sci_names[sci_names.taxonID=='']
@@ -228,7 +234,8 @@ def matching_flow(sci_names):
                            source_family=s_row.get('sourceFamily'), 
                            source_class=s_row.get('sourceClass'), 
                            source_order=s_row.get('sourceOrder'),
-                           sci_index=s_row.get('sci_index'))
+                           sci_index=s_row.get('sci_index'),
+                           specific_rank='genus')
     # 第五階段比對 - originalVernacularName (中文 / 英文)
     sci_names.loc[sci_names.taxonID=='','match_stage'] = 5
     no_taxon = sci_names[(sci_names.taxonID=='')]
@@ -242,7 +249,8 @@ def matching_flow(sci_names):
                         source_family=s_row.get('sourceFamily'), 
                         source_class=s_row.get('sourceClass'), 
                         source_order=s_row.get('sourceOrder'),
-                        sci_index=s_row.get('sci_index'))
+                        sci_index=s_row.get('sci_index'),
+                        specific_rank=None)
     # 第六階段比對 - sourceFamily
     sci_names.loc[sci_names.taxonID=='','match_stage'] = 6
     no_taxon = sci_names[(sci_names.taxonID=='')]
@@ -256,7 +264,8 @@ def matching_flow(sci_names):
                         source_family=s_row.get('sourceFamily'), 
                         source_class=s_row.get('sourceClass'), 
                         source_order=s_row.get('sourceOrder'),
-                        sci_index=s_row.get('sci_index'))
+                        sci_index=s_row.get('sci_index'),
+                        specific_rank='family')
     # 第七階段比對 - sourceOrder
     sci_names.loc[sci_names.taxonID=='','match_stage'] = 7
     no_taxon = sci_names[(sci_names.taxonID=='')]
@@ -270,7 +279,8 @@ def matching_flow(sci_names):
                         source_family=s_row.get('sourceFamily'), 
                         source_class=s_row.get('sourceClass'), 
                         source_order=s_row.get('sourceOrder'),
-                        sci_index=s_row.get('sci_index'))
+                        sci_index=s_row.get('sci_index'),
+                        specific_rank='order')
     # 第八階段比對 - sourceClass
     sci_names.loc[sci_names.taxonID=='','match_stage'] = 8
     no_taxon = sci_names[(sci_names.taxonID=='')]
@@ -284,7 +294,8 @@ def matching_flow(sci_names):
                         source_family=s_row.get('sourceFamily'), 
                         source_class=s_row.get('sourceClass'), 
                         source_order=s_row.get('sourceOrder'),
-                        sci_index=s_row.get('sci_index'))
+                        sci_index=s_row.get('sci_index'),
+                        specific_rank='class')
     # 確定match_stage
     stage_list = [1,2,3,4,5,6,7,8]
     for i in stage_list[:7]:

@@ -16,7 +16,11 @@ from dotenv import load_dotenv
 import os
 import subprocess
 import math
+from shapely.geometry import Point, Polygon
+import geopandas as gpd
 
+gdf = gpd.read_file('/bucket/TW_TOWN/TOWN_MOI_1131028.shp')
+gdf_ocean = gpd.read_file('/bucket/TW_TOWN_OCEAN/tw_map_o.shp')
 
 load_dotenv(override=True)
 
@@ -27,6 +31,38 @@ taicol_db_settings = {
     "user": os.getenv('TaiCOL_DB_USER'),
     "password": os.getenv('TaiCOL_DB_PASSWORD'),
     "database": os.getenv('TaiCOL_DB_DBNAME'),
+}
+
+
+rights_holder_map = {
+    'GBIF': 'gbif',
+    '中央研究院生物多樣性中心動物標本館': 'asiz',
+    '中央研究院生物多樣性中心植物標本資料庫': 'hast',
+    '台灣生物多樣性網絡 TBN': 'tbri',
+    '國立臺灣博物館典藏': 'ntm',
+    '林業試驗所昆蟲標本館': 'fact',
+    '林業試驗所植物標本資料庫': 'taif',
+    '河川環境資料庫': 'wra',
+    '濕地環境資料庫': 'nps',
+    '生態調查資料庫系統': 'forest',
+    '臺灣國家公園生物多樣性資料庫': 'nps',
+    '臺灣生物多樣性資訊機構 TaiBIF': 'brcas',
+    '海洋保育資料倉儲系統': 'oca',
+    '科博典藏 (NMNS Collection)': 'nmns',
+    '臺灣魚類資料庫': 'ascdc',
+}
+
+taxon_group_map = {
+    'Insects' : [{'key': 'class', 'value': 'Insecta'}],
+    'Fishes' : [{'key': 'superclass', 'value': 'Actinopterygii'},{'key': 'superclass', 'value': 'Chondrichthyes'},{'key': 'class', 'value': 'Myxini'}],
+    'Reptiles' : [{'key': 'class', 'value': 'Reptilia'}],
+    'Fungi' : [{'key': 'kingdom', 'value': 'Fungi'}],
+    'Plants' : [{'key': 'kingdom', 'value': 'Plantae'}],
+    'Birds' : [{'key': 'class', 'value': 'Aves'}],
+    'Mammals' : [{'key': 'class', 'value': 'Mammalia'}],
+    'Amphibians' : [{'key': 'class', 'value': 'Amphibia'}],
+    'Bacteria' : [{'key': 'kingdom', 'value': 'Bacteria'}],
+    'Others' : [{'key': 'class', 'value': ''}],
 }
 
 
@@ -57,8 +93,28 @@ basis_dict = {
     "調查活動": "Event",
     "材料引用": "MaterialCitation", # GBIF資料
     "組織樣本": "MaterialSample", # GBIF資料
-    "人類調查": "HumanObservation" # GBIF資料
-
+    "人類調查": "HumanObservation", # GBIF資料,
+    "Camera": "MachineObservation",
+    "CameraTrap": "MachineObservation",
+    "Event": "Event",
+    "FossilSpecimen": "FossilSpecimen",
+    "Human observation": "HumanObservation",
+    "HumanObeservation": "HumanObservation",
+    "HumanObservatio": "HumanObservation",
+    "HumanObservation": "HumanObservation",
+    "LivingSpecimen": "LivingSpecimen",
+    "MachineObservation": "MachineObservation",
+    "MachineObservation ": "MachineObservation",
+    "MachineObservation (機器觀測)": "MachineObservation",
+    "MaterialCitation": "MaterialCitation",
+    "MaterialSample": "MaterialSample",
+    "Occurrence": "Occurrence",
+    "PreservedSpecimen": "PreservedSpecimen",
+    "camera record": "MachineObservation",
+    "event": "Event",
+    "occurrence": "Occurrence",
+    "出現記錄": "Occurrence",
+    "機械觀測": "MachineObservation"
 }
 
 
@@ -229,7 +285,36 @@ def convert_date(date):
             formatted_year = formatted_date.year
             if str(formatted_year) not in date:
                 formatted_date = None
+            # 如果超過當下時間就拿掉
+            if formatted_date:
+                if formatted_date > datetime.now():
+                    formatted_date = None
     return formatted_date
+
+
+def convert_year_month_day(row):
+    eventDate = row.eventDate
+    standardDate, year, month, day = None, None, None, None
+    if standardDate := convert_date(eventDate):
+        year = standardDate.year
+        month = standardDate.month
+        day = standardDate.day
+    elif row.get('year') and row.get('month') and row.get('day'):
+        try:
+            year = int(row.get('year'))
+            month = int(row.get('month'))
+            day = int(row.get('day'))
+            if try_eventDate := convert_date('{}-{}-{}'.format(row.get('year'),row.get('month'),row.get('day'))):
+                year = try_eventDate.year
+                month = try_eventDate.month
+                day = try_eventDate.day
+                eventDate = '{}-{}-{}'.format(year,month,day)
+                standardDate = try_eventDate
+        except:
+            pass
+    return eventDate, standardDate, year, month, day
+
+
 
 
 # def convert_year_month_day():
@@ -322,8 +407,9 @@ def standardize_quantity(organismQuantity, individualCount=None):
 def control_basis_of_record(basisOfRecord):
     if basisOfRecord in basis_dict.keys():
         basisOfRecord = basis_dict[basisOfRecord]
+    else:
+        basisOfRecord = None
     return basisOfRecord
-
 
 def update_dataset_key(ds_name, rights_holder, update_version):
     # 202404 這邊不需要考慮record_type了
@@ -335,6 +421,8 @@ def update_dataset_key(ds_name, rights_holder, update_version):
         sourceDatasetID = r.get('sourceDatasetID', '')
         datasetURL = r.get('datasetURL')
         gbifDatasetID = r.get('gbifDatasetID')
+        datasetLicense = r.get('datasetLicense')
+        datasetPublisher = r.get('datasetPublisher')
         # 如果有sourceDatasetID 優先以 sourceDatasetID 更新
         # 但也有可能現在有sourceDatasetID 之前沒有
         if sourceDatasetID:
@@ -343,28 +431,30 @@ def update_dataset_key(ds_name, rights_holder, update_version):
                 BEGIN
                 IF EXISTS(SELECT * FROM dataset WHERE "sourceDatasetID" = %s AND rights_holder = %s )
                     THEN
-                        UPDATE dataset SET "name" = %s, "gbifDatasetID" = %s, "datasetURL" = %s, deprecated = %s, modified = %s, update_version = %s
-                            WHERE "sourceDatasetID" = %s AND rights_holder = %s;
+                        UPDATE dataset SET "name" = %s, "gbifDatasetID" = %s, "datasetURL" = %s, deprecated = %s, modified = %s, update_version = %s,
+                                           "datasetLicense" = %s, "datasetPublisher" = %s
+                                        WHERE "sourceDatasetID" = %s AND rights_holder = %s;
                 ELSIF EXISTS(SELECT * FROM dataset WHERE "name" = %s AND rights_holder = %s )
                     THEN
-                        UPDATE dataset SET "sourceDatasetID" = %s, "gbifDatasetID" = %s, "datasetURL" = %s, deprecated = %s, modified = %s, update_version = %s
-                            WHERE "name" = %s AND rights_holder = %s;
+                        UPDATE dataset SET "sourceDatasetID" = %s, "gbifDatasetID" = %s, "datasetURL" = %s, deprecated = %s, modified = %s, update_version = %s,
+                                           "datasetLicense" = %s, "datasetPublisher" = %s
+                                       WHERE "name" = %s AND rights_holder = %s;
                 ELSE 
                     INSERT INTO dataset ("rights_holder", "name", "sourceDatasetID", 
-                    "datasetURL","gbifDatasetID", "update_version", "deprecated", created, modified) 
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
+                    "datasetURL","gbifDatasetID", "update_version", "deprecated", created, modified, "datasetLicense", "datasetPublisher")
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                 END IF;
                 END $$;
             """
             cur = conn.cursor()
-            cur.execute(query, (sourceDatasetID, rights_holder, 
-                                r.get('datasetName'), gbifDatasetID, r.get('datasetURL'), False, now, update_version,
-                                sourceDatasetID, rights_holder, 
-                                r.get('datasetName'), rights_holder, 
-                                sourceDatasetID, gbifDatasetID, r.get('datasetURL'), False, now, update_version,
-                                r.get('datasetName'), rights_holder, 
-                                rights_holder, r.get('datasetName'),  sourceDatasetID, datasetURL,
-                                gbifDatasetID, update_version, False, now, now))
+            cur.execute(query, (sourceDatasetID, rights_holder, # condition
+                                r.get('datasetName'), gbifDatasetID, r.get('datasetURL'), False, now, update_version, datasetLicense, datasetPublisher, # update
+                                sourceDatasetID, rights_holder, # condition
+                                r.get('datasetName'), rights_holder, # condition
+                                sourceDatasetID, gbifDatasetID, r.get('datasetURL'), False, now, update_version, datasetLicense, datasetPublisher,  # update
+                                r.get('datasetName'), rights_holder, # condition
+                                rights_holder, r.get('datasetName'),  sourceDatasetID, datasetURL, # insert
+                                gbifDatasetID, update_version, False, now, now, datasetLicense, datasetPublisher,))
             conn.commit()
         else:
             # 如果沒有sourceDatasetID 以 datasetName 更新
@@ -373,21 +463,22 @@ def update_dataset_key(ds_name, rights_holder, update_version):
                 BEGIN
                 IF EXISTS(SELECT * FROM dataset WHERE "name" = %s AND rights_holder = %s ) 
                 THEN
-                    UPDATE dataset SET "sourceDatasetID" = %s, "gbifDatasetID" = %s, "datasetURL" = %s, deprecated = %s, modified = %s, update_version = %s
+                    UPDATE dataset SET "sourceDatasetID" = %s, "gbifDatasetID" = %s, "datasetURL" = %s, deprecated = %s, modified = %s, update_version = %s,
+                        "datasetLicense" = %s, "datasetPublisher" = %s
                         WHERE "name" = %s AND rights_holder = %s ;
                 ELSE 
                     INSERT INTO dataset ("rights_holder", "name", "sourceDatasetID", 
-                    "datasetURL","gbifDatasetID", "update_version", "deprecated", created, modified) 
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
+                    "datasetURL","gbifDatasetID", "update_version", "deprecated", created, modified, "datasetLicense", "datasetPublisher") 
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                 END IF;
                 END $$;
             """
             cur = conn.cursor()
             cur.execute(query, (r.get('datasetName'), rights_holder,  # condition
-                                r.get('sourceDatasetID'), gbifDatasetID, r.get('datasetURL'), False, now, update_version,  # update
+                                r.get('sourceDatasetID'), gbifDatasetID, r.get('datasetURL'), False, now, update_version, datasetLicense, datasetPublisher,  # update
                                 r.get('datasetName'), rights_holder,   # condition
                                 rights_holder, r.get('datasetName'),  sourceDatasetID, datasetURL,  # insert
-                                gbifDatasetID, update_version, False, now, now))
+                                gbifDatasetID, update_version, False, now, now, datasetLicense, datasetPublisher))
             conn.commit()
     dataset_ids = []
     query = '''SELECT id, "name", "sourceDatasetID" FROM dataset WHERE rights_holder = %s AND deprecated = 'f' ''';
@@ -402,30 +493,32 @@ def update_dataset_key(ds_name, rights_holder, update_version):
     return dataset_ids
 
 
-def update_dataset_info(rights_holder):
-    # 改成直接用records裡面的groupby
 
-    query = '''SELECT count(*), string_agg(distinct "resourceContacts", ','),
-                string_agg(distinct "recordType", ','), "tbiaDatasetID" FROM records WHERE  "rightsHolder" = %s
-                GROUP BY "tbiaDatasetID";
-            '''
+# deprecated
+# def update_dataset_info(rights_holder):
+#     # 改成直接用records裡面的groupby
+
+#     query = '''SELECT count(*), string_agg(distinct "resourceContacts", ','),
+#                 string_agg(distinct "recordType", ','), "tbiaDatasetID" FROM records WHERE  "rightsHolder" = %s
+#                 GROUP BY "tbiaDatasetID";
+#             '''
     
-    conn = psycopg2.connect(**db_settings)
+#     conn = psycopg2.connect(**db_settings)
 
-    with conn.cursor() as cursor:     
-        cursor.execute(query, (rights_holder,))
-        df = pd.DataFrame(cursor.fetchall(), columns=['occurrenceCount','resourceContacts', 'record_type', 'tbiaDatasetID'])
-        df = df.replace({np.nan: '', None: ''})
+#     with conn.cursor() as cursor:     
+#         cursor.execute(query, (rights_holder,))
+#         df = pd.DataFrame(cursor.fetchall(), columns=['occurrenceCount','resourceContacts', 'record_type', 'tbiaDatasetID'])
+#         df = df.replace({np.nan: '', None: ''})
 
-    if len(df):
-        df['occurrenceCount'] = df['occurrenceCount'].replace({'': 0})
-        # 更新
-        for i in df.index:
-            row = df.iloc[i]
-            with conn.cursor() as cursor:     
-                update_query = ''' UPDATE dataset SET "resourceContacts"='{}', "occurrenceCount"={}, "record_type"='{}' WHERE id = {} '''.format(row.resourceContacts, row.occurrenceCount, row.record_type, row.tbiaDatasetID)
-                execute_line = cursor.execute(update_query)
-                conn.commit()
+#     if len(df):
+#         df['occurrenceCount'] = df['occurrenceCount'].replace({'': 0})
+#         # 更新
+#         for i in df.index:
+#             row = df.iloc[i]
+#             with conn.cursor() as cursor:     
+#                 update_query = ''' UPDATE dataset SET "resourceContacts"='{}', "occurrenceCount"={}, "record_type"='{}' WHERE id = {} '''.format(row.resourceContacts, row.occurrenceCount, row.record_type, row.tbiaDatasetID)
+#                 execute_line = cursor.execute(update_query)
+#                 conn.commit()
 
 
 def matchlog_upsert(table, conn, keys, data_iter):
@@ -746,3 +839,18 @@ def calculate_data_quality(row):
     else:
         data_quality = 1
     return data_quality
+
+
+def return_town(grid_data):
+    now_point, COUNTYNAME, TOWNNAME  = None, None, None
+    if grid_data.get('standardRawLon') and grid_data.get('standardRawLat'):
+        now_point = Point(grid_data.get('standardRawLon'), grid_data.get('standardRawLat'))
+    elif grid_data.get('standardLon') and grid_data.get('standardLat'):
+        now_point = Point(grid_data.get('standardLon'), grid_data.get('standardLat'))
+    if now_point:
+        if len(gdf[gdf.geometry.contains(now_point)]) == 1:
+            COUNTYNAME = gdf[gdf.geometry.contains(now_point)].COUNTYNAME.values[0]
+            TOWNNAME = gdf[gdf.geometry.contains(now_point)].TOWNNAME.values[0]
+        elif len(gdf_ocean[gdf_ocean.geometry.contains(now_point)]) == 1:
+            COUNTYNAME = gdf_ocean[gdf_ocean.geometry.contains(now_point)].COUNTYO.values[0]
+    return COUNTYNAME, TOWNNAME

@@ -479,6 +479,8 @@
   <field name="alternative_name_c" type="string"/>
   <field name="common_name_c" type="string"/>
 
+  <!-- 202412新增 -->
+  <field name="bioGroup" type="string"/>
 
   <!-- 階層名 -->
   <field name="aberration" type="string"/>

@@ -127,6 +127,9 @@ class Records(Base):
     standardYear: Mapped[Optional[float]]
     standardMonth: Mapped[Optional[float]]
     standardDay: Mapped[Optional[float]]
+    county: Mapped[Optional[str]] = mapped_column(String(50))
+    town: Mapped[Optional[str]] = mapped_column(String(50))
+    raw_town: Mapped[Optional[str]] = mapped_column(String(50))
     year: Mapped[Optional[str]] = mapped_column(String(50))
     month: Mapped[Optional[str]] = mapped_column(String(50))
     day: Mapped[Optional[str]] = mapped_column(String(50))
@@ -310,18 +313,19 @@ class Dataset(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(10000), index=True)
     group: Mapped[Optional[str]] = mapped_column(String(50), index=True)
-    resourceContacts: Mapped[Optional[str]] = mapped_column(String(10000))
     record_type: Mapped[Optional[str]] = mapped_column(String(20), index=True) # 多值以逗號合併
     rights_holder:  Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     deprecated: Mapped[bool] = mapped_column(server_default='f', index=True)
+    
     sourceDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True, server_default='')
     gbifDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True, server_default='')
     tbiaDatasetID: Mapped[Optional[str]] = mapped_column(String(10000), index=True, server_default='') 
-    # datasetDateCoverage: Mapped[Optional[str]] = mapped_column(String(10000)) # 回傳時再用下面兩個欄位組合就好
+
+    resourceContacts: Mapped[Optional[str]] = mapped_column(String(10000))
     datasetDateStart: Mapped[Optional[str]] = mapped_column(String(10000)) # 涵蓋時間 - 始
     datasetDateEnd: Mapped[Optional[str]] = mapped_column(String(10000)) # 涵蓋時間 - 末
     occurrenceCount: Mapped[Optional[int]] = mapped_column(server_default='0')
-    # datasetAuthor: Mapped[Optional[str]] = mapped_column(String(10000))
+
     datasetURL: Mapped[Optional[str]] = mapped_column(String(10000))
     datasetLicense: Mapped[Optional[str]] = mapped_column(String(10000))
     datasetPublisher: Mapped[Optional[str]] = mapped_column(String(10000))

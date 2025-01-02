@@ -61,14 +61,20 @@ else:
     # request_url = note.get('request_url')
     dataset_list = note.get('dataset_list')
 
+
+
+# 取得台博館發布資料集
+publisher_id = 'c57cd401-ff9e-43bd-9403-089b88a97dea'
+
+url = f"https://portal.taibif.tw/api/v2/dataset?publisherID={publisher_id}"
+response = requests.get(url)
+if response.status_code == 200:
+    data = response.json()
+    dataset = pd.DataFrame(data)
+    dataset = dataset.rename(columns={'publisherName': 'datasetPublisher', 'license': 'datasetLicense'})
+
 if not dataset_list:
-    # 取得台博館發布資料集
-    publisher_id = 'c57cd401-ff9e-43bd-9403-089b88a97dea'
-    url = f"https://portal.taibif.tw/api/v2/dataset?publisherID={publisher_id}"
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()
-        dataset_list = [[d['taibifDatasetID'],d['numberOccurrence']] for d in data if d['core'] in (['OCCURRENCE','SAMPLINGEVENT'])]
+    dataset_list = [[d['taibifDatasetID'],d['numberOccurrence']] for d in data if d['core'] in (['OCCURRENCE','SAMPLINGEVENT'])]
 
 now = datetime.now() + timedelta(hours=8)
 
@@ -118,7 +124,7 @@ for d in dataset_list[d_list_index:]:
             if 'sensitiveCategory' in df.keys():
                 df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
             if 'license' in df.keys():
-                df = df[(df.license!='')&(~df.license.str.contains('BY NC ND|BY-NC-ND',regex=True))]
+                df = df[(df.license!='')&(~df.license.str.contains('ND|nd',regex=True))]
             else:
                 df = []
             media_rule_list = []
@@ -128,7 +134,9 @@ for d in dataset_list[d_list_index:]:
                 df['basisOfRecord'] = df['basisOfRecord'].apply(lambda x: control_basis_of_record(x))
                 df['recordType'] = df.apply(lambda x: 'col' if 'Specimen' in x.basisOfRecord else 'occ', axis=1)
                 # 資料集
-                ds_name = df[['datasetName','gbifDatasetID','sourceDatasetID','datasetURL']].drop_duplicates().to_dict(orient='records')
+                ds_name = df[['datasetName','gbifDatasetID','sourceDatasetID','datasetURL']]
+                ds_name = ds_name.merge(dataset[['taibifDatasetID','datasetPublisher','datasetLicense']], left_on='sourceDatasetID', right_on='taibifDatasetID')
+                ds_name = ds_name.drop_duplicates().to_dict(orient='records')
                 # return tbiaDatasetID 並加上去
                 return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
                 df = df.merge(return_dataset_id)
@@ -155,8 +163,6 @@ for d in dataset_list[d_list_index:]:
                 # 出現地
                 if 'locality' in df.keys():
                     df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
-                # 日期
-                df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))
                 # 數量 
                 df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
                 # dataGeneralizations
@@ -166,12 +172,6 @@ for d in dataset_list[d_list_index:]:
                     # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
                     df.loc[i,'id'] = str(bson.objectid.ObjectId())
                     row = df.loc[i]
-                    if (not row.get('year') or math.isnan(row.get('year'))) and row.get('standardDate'):
-                        df.loc[i, 'year'] = row.get('standardDate').year
-                    if (not row.get('month') or math.isnan(row.get('month'))) and row.get('standardDate'):
-                        df.loc[i, 'month'] = row.get('standardDate').month
-                    if (not row.get('day') or math.isnan(row.get('day'))) and row.get('standardDate'):
-                        df.loc[i, 'day'] = row.get('standardDate').day
                     # 如果有mediaLicense才放associatedMedia
                     if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
                         if not row.mediaLicense:
@@ -182,6 +182,9 @@ for d in dataset_list[d_list_index:]:
                                 media_rule_list.append(media_rule)
                     # 因為沒有模糊化座標 所以grid_* & grid_*_blurred 欄位填一樣的
                     grid_data = create_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude)
+                    county, town = return_town(grid_data)
+                    df.loc[i,'county'] = county
+                    df.loc[i,'town'] = town
                     df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
                     df.loc[i,'standardLatitude'] = grid_data.get('standardLat')
                     df.loc[i,'location_rpt'] = grid_data.get('location_rpt')
@@ -193,6 +196,11 @@ for d in dataset_list[d_list_index:]:
                     df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
                     df.loc[i, 'grid_100'] = grid_data.get('grid_100')
                     df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
+                    # 日期
+                    df.loc[i, ['eventDate','standardDate','year','month','day']] = convert_year_month_day(row)
+                for d_col in ['year','month','day']:
+                    if d_col in df.keys():
+                        df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
                 df = df.replace({nan: None})
                 df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
                 # 更新match_log
@@ -277,7 +285,7 @@ update_update_version(is_finished=True, update_version=update_version, rights_ho
 update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
 
 # update dataset info
-update_dataset_info(rights_holder=rights_holder)
+# update_dataset_info(rights_holder=rights_holder)
 
 
 print('done!')

@@ -61,45 +61,48 @@ else:
     dataset_list = note.get('dataset_list')
 
 
+# 排除夥伴單位
+partners = ['6ddd1cf5-0655-44ac-a572-cb581a054992', # 林保署
+            '898ba450-1627-11df-bd84-b8a03c50a862', # 林試所
+            '7f2ff82e-193e-48eb-8fb5-bad64c84782a', # 國家公園
+            'f40c7fe5-e64a-450c-b229-21d674ef3c28', # 國家公園
+            'c57cd401-ff9e-43bd-9403-089b88a97dea', # 台博館
+            'b6b89e2d-e881-41f3-bc57-213815cb9742'] # 水利署
+# 排除重複資料集
+# 單位間
+# GBIF 需要排除的生多所資料
+duplicated_dataset_list = [
+    '4fa7b334-ce0d-4e88-aaae-2e0c138d049e',
+    'af97275b-4603-4b87-9054-c83c71c45143',
+    '471511f5-beca-425f-9a8a-e802b3960906',
+    'bc76c690-60a3-11de-a447-b8a03c50a862',
+    'a0998d3b-4a7f-4add-8044-299092d9c63f',
+    'a9d518d1-f0f3-477b-a7a3-aa9f61eb1e54',
+    'ea9608d2-7101-4d46-a7d0-9add260cd28c',
+    'e34125ac-b4fd-4ad4-9647-3423cdd9b8a2',
+    'b6fccb11-dc9a-4cf6-9994-b46fbac5759f',
+    '19c3400b-b7bb-425f-b8c5-f222648b86b2',
+    '2de58bfe-1bf1-4318-97a3-d97efc269a4f',
+    '9e6bf53c-8dba-470a-9142-3607dfe21c41',
+    'd4919a44-090f-4cc6-8643-4c5f7906117f',
+    '6bd0551c-f4e9-4e85-9cec-6cefae343234'
+]
+# 取得所有資料集
+url = "https://portal.taibif.tw/api/v2/dataset"
+response = requests.get(url)
+if response.status_code == 200:
+    data = response.json()
+    dataset = pd.DataFrame(data)
+    dataset = dataset[dataset.source=='GBIF']
+    dataset = dataset[dataset.core.isin(['OCCURRENCE','SAMPLINGEVENT'])]
+    dataset = dataset[~dataset.publisherID.isin(partners)]
+    dataset = dataset[~dataset.gbifDatasetID.isin(duplicated_dataset_list)]
+    dataset = dataset.rename(columns={'publisherName': 'datasetPublisher', 'license': 'datasetLicense'})
+
+    
 if not dataset_list:
-    # 排除夥伴單位
-    partners = ['6ddd1cf5-0655-44ac-a572-cb581a054992', # 林保署
-                '898ba450-1627-11df-bd84-b8a03c50a862', # 林試所
-                '7f2ff82e-193e-48eb-8fb5-bad64c84782a', # 國家公園
-                'f40c7fe5-e64a-450c-b229-21d674ef3c28', # 國家公園
-                'c57cd401-ff9e-43bd-9403-089b88a97dea', # 台博館
-                'b6b89e2d-e881-41f3-bc57-213815cb9742'] # 水利署
-    # 排除重複資料集
-    # 單位間
-    # GBIF 需要排除的生多所資料
-    duplicated_dataset_list = [
-        '4fa7b334-ce0d-4e88-aaae-2e0c138d049e',
-        'af97275b-4603-4b87-9054-c83c71c45143',
-        '471511f5-beca-425f-9a8a-e802b3960906',
-        'bc76c690-60a3-11de-a447-b8a03c50a862',
-        'a0998d3b-4a7f-4add-8044-299092d9c63f',
-        'a9d518d1-f0f3-477b-a7a3-aa9f61eb1e54',
-        'ea9608d2-7101-4d46-a7d0-9add260cd28c',
-        'e34125ac-b4fd-4ad4-9647-3423cdd9b8a2',
-        'b6fccb11-dc9a-4cf6-9994-b46fbac5759f',
-        '19c3400b-b7bb-425f-b8c5-f222648b86b2',
-        '2de58bfe-1bf1-4318-97a3-d97efc269a4f',
-        '9e6bf53c-8dba-470a-9142-3607dfe21c41',
-        'd4919a44-090f-4cc6-8643-4c5f7906117f',
-        '6bd0551c-f4e9-4e85-9cec-6cefae343234'
-    ]
     dataset_list = []
-    # 取得所有資料集
-    url = "https://portal.taibif.tw/api/v2/dataset"
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()
-        dataset = pd.DataFrame(data)
-        dataset = dataset[dataset.source=='GBIF']
-        dataset = dataset[dataset.core.isin(['OCCURRENCE','SAMPLINGEVENT'])]
-        dataset = dataset[~dataset.publisherID.isin(partners)]
-        dataset = dataset[~dataset.gbifDatasetID.isin(duplicated_dataset_list)]
-        dataset_list = dataset[['taibifDatasetID','numberOccurrence']].to_dict('tight')['data']
+    dataset_list = dataset[['taibifDatasetID','numberOccurrence']].to_dict('tight')['data']
 
 
 
@@ -153,7 +156,7 @@ for d in dataset_list[d_list_index:]: # 20
             if 'sensitiveCategory' in df.keys():
                 df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
             if 'license' in df.keys():
-                df = df[(df.license!='')&(~df.license.str.contains('BY NC ND|BY-NC-ND',regex=True))]
+                df = df[(df.license!='')&(~df.license.str.contains('ND|nd',regex=True))]
             else:
                 df = []
             media_rule_list = []
@@ -182,8 +185,6 @@ for d in dataset_list[d_list_index:]: # 20
                 # 出現地
                 if 'locality' in df.keys():
                     df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
-                # 日期
-                df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))
                 # 數量 
                 df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
                 # dataGeneralizations
@@ -194,12 +195,6 @@ for d in dataset_list[d_list_index:]: # 20
                     # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
                     df.loc[i,'id'] = str(bson.objectid.ObjectId())
                     row = df.loc[i]
-                    if (not row.get('year') or math.isnan(row.get('year'))) and row.get('standardDate'):
-                        df.loc[i, 'year'] = row.get('standardDate').year
-                    if (not row.get('month') or math.isnan(row.get('month'))) and row.get('standardDate'):
-                        df.loc[i, 'month'] = row.get('standardDate').month
-                    if (not row.get('day') or math.isnan(row.get('day'))) and row.get('standardDate'):
-                        df.loc[i, 'day'] = row.get('standardDate').day
                     # basisOfRecord 有可能是空值
                     if row.basisOfRecord:
                         if 'Specimen' in row.basisOfRecord:
@@ -219,6 +214,9 @@ for d in dataset_list[d_list_index:]: # 20
                                 media_rule_list.append(media_rule)      
                     # 因為沒有模糊化座標 所以grid_* & grid_*_blurred 欄位填一樣的
                     grid_data = create_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude)
+                    county, town = return_town(grid_data)
+                    df.loc[i,'county'] = county
+                    df.loc[i,'town'] = town
                     df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
                     df.loc[i,'standardLatitude'] = grid_data.get('standardLat')
                     df.loc[i,'location_rpt'] = grid_data.get('location_rpt')
@@ -230,15 +228,21 @@ for d in dataset_list[d_list_index:]: # 20
                     df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
                     df.loc[i, 'grid_100'] = grid_data.get('grid_100')
                     df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
+                    # 日期
+                    df.loc[i, ['eventDate','standardDate','year','month','day']] = convert_year_month_day(row)
+                for d_col in ['year','month','day']:
+                    if d_col in df.keys():
+                        df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
                 df = df.replace({nan: None})
                 df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
                 # 資料集
                 df['datasetURL'] = df['gbifDatasetID'].apply(lambda x: 'https://www.gbif.org/dataset/' + x if x else '')
-                ds_name = df[['datasetName','recordType','gbifDatasetID','sourceDatasetID', 'datasetURL']].drop_duplicates().to_dict(orient='records')
+                ds_name = df[['datasetName','recordType','gbifDatasetID','sourceDatasetID', 'datasetURL']]
+                ds_name = ds_name.merge(dataset[['taibifDatasetID','datasetPublisher','datasetLicense']], left_on='sourceDatasetID', right_on='taibifDatasetID')
+                ds_name = ds_name.drop_duplicates().to_dict(orient='records')
                 # return tbiaDatasetID 並加上去
                 return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
                 df = df.merge(return_dataset_id)
-                update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
                 # 更新match_log
                 # 更新資料
                 df['occurrenceID'] = df['occurrenceID'].astype('str')
@@ -305,7 +309,7 @@ update_update_version(is_finished=True, update_version=update_version, rights_ho
 update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
 
 # update dataset info
-update_dataset_info(rights_holder=rights_holder)
+# update_dataset_info(rights_holder=rights_holder)
 
 
 print('done!')

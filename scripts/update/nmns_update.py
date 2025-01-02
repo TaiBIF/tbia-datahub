@@ -165,9 +165,6 @@ for now_category in category_list[category_index:]:
                 df['created'] = now
                 df['modified'] = now
                 df['recordType'] = 'col'
-                # 日期
-                if 'eventDate' in df.keys():
-                    df['standardDate'] = df['eventDate'].apply(lambda x: convert_date(x))
                 # 數量 
                 if 'organismQuantity' in df.keys():
                     df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
@@ -178,12 +175,6 @@ for now_category in category_list[category_index:]:
                     # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
                     df.loc[i,'id'] = str(bson.objectid.ObjectId())
                     row = df.loc[i]
-                    if (not row.get('year') or math.isnan(row.get('year'))) and row.get('standardDate'):
-                        df.loc[i, 'year'] = row.get('standardDate').year
-                    if (not row.get('month') or math.isnan(row.get('month'))) and row.get('standardDate'):
-                        df.loc[i, 'month'] = row.get('standardDate').month
-                    if (not row.get('day') or math.isnan(row.get('day'))) and row.get('standardDate'):
-                        df.loc[i, 'day'] = row.get('standardDate').day
                     # 在這邊處理出現地的問題
                     locality_list = []
                     for locality_ in ['locality', 'locality_1', 'locality_2', 'locality_3']:
@@ -198,9 +189,14 @@ for now_category in category_list[category_index:]:
                             media_rule = get_media_rule(df.loc[i, 'associatedMedia'])
                             if media_rule and media_rule not in media_rule_list:
                                 media_rule_list.append(media_rule)
+                    # 日期
+                    df.loc[i, ['eventDate','standardDate','year','month','day']] = convert_year_month_day(row)
+                for d_col in ['year','month','day']:
+                    if d_col in df.keys():
+                        df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
                 df = df.replace({nan: None})
                 df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
-                    # 目前沒有經緯度資料
+                # 目前沒有經緯度資料
                 # 資料集
                 ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
                 # return tbiaDatasetID 並加上去
@@ -263,7 +259,7 @@ update_update_version(is_finished=True, update_version=update_version, rights_ho
 update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
 
 # update dataset info
-update_dataset_info(rights_holder=rights_holder)
+# update_dataset_info(rights_holder=rights_holder)
 
 
 print('done!')

@@ -542,6 +542,11 @@
   <!-- 202410新增 -->
   <field name="dataQuality" type="pdouble"/>
 
+  <!-- 202412新增 -->
+  <field name="bioGroup" type="string"/>
+  <field name="county" type="string"/>
+  <field name="town" type="string"/>
+
   <!-- taxa fields start -->
   <field name="aberration" type="string"/>
   <field name="aberration_c" type="string"/>
