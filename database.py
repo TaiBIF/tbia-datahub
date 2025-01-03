@@ -129,6 +129,7 @@ class Records(Base):
     standardDay: Mapped[Optional[float]]
     county: Mapped[Optional[str]] = mapped_column(String(50))
     town: Mapped[Optional[str]] = mapped_column(String(50))
+    raw_county: Mapped[Optional[str]] = mapped_column(String(50))
     raw_town: Mapped[Optional[str]] = mapped_column(String(50))
     year: Mapped[Optional[str]] = mapped_column(String(50))
     month: Mapped[Optional[str]] = mapped_column(String(50))

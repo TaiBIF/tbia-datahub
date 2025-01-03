@@ -133,8 +133,8 @@ for p in range(current_page,total_page,10):
             is_hidden = True
             grid_data = create_blurred_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude, coordinatePrecision=None, is_full_hidden=is_hidden)
             county, town = return_town(grid_data)
-            df.loc[i,'county'] = county
-            df.loc[i,'town'] = town
+            df.loc[i,'raw_county'] = county
+            df.loc[i,'raw_town'] = town
             # 一定有模糊化
             df.loc[i,'standardRawLongitude'] = grid_data.get('standardRawLon')
             df.loc[i,'standardRawLatitude'] = grid_data.get('standardRawLat')

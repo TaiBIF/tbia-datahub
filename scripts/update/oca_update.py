@@ -324,8 +324,12 @@ for i in df.index:
         is_hidden = False
     grid_data = create_blurred_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude, coordinatePrecision=None, is_full_hidden=is_hidden)
     county, town = return_town(grid_data)
-    df.loc[i,'county'] = county
-    df.loc[i,'town'] = town
+    if row.datasetName in ocas.d_name.unique():
+        df.loc[i,'raw_county'] = county
+        df.loc[i,'raw_town'] = town
+    else:
+        df.loc[i,'county'] = county
+        df.loc[i,'town'] = town
     df.loc[i,'standardRawLongitude'] = grid_data.get('standardRawLon') if df.loc[i,'dataGeneralizations'] else None
     df.loc[i,'standardRawLatitude'] = grid_data.get('standardRawLat') if df.loc[i,'dataGeneralizations'] else None
     df.loc[i,'raw_location_rpt'] = grid_data.get('raw_location_rpt') if df.loc[i,'dataGeneralizations'] else None

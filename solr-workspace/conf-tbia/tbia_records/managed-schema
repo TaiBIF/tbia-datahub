@@ -546,6 +546,8 @@
   <field name="bioGroup" type="string"/>
   <field name="county" type="string"/>
   <field name="town" type="string"/>
+  <field name="raw_county" type="string"/>
+  <field name="raw_town" type="string"/>
 
   <!-- taxa fields start -->
   <field name="aberration" type="string"/>
