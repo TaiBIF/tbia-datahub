@@ -117,7 +117,7 @@ for url in url_list[url_index:]:
         c = p
         while c < p + 10 and c < total_page:
             # print(c, url)
-            time.sleep(3)
+            time.sleep(1)
             if not request_url:
                 request_url = url
             if request_url.find('limit=1000') < 0:
