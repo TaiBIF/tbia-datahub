@@ -204,6 +204,8 @@ def get_existed_records(occ_ids, rights_holder, get_reference=False, cata_ids=[]
 
     if len(subset_list):
         existed_records = pd.DataFrame(subset_list)
+        existed_records = existed_records.drop_duplicates()
+        existed_records = existed_records.reset_index(drop=True)
         existed_records = existed_records.rename(columns={'id': 'tbiaID'})
         # 排除掉一個occurrenceID對到多個tbiaID的情況
         # 這邊要多考慮catalogNumber的情況
