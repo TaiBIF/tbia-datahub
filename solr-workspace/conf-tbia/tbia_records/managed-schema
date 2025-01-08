@@ -545,9 +545,9 @@
   <!-- 202412新增 -->
   <field name="bioGroup" type="string"/>
   <field name="county" type="string"/>
-  <field name="town" type="string"/>
-  <field name="raw_county" type="string"/>
-  <field name="raw_town" type="string"/>
+  <field name="municipality" type="string"/>
+  <field name="rawCounty" type="string"/>
+  <field name="rawMunicipality" type="string"/>
 
   <!-- taxa fields start -->
   <field name="aberration" type="string"/>

@@ -239,11 +239,13 @@ for now_category in category_list[category_index:]:
                         if_exists='append',
                         index=False,
                         method=records_upsert)
-            # 成功之後 更新update_update_version
-            update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=None, note=json.dumps({'category_index': category_index, 'offset': offset}))
-            for mm in media_rule_list:
-                update_media_rule(media_rule=mm,rights_holder=rights_holder)
+                for mm in media_rule_list:
+                    update_media_rule(media_rule=mm,rights_holder=rights_holder)
+        # 成功之後 更新update_update_version
+        update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=None, note=json.dumps({'category_index': category_index, 'offset': offset}))
     category_index += 1
+    offset = 0
+    update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=None, note=json.dumps({'category_index': category_index, 'offset': offset}))
 
 # 刪除is_deleted的records & match_log
 delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version))

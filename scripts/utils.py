@@ -52,18 +52,18 @@ rights_holder_map = {
     '臺灣魚類資料庫': 'ascdc',
 }
 
-taxon_group_map = {
-    'Insects' : [{'key': 'class', 'value': 'Insecta'}],
-    'Fishes' : [{'key': 'superclass', 'value': 'Actinopterygii'},{'key': 'superclass', 'value': 'Chondrichthyes'},{'key': 'class', 'value': 'Myxini'}],
-    'Reptiles' : [{'key': 'class', 'value': 'Reptilia'}],
-    'Fungi' : [{'key': 'kingdom', 'value': 'Fungi'}],
-    'Plants' : [{'key': 'kingdom', 'value': 'Plantae'}],
-    'Birds' : [{'key': 'class', 'value': 'Aves'}],
-    'Mammals' : [{'key': 'class', 'value': 'Mammalia'}],
-    'Amphibians' : [{'key': 'class', 'value': 'Amphibia'}],
-    'Bacteria' : [{'key': 'kingdom', 'value': 'Bacteria'}],
-    'Others' : [{'key': 'class', 'value': ''}],
-}
+# taxon_group_map = {
+#     'Insects' : [{'key': 'class', 'value': 'Insecta'}],
+#     'Fishes' : [{'key': 'superclass', 'value': 'Actinopterygii'},{'key': 'superclass', 'value': 'Chondrichthyes'},{'key': 'class', 'value': 'Myxini'}],
+#     'Reptiles' : [{'key': 'class', 'value': 'Reptilia'}],
+#     'Fungi' : [{'key': 'kingdom', 'value': 'Fungi'}],
+#     'Plants' : [{'key': 'kingdom', 'value': 'Plantae'}],
+#     'Birds' : [{'key': 'class', 'value': 'Aves'}],
+#     'Mammals' : [{'key': 'class', 'value': 'Mammalia'}],
+#     'Amphibians' : [{'key': 'class', 'value': 'Amphibia'}],
+#     'Bacteria' : [{'key': 'kingdom', 'value': 'Bacteria'}],
+#     'Others' : [{'key': 'class', 'value': ''}],
+# }
 
 
 issue_map = {
@@ -247,6 +247,8 @@ def get_taxon_df(taxon_ids):
 
     taxon = pd.DataFrame(subset_taxon_list)
     taxon = taxon.rename(columns={'id': 'taxonID'})
+    # 這邊要拿掉 _taxonID的欄位才對
+    taxon = taxon[taxon.columns.drop(list(taxon.filter(regex='_taxonID')))]
     taxon = taxon.drop(columns=['taxon_name_id','_version_'],errors='ignore')
     taxon = taxon.replace({np.nan:None})
 

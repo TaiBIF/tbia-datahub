@@ -123,14 +123,17 @@ class Records(Base):
     sourceFamily: Mapped[Optional[str]] = mapped_column(String(10000))
     sourceOrder: Mapped[Optional[str]] = mapped_column(String(10000))
     sourceClass: Mapped[Optional[str]] = mapped_column(String(10000))
-    # 日期改存年月日 (pending)
-    standardYear: Mapped[Optional[float]]
-    standardMonth: Mapped[Optional[float]]
-    standardDay: Mapped[Optional[float]]
+    # # 日期改存年月日 (pending) 先拿掉
+    # standardYear: Mapped[Optional[float]]
+    # standardMonth: Mapped[Optional[float]]
+    # standardDay: Mapped[Optional[float]]
+    # town: Mapped[Optional[str]] = mapped_column(String(50))
     county: Mapped[Optional[str]] = mapped_column(String(50))
-    town: Mapped[Optional[str]] = mapped_column(String(50))
-    raw_county: Mapped[Optional[str]] = mapped_column(String(50))
-    raw_town: Mapped[Optional[str]] = mapped_column(String(50))
+    municipality: Mapped[Optional[str]] = mapped_column(String(50))
+    rawCounty: Mapped[Optional[str]] = mapped_column(String(50))
+    rawMunicipality: Mapped[Optional[str]] = mapped_column(String(50))
+    # raw_county: Mapped[Optional[str]] = mapped_column(String(50))
+    # raw_town: Mapped[Optional[str]] = mapped_column(String(50))
     year: Mapped[Optional[str]] = mapped_column(String(50))
     month: Mapped[Optional[str]] = mapped_column(String(50))
     day: Mapped[Optional[str]] = mapped_column(String(50))

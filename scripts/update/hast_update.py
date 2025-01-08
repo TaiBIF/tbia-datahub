@@ -120,9 +120,9 @@ for p in range(current_page,total_page,10):
                     if media_rule and media_rule not in media_rule_list:
                         media_rule_list.append(media_rule)
             grid_data = create_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude)
-            county, town = return_town(grid_data)
+            county, municipality = return_town(grid_data)
             df.loc[i,'county'] = county
-            df.loc[i,'town'] = town
+            df.loc[i,'municipality'] = municipality
             df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
             df.loc[i,'standardLatitude'] = grid_data.get('standardLat')
             df.loc[i,'location_rpt'] = grid_data.get('location_rpt')
@@ -185,10 +185,10 @@ for p in range(current_page,total_page,10):
                 if_exists='append',
                 index=False,
                 method=records_upsert)
+        for mm in media_rule_list:
+            update_media_rule(media_rule=mm,rights_holder=rights_holder)
     # 成功之後 更新update_update_version
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
-    for mm in media_rule_list:
-        update_media_rule(media_rule=mm,rights_holder=rights_holder)
 
 
 

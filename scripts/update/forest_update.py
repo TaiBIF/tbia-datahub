@@ -139,9 +139,9 @@ for p in range(current_page,total_page,10):
             except:
                 coordinatePrecision = None
             grid_data = create_blurred_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude, coordinatePrecision=coordinatePrecision)
-            county, town = return_town(grid_data)
+            county, municipality = return_town(grid_data)
             df.loc[i,'county'] = county
-            df.loc[i,'town'] = town
+            df.loc[i,'municipality'] = municipality
             df.loc[i,'standardRawLongitude'] = grid_data.get('standardRawLon') if df.loc[i,'dataGeneralizations'] else None
             df.loc[i,'standardRawLatitude'] = grid_data.get('standardRawLat') if df.loc[i,'dataGeneralizations'] else None
             df.loc[i,'raw_location_rpt'] = grid_data.get('raw_location_rpt') if df.loc[i,'dataGeneralizations'] else None
@@ -216,11 +216,11 @@ for p in range(current_page,total_page,10):
                 if_exists='append',
                 index=False,
                 method=records_upsert)
+        # 更新 media rule
+        for mm in media_rule_list:
+            update_media_rule(media_rule=mm,rights_holder=rights_holder)
     # 成功之後 更新update_update_version 也有可能這批page 沒有資料 一樣從下一個c開始
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
-    # 更新 media rule
-    for mm in media_rule_list:
-        update_media_rule(media_rule=mm,rights_holder=rights_holder)
 
 
 # 刪除is_deleted的records & match_log

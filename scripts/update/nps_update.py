@@ -167,13 +167,13 @@ for p in range(current_page,total_page,10):
                 is_hidden = True
                 df.loc[i,'dataGeneralizations'] = True
             grid_data = create_blurred_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude, coordinatePrecision=coordinatePrecision, is_full_hidden=is_hidden)
-            county, town = return_town(grid_data)
+            county, municipality = return_town(grid_data)
             if row.sensitiveCategory in ['縣市','座標不開放','分類群不開放']:
-                df.loc[i,'raw_county'] = county
-                df.loc[i,'raw_town'] = town
+                df.loc[i,'rawCounty'] = county
+                df.loc[i,'rawMunicipality'] = municipality
             else:
                 df.loc[i,'county'] = county
-                df.loc[i,'town'] = town
+                df.loc[i,'municipality'] = municipality
             df.loc[i,'standardRawLongitude'] = grid_data.get('standardRawLon') if df.loc[i,'dataGeneralizations'] else None
             df.loc[i,'standardRawLatitude'] = grid_data.get('standardRawLat') if df.loc[i,'dataGeneralizations'] else None
             df.loc[i,'raw_location_rpt'] = grid_data.get('raw_location_rpt') if df.loc[i,'dataGeneralizations'] else None
@@ -251,8 +251,8 @@ for p in range(current_page,total_page,10):
                     method=records_upsert)
         # 成功之後 更新update_update_version
         update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
-    for mm in media_rule_list:
-        update_media_rule(media_rule=mm,rights_holder=rights_holder)
+        for mm in media_rule_list:
+            update_media_rule(media_rule=mm,rights_holder=rights_holder)
 
 
 # 刪除is_deleted的records & match_log

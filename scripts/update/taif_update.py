@@ -132,9 +132,9 @@ for p in range(current_page,total_page,10):
             # 幫忙補dataGeneralizations
             is_hidden = True
             grid_data = create_blurred_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude, coordinatePrecision=None, is_full_hidden=is_hidden)
-            county, town = return_town(grid_data)
-            df.loc[i,'raw_county'] = county
-            df.loc[i,'raw_town'] = town
+            county, municipality = return_town(grid_data)
+            df.loc[i,'rawCounty'] = county
+            df.loc[i,'rawMunicipality'] = municipality
             # 一定有模糊化
             df.loc[i,'standardRawLongitude'] = grid_data.get('standardRawLon')
             df.loc[i,'standardRawLatitude'] = grid_data.get('standardRawLat')
@@ -212,11 +212,11 @@ for p in range(current_page,total_page,10):
                 if_exists='append',
                 index=False,
                 method=records_upsert)
+        # 更新 media rule
+        for mm in media_rule_list:
+            update_media_rule(media_rule=mm,rights_holder=rights_holder)
     # 成功之後 更新update_update_version 也有可能這批page 沒有資料 一樣從下一個c開始
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
-    # 更新 media rule
-    for mm in media_rule_list:
-        update_media_rule(media_rule=mm,rights_holder=rights_holder)
 
 
 

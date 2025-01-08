@@ -183,7 +183,10 @@ ocas = pd.read_csv('海保署資料集清單_202408.csv')
 # 校定物種學名編碼 -> 裡面有可能是taxonID也有可能是namecode 如果不是t開頭的七位數
 # ocas = pd.DataFrame({'d_name': d_names, 'd_id': d_ids})
 
-unused_keys = ['界中文名','門中文名','綱中文名','目中文名','科中文名','屬中文名','\ufeff計畫/案件名稱','計畫/案件名稱','調查方法','調查方式','所處位置', '備註', '界2','物種俗名','界','門','屬','屬 (Genus)']
+unused_keys = ['界中文名','門中文名','綱中文名','目中文名','科中文名','屬中文名','\ufeff計畫/案件名稱','計畫/案件名稱','調查方法','調查方式','所處位置', '備註', 
+               '界2','物種俗名','界','門','屬','屬 (Genus)', '中文科別', '屬名', '種名', '站點名稱', '時間(hhmm)', '網目尺寸(mm)', '直徑(cm)', '長度(m)',
+               '開始時間(hh:mm)', '結束時間(hh:mm)', '期間(hh:mm)', '流量計數開始', '流量計數結束', '流量差異', '海水量(m3)', '仔稚魚編號', '航次', '深度(m)',
+               '所屬計畫類別', '採樣所屬季節']
 
 for i in ocas.index:
     row = ocas.iloc[i]
@@ -215,15 +218,19 @@ for i in ocas.index:
         df = df.rename(columns={'經度': 'verbatimLongitude', '緯度': 'verbatimLatitude', 
                                 '東經（E）': 'verbatimLongitude', '北緯（N）': 'verbatimLatitude', 
                                 'GPS位置-東經（E）': 'verbatimLongitude', 'GPS位置-北緯（N）': 'verbatimLatitude', 
-                                '坐標系統': 'verbatimCoordinateSystem', '調查日期': 'eventDate',
+                                '緯度(北緯)': 'verbatimLatitude', '經度(東經)': 'verbatimLongitude',
+                                '坐標系統': 'verbatimCoordinateSystem', 
+                                '調查日期': 'eventDate', '採樣日期': 'eventDate', '採樣時間':  'eventDate',
                                 '直轄市或省轄縣市': 'locality', '縣市': 'locality',
                                 '鑑定層級': 'sourceTaxonRank', '原始物種名稱': 'sourceVernacularName', '原始物種名稱 (中文)': 'sourceVernacularName',
-                                '原始物種學名': 'sourceScientificName',
+                                '中文學名': 'sourceVernacularName',
+                                '原始物種學名': 'sourceScientificName', '學名': 'sourceScientificName', '學名(Science Name)': 'sourceScientificName',
                                 '校定物種學名編碼': 'scientificNameID', '數量': 'organismQuantity', '數量單位': 'organismQuantityType', 
                                 # '界': 'kingdom', '門': 'phylum',
                                 '綱名': 'sourceClass', '綱': 'sourceClass', '綱 (class)': 'sourceClass', 
-                                '目名': 'sourceOrder', '目': 'sourceOrder', '目 (Order)': 'sourceOrder', 
+                                '目名': 'sourceOrder', '目': 'sourceOrder', '目 (Order)': 'sourceOrder', '所屬目別': 'sourceOrder',
                                 '科名': 'sourceFamily', '科': 'sourceFamily', '科 (Family)': 'sourceFamily',
+                                '科別': 'sourceFamily', '所屬科別': 'sourceFamily', '科別(Family)': 'sourceFamily',
                                 # '屬':'genus', '屬 (Genus)': 'genus',
                                 '西元年': 'year', '年': 'year', '月': 'month', '日': 'day'})
         # 這邊要處理scientificNameID 裡面可能有一些是taxonID
@@ -323,13 +330,13 @@ for i in df.index:
         df.loc[i, 'sensitiveCategory'] = None
         is_hidden = False
     grid_data = create_blurred_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude, coordinatePrecision=None, is_full_hidden=is_hidden)
-    county, town = return_town(grid_data)
+    county, municipality = return_town(grid_data)
     if row.datasetName in ocas.d_name.unique():
-        df.loc[i,'raw_county'] = county
-        df.loc[i,'raw_town'] = town
+        df.loc[i,'rawCounty'] = county
+        df.loc[i,'rawMunicipality'] = municipality
     else:
         df.loc[i,'county'] = county
-        df.loc[i,'town'] = town
+        df.loc[i,'municipality'] = municipality
     df.loc[i,'standardRawLongitude'] = grid_data.get('standardRawLon') if df.loc[i,'dataGeneralizations'] else None
     df.loc[i,'standardRawLatitude'] = grid_data.get('standardRawLat') if df.loc[i,'dataGeneralizations'] else None
     df.loc[i,'raw_location_rpt'] = grid_data.get('raw_location_rpt') if df.loc[i,'dataGeneralizations'] else None

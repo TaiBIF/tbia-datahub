@@ -145,6 +145,7 @@ for d in dataset_list[d_list_index:]: # 20
     total_page = math.ceil (total_count / 1000)
     for p in range(current_page,total_page,10):
         data = []
+        media_rule_list = []
         c = p
         while c < p + 10 and c < total_page:
             time.sleep(1)
@@ -188,7 +189,6 @@ for d in dataset_list[d_list_index:]: # 20
             else:
                 df = []
             # df = df[~(df.sourceVernacularName.isin([nan,'',None])&df.sourceScientificName.isin([nan,'',None]))]
-            media_rule_list = []
             if len(df):
                 df = df.drop(columns=['taxonGroup','taxonBackbone','kingdom','phylum','genus','geodeticDatum',
                                     'countryCode', 'country', 'county',
@@ -241,9 +241,9 @@ for d in dataset_list[d_list_index:]: # 20
                             if media_rule and media_rule not in media_rule_list:
                                 media_rule_list.append(media_rule)
                     grid_data = create_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude)
-                    county, town = return_town(grid_data)
+                    county, municipality = return_town(grid_data)
                     df.loc[i,'county'] = county
-                    df.loc[i,'town'] = town
+                    df.loc[i,'municipality'] = municipality
                     df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
                     df.loc[i,'standardLatitude'] = grid_data.get('standardLat')
                     df.loc[i,'location_rpt'] = grid_data.get('location_rpt')
@@ -310,14 +310,14 @@ for d in dataset_list[d_list_index:]: # 20
                         if_exists='append',
                         index=False,
                         method=records_upsert)
+                for mm in media_rule_list:
+                    update_media_rule(media_rule=mm,rights_holder=rights_holder)
         # 成功之後 更新update_update_version
         update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}))
     # print(test_count, total_count)
     d_list_index += 1
     current_page = 0 # 換成新的url時要重新開始
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=0, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}))
-    for mm in media_rule_list:
-        update_media_rule(media_rule=mm,rights_holder=rights_holder)
 
 
 # 刪除is_deleted的records & match_log
