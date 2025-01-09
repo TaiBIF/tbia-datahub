@@ -145,6 +145,7 @@ def match_name_new(matching_df, is_parent, match_stage, sci_names, specific_rank
             data = pd.DataFrame(data)
             data = data.rename(columns={'search_term': 'now_matching_name'})
             data = matching_df.merge(data, how='left')
+            data = data.replace({np.nan: None})
             for data_index in data.index:
                 row = data.iloc[data_index]
                 # 這邊如果有多個sourceVernacularName比對到的話，只選擇第一個                
@@ -152,7 +153,7 @@ def match_name_new(matching_df, is_parent, match_stage, sci_names, specific_rank
                     continue
                 filtered_rs = row.results
                 filtered_rss = []
-                if len(filtered_rs):
+                if filtered_rs:
                     # 排除掉同個taxonID但有不同name的情況
                     filtered_rs = pd.DataFrame(filtered_rs)[['accepted_namecode','family','order','class','name_status','score','taxon_rank']].drop_duplicates()
                     if specific_rank: # 這邊的rank都是小寫
