@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 import os
 load_dotenv(override=True)
 
-from scripts.taxon.match_utils import matching_flow
+from scripts.taxon.match_utils import matching_flow_new
 from scripts.utils import *
 
 # 比對學名時使用的欄位
@@ -84,7 +84,7 @@ for p in range(current_page,total_page,10):
         'isPreferredName': 'sourceVernacularName', 'collectionID': 'catalogNumber', 'taxonRank': 'sourceTaxonRank'})
         df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': ''})
         sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
-        sci_names = matching_flow(sci_names)
+        sci_names = matching_flow_new(sci_names)
         df = df.drop(columns=['taxonID'], errors='ignore')
         match_taxon_id = sci_names
         if len(match_taxon_id):
