@@ -101,6 +101,7 @@ else:
     url_index = note.get('url_index')
 
 
+
 for url in url_list[url_index:]:
     # print(url)
     # 先取得總頁數
@@ -157,12 +158,8 @@ for url in url_list[url_index:]:
                 'decimalLatitude': 'verbatimLatitude', 
                 'decimalLongitude': 'verbatimLongitude',
                 'geodeticDatum': 'verbatimSRS',
-                # 'year': 'sourceYear',
-                # 'month': 'sourceMonth',
-                # 'day': 'sourceDay',
                 'taiCOLTaxonID': 'taxonID',
                 'taxonUUID': 'sourceTaxonID',
-                # 'originalVernacularName': 'originalScientificName',
                 'taxonRank': 'sourceTaxonRank',
                 'vernacularName': 'sourceVernacularName',
                 'familyScientificName': 'sourceFamily',
@@ -186,8 +183,11 @@ for url in url_list[url_index:]:
                                     'eventID', 'samplingProtocol','source','selfProduced',
                                     'collectionID','verbatimEventDate','eventTime', 'eventPlaceAdminarea',
                                     'countyCode','tfNameCode', 'scientificNameID'],errors='ignore')
+            df['taxonID'] = df['taxonID'].apply(lambda x: x if len(str(x)) == 8 else '')
             sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
+            now_s = time.time()
             sci_names = matching_flow_new(sci_names)
+            print('match', time.time()-now_s)
             df = df.drop(columns=['taxonID'], errors='ignore')
             match_taxon_id = sci_names
             if len(match_taxon_id):
@@ -207,66 +207,31 @@ for url in url_list[url_index:]:
             df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
             # basisOfRecord
             df['basisOfRecord'] = df['basisOfRecord'].apply(lambda x: control_basis_of_record(x))
+            #  如果有mediaLicense才放associatedMedia
+            if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
+                df['associatedMedia'] = df['associatedMedia'].replace({None: '', np.nan: ''})
+                df['associatedMedia'] = df.apply(lambda x: x.associatedMedia if x.mediaLicense else '', axis=1)
+            df['media_rule_list'] = df[df.associatedMedia.notnull()]['associatedMedia'].apply(lambda x: get_media_rule(x))
+            media_rule_list += list(df[df.media_rule_list.notnull()].media_rule_list.unique())
             # dataGeneralizations 已標準化
+            # 座標模糊化
+            df['coordinatePrecision'] = df.apply(lambda x: coor_precision(x), axis=1)
+            df['coordinatePrecision'] = df['coordinatePrecision'].replace({np.nan: None})
+            df['is_hidden'] = df.apply(lambda x: True if x.sensitiveCategory in ['縣市','座標不開放'] else False, axis=1)
+            now_s = time.time()
+            for g in geo_keys:
+                if g not in df.keys():
+                    df[g] = ''
+            df[geo_keys] = df.apply(lambda x: pd.Series(create_blurred_grid_data_new(x.verbatimLongitude, x.verbatimLatitude, x.coordinatePrecision, x.dataGeneralizations, x.sensitiveCategory, is_full_hidden=x.is_hidden)),  axis=1)
+            print('coor', time.time()-now_s)
             # 經緯度
-            df['id'] = ''
-            for i in df.index:
-                # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
-                df.loc[i,'id'] = str(bson.objectid.ObjectId())
-                row = df.loc[i]
-                # 如果有mediaLicense才放associatedMedia
-                if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
-                    if not row.mediaLicense:
-                        df.loc[i,'associatedMedia'] = None
-                    if df.loc[i, 'associatedMedia']:
-                        media_rule = get_media_rule(df.loc[i, 'associatedMedia'])
-                        if media_rule and media_rule not in media_rule_list:
-                            media_rule_list.append(media_rule)
-                # 座標模糊化
-                try:
-                    coordinatePrecision = float(row.coordinatePrecision)
-                    df.loc[i,'dataGeneralizations'] = True
-                except:
-                    coordinatePrecision = None
-                is_hidden = False # 座標是否完全屏蔽
-                if not coordinatePrecision and row.sensitiveCategory == '輕度':
-                    coordinatePrecision = 0.01
-                    df.loc[i,'dataGeneralizations'] = True
-                elif not coordinatePrecision and row.sensitiveCategory == '重度':
-                    coordinatePrecision = 0.1
-                    df.loc[i,'dataGeneralizations'] = True
-                if row.sensitiveCategory in ['縣市','座標不開放']:
-                    is_hidden = True
-                    df.loc[i,'dataGeneralizations'] = True
-                grid_data = create_blurred_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude, coordinatePrecision=coordinatePrecision, is_full_hidden=is_hidden)
-                county, municipality = return_town(grid_data)
-                if row.sensitiveCategory in ['縣市','座標不開放']:
-                    df.loc[i,'rawCounty'] = county
-                    df.loc[i,'rawMunicipality'] = municipality
-                else:
-                    df.loc[i,'county'] = county
-                    df.loc[i,'municipality'] = municipality
-                df.loc[i,'standardRawLongitude'] = grid_data.get('standardRawLon') if df.loc[i,'dataGeneralizations'] else None
-                df.loc[i,'standardRawLatitude'] = grid_data.get('standardRawLat') if df.loc[i,'dataGeneralizations'] else None
-                df.loc[i,'raw_location_rpt'] = grid_data.get('raw_location_rpt') if df.loc[i,'dataGeneralizations'] else None
-                df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
-                df.loc[i,'standardLatitude'] = grid_data.get('standardLat')
-                df.loc[i,'location_rpt'] = grid_data.get('location_rpt')
-                df.loc[i, 'grid_1'] = grid_data.get('grid_1')
-                df.loc[i, 'grid_1_blurred'] = grid_data.get('grid_1_blurred')
-                df.loc[i, 'grid_5'] = grid_data.get('grid_5')
-                df.loc[i, 'grid_5_blurred'] = grid_data.get('grid_5_blurred')
-                df.loc[i, 'grid_10'] = grid_data.get('grid_10')
-                df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
-                df.loc[i, 'grid_100'] = grid_data.get('grid_100')
-                df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
-                # 要考慮是不是本來就要完全屏蔽 不然有可能是無法轉換座標 就必須要顯示原始座標 (從grid_data的回傳的是)
-                if grid_data.get('standardLon') or is_hidden:
-                    df.loc[i, 'verbatimLongitude'] = grid_data.get('standardLon')
-                if grid_data.get('standardLat') or is_hidden:
-                    df.loc[i, 'verbatimLatitude'] = grid_data.get('standardLat')
-                # 日期
-                df.loc[i, ['eventDate','standardDate','year','month','day']] = convert_year_month_day(row)
+            df['id'] ='' # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
+            df['id'] = df['id'].apply(lambda x: str(bson.objectid.ObjectId()))
+            now_s = time.time()
+            # 待處理
+            print(time.time()-now_s)
+            # 日期
+            df[['eventDate','standardDate','year','month','day']] = df.apply(lambda x: pd.Series(convert_year_month_day(x)), axis=1)
             for d_col in ['year','month','day']:
                 if d_col in df.keys():
                     df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
@@ -282,6 +247,7 @@ for url in url_list[url_index:]:
             # existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
             # existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder)
             # existed_records = existed_records.replace({nan:''})
+            now_s = time.time()
             existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
             existed_records = get_existed_records(occ_ids=df[df.occurrenceID!='']['occurrenceID'].to_list(), rights_holder=rights_holder, cata_ids=df[df.catalogNumber!='']['catalogNumber'].to_list())
             existed_records = existed_records.replace({nan:''})
@@ -296,15 +262,18 @@ for url in url_list[url_index:]:
                 # df['created'] = df.apply(lambda x: x.created_y if x.tbiaID else now, axis=1)
                 # df = df.drop(columns=['tbiaID','created_y','created_x'])
                 df = df.drop(columns=['tbiaID'])
+            print('get_existed', time.time()-now_s)
             # match_log要用更新的
+            now_s = time.time()
             match_log = df[['occurrenceID','catalogNumber','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','group','rightsHolder','created','modified']]
             match_log = match_log.reset_index(drop=True)
             match_log = update_match_log(match_log=match_log, now=now)
             match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{url_index}_{p}.csv',index=None)
+            print('matchlog', time.time()-now_s)
             # records要用更新的
             # 已經串回原本的tbiaID，可以用tbiaID做更新
             df['is_deleted'] = False
-            df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','taxon_name_id','sci_index', 'datasetURL','gbifDatasetID', 'gbifID'],errors='ignore')
+            df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','taxon_name_id','sci_index', 'datasetURL','gbifDatasetID', 'gbifID','media_rule_list','is_hidden'],errors='ignore')
             # 最後再一起匯出
             # # 在solr裡 要使用id當作名稱 而非tbiaID
             # df.to_csv(f'/solr/csvs/updated/{group}_{info_id}_{p}.csv', index=False)
@@ -312,10 +281,13 @@ for url in url_list[url_index:]:
             df = df.rename(columns=({'id': 'tbiaID'}))
             df['update_version'] = int(update_version)
             # df = df.drop(columns=psql_records_key,errors='ignore')
-            df.to_sql('records', db, # schema='my_schema',
-                    if_exists='append',
-                    index=False,
-                    method=records_upsert)
+            now_s = time.time()
+            for l in range(0, len(df), 1000):
+                df[l:l+1000].to_sql('records', db, # schema='my_schema',
+                        if_exists='append',
+                        index=False,
+                        method=records_upsert)
+            print('tosql', time.time()-now_s)
             # 更新 media rule
             for mm in media_rule_list:
                 update_media_rule(media_rule=mm,rights_holder=rights_holder)

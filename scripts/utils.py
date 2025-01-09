@@ -24,6 +24,8 @@ gdf_ocean = gpd.read_file('/bucket/TW_TOWN_OCEAN/tw_map_o.shp')
 
 load_dotenv(override=True)
 
+geo_keys = ['verbatimLongitude', 'verbatimLatitude', 'standardRawLongitude','standardRawLatitude','raw_location_rpt','standardLongitude','standardLatitude','location_rpt',
+                'grid_1','grid_1_blurred','grid_5','grid_5_blurred','grid_10','grid_10_blurred','grid_100','grid_100_blurred','rawCounty','rawMunicipality','county','municipality']
 
 taicol_db_settings = {
     "host": os.getenv('TaiCOL_DB_HOST'),
@@ -752,7 +754,112 @@ def create_blurred_grid_data(verbatimLongitude, verbatimLatitude, coordinatePrec
             grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
             grid_data['grid_100_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
     return grid_data
-        
+
+
+# 如果是需要幫忙做模糊化的 進來的 orignal_lon & orignal_lat 一定是未模糊化資料
+def create_blurred_grid_data_new(verbatimLongitude, verbatimLatitude, coordinatePrecision, dataGeneralizations, sensitiveCategory, is_full_hidden=False):
+    # TODO 先暫時不處理科學記號的問題
+    # 判斷coordinatePrecision 是否為合理數值 小於0 or =1 or 完全屏蔽
+    # from DwC quick guide
+    # 0.00001 (normal GPS limit for decimal degrees)
+    # 0.000278 (nearest second) # TODO 尚未處理 還沒有需要處理的資料
+    # 0.01667 (nearest minute) # TODO 尚未處理 還沒有需要處理的資料
+    # 1.0 (nearest degree)
+    standardRawLon, standardRawLat, raw_location_rpt = standardize_coor(verbatimLongitude, verbatimLatitude)
+    grid_data = {}
+    grid_data['grid_1'] = '-1_-1'
+    grid_data['grid_5'] = '-1_-1'
+    grid_data['grid_10'] = '-1_-1'
+    grid_data['grid_100'] = '-1_-1'
+    grid_data['grid_1_blurred'] = '-1_-1'
+    grid_data['grid_5_blurred'] = '-1_-1'
+    grid_data['grid_10_blurred'] = '-1_-1'
+    grid_data['grid_100_blurred'] = '-1_-1'
+    grid_data['standardRawLon'] = standardRawLon
+    grid_data['standardRawLat'] = standardRawLat
+    grid_data['raw_location_rpt'] = raw_location_rpt
+    grid_data['standardLon'] = None
+    grid_data['standardLat'] = None
+    grid_data['location_rpt'] = None
+    if standardRawLon and standardRawLat:
+        if is_full_hidden:
+            fuzzy_lon = None
+            fuzzy_lat = None
+        else:
+            if not coordinatePrecision:
+                fuzzy_lon = standardRawLon
+                fuzzy_lat = standardRawLat
+            elif float(coordinatePrecision) < 1 and float(coordinatePrecision) > 0:
+                ten_times = math.pow(10, len(str(coordinatePrecision).split('.')[-1]))
+                fuzzy_lon = math.floor(float(standardRawLon)*ten_times)/ten_times
+                fuzzy_lat = math.floor(float(standardRawLat)*ten_times)/ten_times
+            elif float(coordinatePrecision) == 1:
+                # 直接去除掉小數點以後的數字
+                fuzzy_lon = str(standardRawLon).split('.')[0]
+                fuzzy_lat = str(standardRawLat).split('.')[0]
+            # elif is_full_hidden: # 完全屏蔽 
+            #     fuzzy_lon = None
+            #     fuzzy_lat = None
+            else: # 空值 / 不合理 / 無法判斷
+                # 直接把 grid_* 跟 grid_*_blurred填入一樣的值
+                fuzzy_lon = standardRawLon
+                fuzzy_lat = standardRawLat
+        # 就算沒有給到那麼細的點位 還是一樣畫上去 例如 原始座標只給到121, 21 一樣給一公里網格的資料
+        grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 0.01)
+        grid_data['grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
+        grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 0.05)
+        grid_data['grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
+        grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 0.1)
+        grid_data['grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
+        grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 1)
+        grid_data['grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
+        # if fuzzy_lon and fuzzy_lat:
+        standardLon, standardLat, location_rpt = standardize_coor(fuzzy_lon, fuzzy_lat)
+        grid_data['standardLon'] = standardLon
+        grid_data['standardLat'] = standardLat
+        grid_data['location_rpt'] = location_rpt
+        if standardLon and standardLat:
+            grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
+            grid_data['grid_1_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
+            grid_data['grid_5_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.1)
+            grid_data['grid_10_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+            grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
+            grid_data['grid_100_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
+    now_point, COUNTYNAME, TOWNNAME  = None, None, None
+    if grid_data.get('standardRawLon') and grid_data.get('standardRawLat'):
+        now_point = Point(grid_data.get('standardRawLon'), grid_data.get('standardRawLat'))
+    elif grid_data.get('standardLon') and grid_data.get('standardLat'):
+        now_point = Point(grid_data.get('standardLon'), grid_data.get('standardLat'))
+    if now_point:
+        if len(gdf[gdf.geometry.contains(now_point)]) == 1:
+            COUNTYNAME = gdf[gdf.geometry.contains(now_point)].COUNTYNAME.values[0]
+            TOWNNAME = gdf[gdf.geometry.contains(now_point)].TOWNNAME.values[0]
+        elif len(gdf_ocean[gdf_ocean.geometry.contains(now_point)]) == 1:
+            COUNTYNAME = gdf_ocean[gdf_ocean.geometry.contains(now_point)].COUNTYO.values[0]
+    grid_data['municipality'] = TOWNNAME
+    grid_data['county'] = COUNTYNAME
+    if sensitiveCategory in ['縣市','座標不開放']:
+        grid_data['rawCounty'] = grid_data.get('county')
+        grid_data['rawMunicipality'] = grid_data.get('municipality')
+    else:
+        grid_data['county'] = grid_data.get('county')
+        grid_data['municipality'] = grid_data.get('municipality')
+   # 要考慮是不是本來就要完全屏蔽 不然有可能是無法轉換座標 就必須要顯示原始座標 (從grid_data的回傳的是)
+    if grid_data.get('standardLon') or is_full_hidden:
+        grid_data['verbatimLongitude'] = grid_data.get('standardLon')
+    if grid_data.get('standardLat') or is_full_hidden:
+        grid_data['verbatimLatitude'] = grid_data.get('standardLat')
+    if dataGeneralizations:
+        grid_data['standardRawLongitude'] = grid_data.get('standardRawLon')
+        grid_data['standardRawLatitude'] = grid_data.get('standardRawLat')
+        grid_data['raw_location_rpt'] = grid_data.get('raw_location_rpt')
+    final_list = []
+    for k in geo_keys:
+        final_list.append(grid_data.get(k))
+    return final_list
+
 
 # 沒有模糊化的情況
 def create_grid_data(verbatimLongitude, verbatimLatitude):
@@ -790,7 +897,6 @@ def create_grid_data(verbatimLongitude, verbatimLatitude):
         grid_data['grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
         grid_data['grid_100_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
     return grid_data
-        
 
 # 取得影像網址前綴
 def get_media_rule(media_url):
@@ -858,3 +964,18 @@ def return_town(grid_data):
         elif len(gdf_ocean[gdf_ocean.geometry.contains(now_point)]) == 1:
             COUNTYNAME = gdf_ocean[gdf_ocean.geometry.contains(now_point)].COUNTYO.values[0]
     return COUNTYNAME, TOWNNAME
+
+
+
+
+def coor_precision(row):
+    try:
+        coordinatePrecision = float(row.coordinatePrecision)
+    except:
+        coordinatePrecision = None
+    if not coordinatePrecision:
+        if row.sensitiveCategory == '輕度':
+            coordinatePrecision = 0.01
+        elif row.sensitiveCategory == '重度':
+            coordinatePrecision = 0.1
+    return coordinatePrecision
