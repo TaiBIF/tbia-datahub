@@ -40,16 +40,18 @@ services:
       - POSTGRES_PORT=5432
       - POSTGRES_HOST=postgres
       - PGDATA=/var/lib/postgresql/data/pgdata
+    shm_size: 1g
     # command: -p 5433
   solr:
     build: ./solr-workspace
-    image: solr:8.11.1
+    image: tbia-solr-image
     container_name: tbia-solr
     ports:
       - "8983:8983"
     restart: always
     volumes:
       - ../tbia-volumes/solr:/var/solr
+      - ../tbia-volumes/datahub_bucket:/bucket
       - ./solr-workspace/:/workspace
     command:
       - solr-precreate
