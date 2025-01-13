@@ -66,7 +66,10 @@ url_list += ["https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=4410edca-3bd
         "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=0528b82f-bebb-49b0-ad2e-5082ae002823",
         "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=a1f3b9e3-60d5-49fe-a6d1-2d22a154e2b2",
         "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=7bff8305-a1e3-4e5b-bbc3-4afe04006b88",
-        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=3a3aae4c-5895-4ba5-b3ba-d5f7d924478d"]
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=3a3aae4c-5895-4ba5-b3ba-d5f7d924478d",
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=78fc169f-cef0-4054-88ec-9b694bcbf6e4",
+        "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=6ef6360c-c904-4eab-87fe-7bd234cb5c42",
+        ]
 
 
 # 取得dataset info
@@ -134,7 +137,7 @@ for url in url_list[url_index:]:
         df = pd.DataFrame(data)
         # 排除無學名或上階層資訊的欄位
         # '原始資料無物種資訊'
-        df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': ''})
+        df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': '', 'nan': None})
         df['originalVernacularName'] = df['originalVernacularName'].replace({'原始資料無物種資訊': ''})
         # 如果 'originalVernacularName','simplifiedScientificName','vernacularName','familyScientificName' 都是空值才排除
         df = df[~((df.originalVernacularName=='')&(df.simplifiedScientificName=='')&(df.vernacularName=='')&(df.familyScientificName=='')&(df.taiCOLTaxonID==''))]
@@ -145,7 +148,7 @@ for url in url_list[url_index:]:
         media_rule_list = []
         if len(df):
             df = df.reset_index(drop=True)
-            df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': ''})
+            df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': '', 'nan': None})
             df['locality'] = df.apply(lambda x: x.county + x.municipality, axis = 1)
             df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
             # 若沒有individualCount 則用organismQuantity 
@@ -235,7 +238,7 @@ for url in url_list[url_index:]:
             for d_col in ['year','month','day']:
                 if d_col in df.keys():
                     df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
-            df = df.replace({nan: None})
+            df = df.replace({nan: None, 'nan': None})
             df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
             # 更新match_log
             # 更新資料
@@ -255,7 +258,7 @@ for url in url_list[url_index:]:
                 # NOTE 改成只用occurrenceID對應
                 # df = df.merge(existed_records,on="occurrenceID", how='left')
                 df = df.merge(existed_records, how='left')
-                df = df.replace({nan: None})
+                df = df.replace({nan: None, 'nan': None})
                 # 如果已存在，取存在的tbiaID
                 df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
                 # 如果已存在，取存在的建立日期
