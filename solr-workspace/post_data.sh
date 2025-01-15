@@ -1,2 +1,2 @@
-cd /var/solr/csvs/updated
+cd /var/solr/csvs/export
 post -c tbia_records *.csv
