@@ -18,6 +18,7 @@ import subprocess
 import math
 from shapely.geometry import Point, Polygon
 import geopandas as gpd
+import bson
 
 gdf = gpd.read_file('/bucket/TW_TOWN/TOWN_MOI_1131028.shp')
 gdf_ocean = gpd.read_file('/bucket/TW_TOWN_OCEAN/tw_map_o.shp')
@@ -424,6 +425,7 @@ def update_dataset_key(ds_name, rights_holder, update_version):
     now = datetime.now() + timedelta(hours=8)
     conn = psycopg2.connect(**db_settings)
     for r in ds_name:
+        tbiaDatasetID = 'd' + str(bson.objectid.ObjectId()) # 如果沒有的話新增
         sourceDatasetID = r.get('sourceDatasetID', '')
         datasetURL = r.get('datasetURL')
         gbifDatasetID = r.get('gbifDatasetID')
@@ -447,8 +449,8 @@ def update_dataset_key(ds_name, rights_holder, update_version):
                                        WHERE "name" = %s AND rights_holder = %s;
                 ELSE 
                     INSERT INTO dataset ("rights_holder", "name", "sourceDatasetID", 
-                    "datasetURL","gbifDatasetID", "update_version", "deprecated", created, modified, "datasetLicense", "datasetPublisher")
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                    "datasetURL","gbifDatasetID", "update_version", "deprecated", created, modified, "datasetLicense", "datasetPublisher", "tbiaDatasetID")
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                 END IF;
                 END $$;
             """
@@ -460,7 +462,7 @@ def update_dataset_key(ds_name, rights_holder, update_version):
                                 sourceDatasetID, gbifDatasetID, r.get('datasetURL'), False, now, update_version, datasetLicense, datasetPublisher,  # update
                                 r.get('datasetName'), rights_holder, # condition
                                 rights_holder, r.get('datasetName'),  sourceDatasetID, datasetURL, # insert
-                                gbifDatasetID, update_version, False, now, now, datasetLicense, datasetPublisher,))
+                                gbifDatasetID, update_version, False, now, now, datasetLicense, datasetPublisher, tbiaDatasetID))
             conn.commit()
         else:
             # 如果沒有sourceDatasetID 以 datasetName 更新
@@ -474,8 +476,8 @@ def update_dataset_key(ds_name, rights_holder, update_version):
                         WHERE "name" = %s AND rights_holder = %s ;
                 ELSE 
                     INSERT INTO dataset ("rights_holder", "name", "sourceDatasetID", 
-                    "datasetURL","gbifDatasetID", "update_version", "deprecated", created, modified, "datasetLicense", "datasetPublisher") 
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                    "datasetURL","gbifDatasetID", "update_version", "deprecated", created, modified, "datasetLicense", "datasetPublisher", "tbiaDatasetID") 
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                 END IF;
                 END $$;
             """
@@ -484,10 +486,10 @@ def update_dataset_key(ds_name, rights_holder, update_version):
                                 r.get('sourceDatasetID'), gbifDatasetID, r.get('datasetURL'), False, now, update_version, datasetLicense, datasetPublisher,  # update
                                 r.get('datasetName'), rights_holder,   # condition
                                 rights_holder, r.get('datasetName'),  sourceDatasetID, datasetURL,  # insert
-                                gbifDatasetID, update_version, False, now, now, datasetLicense, datasetPublisher))
+                                gbifDatasetID, update_version, False, now, now, datasetLicense, datasetPublisher, tbiaDatasetID))
             conn.commit()
     dataset_ids = []
-    query = '''SELECT id, "name", "sourceDatasetID" FROM dataset WHERE rights_holder = %s AND deprecated = 'f' ''';
+    query = '''SELECT "tbiaDatasetID", "name", "sourceDatasetID" FROM dataset WHERE rights_holder = %s AND deprecated = 'f' ''';
     with conn.cursor() as cursor:     
         cursor.execute(query, (rights_holder, ))
         dataset_ids = pd.DataFrame(cursor.fetchall(), columns=['tbiaDatasetID', 'datasetName', 'sourceDatasetID'])
