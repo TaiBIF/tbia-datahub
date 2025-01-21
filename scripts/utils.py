@@ -567,13 +567,13 @@ def update_match_log(match_log, now):
     return match_log
 
 
-def get_records(rights_holder, min_id, limit=10000):
-    with db.begin() as conn:
-        qry = sa.text("""select * from records  
-                        where "rightsHolder" = '{}' AND id > {} order by id limit {}  """.format(rights_holder, min_id, limit)) 
-        resultset = conn.execute(qry)
-        results = resultset.mappings().all()
-        return results
+# def get_records(rights_holder, min_id, limit=10000):
+#     with db.begin() as conn:
+#         qry = sa.text("""select * from records  
+#                         where "rightsHolder" = '{}' AND id > {} order by id limit {}  """.format(rights_holder, min_id, limit)) 
+#         resultset = conn.execute(qry)
+#         results = resultset.mappings().all()
+#         return results
     
 
 def get_gbif_id(gbifDatasetID, occurrenceID):

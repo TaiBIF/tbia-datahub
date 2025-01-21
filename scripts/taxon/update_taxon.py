@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 import sqlalchemy as sa
 import time
 
-from scripts.taxon.match_utils import matching_flow
+from scripts.taxon.match_utils import matching_flow_new
 from scripts.utils import *
 
 
@@ -34,7 +34,7 @@ sci_col_map = {
                     'group': 'nps',
                     'info_id': 1,},
     '中央研究院生物多樣性中心植物標本資料庫': {'sci_cols': ['sourceScientificName','sourceVernacularName'],
-                                        'group': 'brmas',
+                                        'group': 'hast',
                                         'info_id': 0},
     'GBIF': {'sci_cols': ['taxonID','sourceVernacularName', 'sourceScientificName','originalVernacularName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily'],
              'group': 'gbif',
@@ -77,7 +77,7 @@ for r in rights_list:
     r_count = 0
     limit = 10000
     offset = 0
-    min_id = 1
+    min_id = 0
     has_more_data = True
     p = 0
     while has_more_data:
@@ -98,7 +98,7 @@ for r in rights_list:
             df = df.drop(columns=['match_higher_taxon','id'])
             # 重新比對學名
             sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
-            sci_names = matching_flow(sci_names)
+            sci_names = matching_flow_new(sci_names)
             df = df.drop(columns=['taxonID'], errors='ignore')
             match_taxon_id = sci_names
             if len(match_taxon_id):

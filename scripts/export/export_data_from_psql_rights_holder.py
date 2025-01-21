@@ -46,7 +46,7 @@ for r in r_list:
     r_index += 1
     limit = 10000
     offset = 0
-    min_id = 1
+    min_id = 0
     has_more_data = True
     while has_more_data:
         s = time.time()
