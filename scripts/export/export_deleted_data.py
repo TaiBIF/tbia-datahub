@@ -55,10 +55,8 @@ for f in files:
         commands = f''' curl http://solr:8983/solr/tbia_records/update/?commit=true -H "Content-Type: text/xml" --data-binary '<delete><query>id:({deleting_str})</query></delete>'; ''' 
         process = subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         a = process.communicate()
-        print(a)
         # 移到 deleted_records
         deleting_dict = json.dumps(deleting_rs)
         commands = f''' curl http://solr:8983/solr/deleted_records/update/?commit=true -H "Content-Type: application/json" --data-binary '{deleting_dict}'; ''' 
         process = subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         a = process.communicate()
-        print('delete', a)
