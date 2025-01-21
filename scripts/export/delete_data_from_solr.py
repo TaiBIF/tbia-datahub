@@ -8,24 +8,21 @@ import glob
 
 # TODO 這邊要修改成每次的deleted資料的日期
 
-files = glob.glob("/bucket/tbia_deleted_2024-10-25_*.csv")
+delete_time = ''
+files = glob.glob("/bucket/tbia_deleted_{}_*.csv".format(delete_time))
 
 for f in files:
     print(f)
     df = pd.read_csv(f)
-
     total_page = math.ceil(len(df) / 100)
     limit = 100
-
     df = df.drop(columns=['id'])
     df['deleted'] = df['deleted'].apply(lambda x: x.split('.')[0])
     df = df.rename(columns={'tbiaID': 'id'})
-
     results = df.to_dict('records')
-
     print('total_page', total_page)
     for p in range(0,total_page):
-        print(p)
+        # print(p)
         deleting_rs = results[p*limit:(p+1)*limit]
         deleting_ids = [d['id'] for d in deleting_rs]
         deleting_str = ' OR '.join(deleting_ids)

@@ -4,9 +4,8 @@ import pandas as pd
 from app import db
 import pandas as pd
 import sqlalchemy as sa
-from scripts.utils import get_taxon_df
+from scripts.utils import get_taxon_df, db_settings
 import time
-
 
 total_count = 0
 
@@ -22,7 +21,7 @@ while has_more_data:
                         where id > {} order by id limit {}  """.format(min_id, limit)) 
         resultset = conn.execute(qry)
         results = resultset.mappings().all()
-    print(time.time()-s, offset, min_id)        
+    print(time.time()-s, offset, min_id)
     if len(results):
         total_count += len(results)
         df = pd.DataFrame(results)
