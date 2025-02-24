@@ -124,7 +124,7 @@ for p in range(current_page,total_page,10):
         for g in geo_keys:
             if g not in df.keys():
                 df[g] = ''
-        df[geo_keys] = df.apply(lambda x: pd.Series(create_blurred_grid_data_new(x.verbatimLongitude, x.verbatimLatitude, x.coordinatePrecision, x.dataGeneralizations, is_full_hidden=True)),  axis=1)
+        df[geo_keys] = df.apply(lambda x: pd.Series(create_blurred_grid_data_new(x.verbatimLongitude, x.verbatimLatitude, None, x.dataGeneralizations, is_full_hidden=True)),  axis=1)
         # 年月日
         df[date_keys] = df.apply(lambda x: pd.Series(convert_year_month_day_new(x.to_dict())), axis=1)
         for d_col in ['year','month','day']:
