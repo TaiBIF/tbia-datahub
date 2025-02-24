@@ -118,7 +118,7 @@ for r in rights_list:
             # df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','taxon_name_id','sci_index'],errors='ignore')
             df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','taxon_name_id','sci_index', 'datasetURL','gbifDatasetID', 'gbifID'],errors='ignore')
             # df = df.rename(columns=({'id': 'tbiaID'}))
-            df.to_sql('records', db, # schema='my_schema',
+            df.to_sql('records', db,
                     if_exists='append',
                     index=False,
                     method=records_upsert)

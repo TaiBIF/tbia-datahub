@@ -23,8 +23,6 @@ sci_cols = ['sourceScientificName','sourceVernacularName']
 # 若原資料庫原本就有提供taxonID 在這段要拿掉 避免merge時產生衝突
 df_sci_cols = [s for s in sci_cols if s != 'taxonID'] 
 
-# 在postgres要排除掉的taxon欄位
-# psql_records_key = [k for k in taxon.keys() if k != 'taxonID']
 
 # 單位資訊
 group = 'fact'
@@ -50,12 +48,6 @@ url = f"https://fact.tfri.gov.tw/api/1/occurrence/?token={os.getenv('FACT_KEY')}
 response = requests.get(url, verify=False)
 
 
-# commands = f''' curl "https://fact.tfri.gov.tw/api/1/occurrence?token={os.getenv('FACT_KEY')}&page=1&per_page=1000" ''' 
-# process = subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-# a = process.communicate()
-# result = json.loads(a[0])
-
-
 if response.status_code == 200:
     result = response.json()
     total = result['meta']['total']
@@ -72,17 +64,13 @@ for p in range(current_page,total_page,10):
         print('page:',c)
         time.sleep(5)
         url = f"https://fact.tfri.gov.tw/api/1/occurrence/?token={os.getenv('FACT_KEY')}&page={c}&per_page=1000"
-        # commands = f''' curl "https://fact.tfri.gov.tw/api/1/occurrence/?token={os.getenv('FACT_KEY')}&page={c}&per_page=1000" ''' 
-        # process = subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        # a = process.communicate()
-        # result = json.loads(a[0])
         response = requests.get(url, verify=False)
         if response.status_code == 200:
             result = response.json()
-        data += result.get('data')
+            data += result.get('data')
     df = pd.DataFrame(data)
-    # 如果 'isPreferredName','scientificName',都是空值才排除
-    df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': ''})
+    # 如果學名相關的欄位都是空值才排除
+    df = df.replace(to_quote_dict)
     df = df[~((df.isPreferredName=='')&(df.scientificName==''))]
     if 'sensitiveCategory' in df.keys():
         df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
@@ -92,9 +80,15 @@ for p in range(current_page,total_page,10):
         df = []
     media_rule_list = []
     if len(df):
+        df = df.reset_index(drop=True)
+        df = df.replace(to_quote_dict)
+        # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
+        df['id'] = df.apply(lambda x: str(bson.objectid.ObjectId()), axis=1)
         df = df.rename(columns={'created': 'sourceCreated', 'modified': 'sourceModified', 'scientificName': 'sourceScientificName', 
         'permanentLink': 'references', 'isPreferredName': 'sourceVernacularName', 'collectionID': 'catalogNumber', 'taxonRank': 'sourceTaxonRank'})
-        df = df.replace({nan: '', None: '', 'NA': '', '-99999': '', 'N/A': ''})
+        for col in cols_str_ends:
+            if col in df.keys():
+                df[col] = df[col].apply(check_id_str_ends)
         sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
         sci_names = matching_flow_new(sci_names)
         df = df.drop(columns=['taxonID'], errors='ignore')
@@ -120,11 +114,8 @@ for p in range(current_page,total_page,10):
             df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
         # basisOfRecord 無資料
         # dataGeneralizations 無資料
-        df['id'] = ''
         df['mediaLicense'] = None
         for i in df.index:
-            # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
-            df.loc[i,'id'] = str(bson.objectid.ObjectId())
             row = df.loc[i]
             # associatedMedia
             mediaLicense_list = []
@@ -140,73 +131,45 @@ for p in range(current_page,total_page,10):
             mediaLicense = ';'.join(mediaLicense_list)
             df.loc[i, 'associatedMedia'] = associatedMedia
             df.loc[i, 'mediaLicense'] = mediaLicense
-            # 因為沒有模糊化座標 所以grid_* & grid_*_blurred 欄位填一樣的
-            grid_data = create_grid_data(verbatimLongitude=row.verbatimLongitude, verbatimLatitude=row.verbatimLatitude)
-            county, municipality = return_town(grid_data)
-            df.loc[i,'county'] = county
-            df.loc[i,'municipality'] = municipality
-            df.loc[i,'standardLongitude'] = grid_data.get('standardLon')
-            df.loc[i,'standardLatitude'] = grid_data.get('standardLat')
-            df.loc[i,'location_rpt'] = grid_data.get('location_rpt')
-            df.loc[i, 'grid_1'] = grid_data.get('grid_1')
-            df.loc[i, 'grid_1_blurred'] = grid_data.get('grid_1_blurred')
-            df.loc[i, 'grid_5'] = grid_data.get('grid_5')
-            df.loc[i, 'grid_5_blurred'] = grid_data.get('grid_5_blurred')
-            df.loc[i, 'grid_10'] = grid_data.get('grid_10')
-            df.loc[i, 'grid_10_blurred'] = grid_data.get('grid_10_blurred')
-            df.loc[i, 'grid_100'] = grid_data.get('grid_100')
-            df.loc[i, 'grid_100_blurred'] = grid_data.get('grid_100_blurred')
-            # 日期
-            df.loc[i, ['eventDate','standardDate','year','month','day']] = convert_year_month_day(row)
+        for g in geo_wo_raw_keys:
+            if g not in df.keys():
+                df[g] = ''
+        df[geo_wo_raw_keys] = df.apply(lambda x: pd.Series(create_grid_data_new(x.verbatimLongitude, x.verbatimLatitude)),  axis=1)
+        # 年月日
+        df[date_keys] = df.apply(lambda x: pd.Series(convert_year_month_day_new(x.to_dict())), axis=1)
         for d_col in ['year','month','day']:
             if d_col in df.keys():
                 df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
-        df = df.replace({nan: None})
+        df = df.replace(to_none_dict)
         df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
         # 資料集
         ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
         # return tbiaDatasetID 並加上去
         return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
         df = df.merge(return_dataset_id)
-        # 更新match_log
-        # 更新資料
-        df['occurrenceID'] = df['occurrenceID'].astype('str')
-        df['catalogNumber'] = df['catalogNumber'].astype('str')
-        # existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID'])
-        # existed_records = get_existed_records(df['occurrenceID'].to_list(), rights_holder)
-        # existed_records = existed_records.replace({nan:''})
+        # 取得已建立的tbiaID
+        df[['catalogNumber','occurrenceID']] = df[['catalogNumber','occurrenceID']].astype('str')
         existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
         existed_records = get_existed_records(occ_ids=df[df.occurrenceID!='']['occurrenceID'].to_list(), rights_holder=rights_holder, cata_ids=df[df.catalogNumber!='']['catalogNumber'].to_list())
         existed_records = existed_records.replace({nan:''})
-
         if len(existed_records):
-            # df =  df.merge(existed_records,on=["occurrenceID"], how='left')
             df = df.merge(existed_records, how='left')
-            df = df.replace({nan: None})
+            df = df.replace(to_none_dict)
             # 如果已存在，取存在的tbiaID
             df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
-            # 如果已存在，取存在的建立日期
-            # df['created'] = df.apply(lambda x: x.created_y if x.tbiaID else now, axis=1)
-            # df = df.drop(columns=['tbiaID','created_y','created_x'])
             df = df.drop(columns=['tbiaID'])
-        # match_log要用更新的
-        match_log = df[['occurrenceID','catalogNumber','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','group','rightsHolder','created','modified']]
+        # 更新match_log
+        match_log = df[match_log_cols]
         match_log = match_log.reset_index(drop=True)
         match_log = update_match_log(match_log=match_log, now=now)
         match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{p}.csv',index=None)
-        # records要用更新的
-        # 已經串回原本的tbiaID，可以用tbiaID做更新
+        # 用tbiaID更新records
         df['is_deleted'] = False
-        df = df.drop(columns=['match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','taxon_name_id','sci_index', 'datasetURL','gbifDatasetID', 'gbifID'],errors='ignore')
-        # 最後再一起匯出
-        # # 在solr裡 要使用id當作名稱 而非tbiaID
-        # df.to_csv(f'/solr/csvs/updated/{group}_{info_id}_{p}.csv', index=False)
-        # 存到records裏面
-        df = df.rename(columns=({'id': 'tbiaID'}))
         df['update_version'] = int(update_version)
-        # df = df.drop(columns=psql_records_key,errors='ignore')
+        df = df.rename(columns=({'id': 'tbiaID'}))
+        df = df.drop(columns=[ck for ck in df.keys() if ck not in records_cols],errors='ignore')
         for l in range(0, len(df), 1000):
-            df[l:l+1000].to_sql('records', db, # schema='my_schema',
+            df[l:l+1000].to_sql('records', db,
                     if_exists='append',
                     index=False,
                     method=records_upsert)
@@ -228,9 +191,6 @@ update_update_version(is_finished=True, update_version=update_version, rights_ho
 # 更新 datahub - dataset
 # update if deprecated
 update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
-
-# update dataset info
-# update_dataset_info(rights_holder=rights_holder)
 
 
 print('done!')
