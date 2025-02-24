@@ -125,12 +125,12 @@ for p in range(current_page,total_page,10):
         if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
             df['associatedMedia'] = df['associatedMedia'].replace({None: '', np.nan: ''})
             df['associatedMedia'] = df.apply(lambda x: x.associatedMedia if x.mediaLicense else '', axis=1)
-        df['media_rule_list'] = df[df.associatedMedia.notnull()]['associatedMedia'].apply(lambda x: get_media_rule(x))
-        media_rule_list += list(df[df.media_rule_list.notnull()].media_rule_list.unique())
+            df['media_rule_list'] = df[df.associatedMedia.notnull()]['associatedMedia'].apply(lambda x: get_media_rule(x))
+            media_rule_list += list(df[df.media_rule_list.notnull()].media_rule_list.unique())
         # 地理資訊
         df['coordinatePrecision'] = df.apply(lambda x: coor_precision(x), axis=1)
         df['coordinatePrecision'] = df['coordinatePrecision'].replace({np.nan: None})
-        df['dataGeneralizations'] = df['coordinatePrecision'].apply(lambda x: True if x.coordinatePrecision else False)
+        df['dataGeneralizations'] = df['coordinatePrecision'].apply(lambda x: True if x else False)
         df['is_hidden'] = df.apply(lambda x: True if x.sensitiveCategory in ['縣市','座標不開放'] else False, axis=1)
         for g in geo_keys:
             if g not in df.keys():
@@ -141,12 +141,12 @@ for p in range(current_page,total_page,10):
         for d_col in ['year','month','day']:
             if d_col in df.keys():
                 df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
-        df = df.replace(to_none_dict)
+        df = df.replace(to_quote_dict)
         df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
         # 資料集
         ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
         # return tbiaDatasetID 並加上去
-        return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
+        return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version, group=group)
         df = df.merge(return_dataset_id)
         # 取得已建立的tbiaID
         df['occurrenceID'] = df['occurrenceID'].astype('str')
@@ -160,7 +160,6 @@ for p in range(current_page,total_page,10):
         if len(existed_records):
             df = df.merge(existed_records, how='left')
             df = df.replace(to_none_dict)
-            # 如果已存在，取存在的tbiaID
             df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
             df = df.drop(columns=['tbiaID'])
         # 更新match_log

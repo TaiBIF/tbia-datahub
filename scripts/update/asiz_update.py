@@ -45,7 +45,7 @@ current_page, note = insert_new_update_version(rights_holder=rights_holder,updat
 
 
 url = f"https://brmas.openmuseum.tw/api/v2/specimen_brmas/list?token={os.getenv('ASIZ_KEY')}&page=1&per_page=1000"
-response = requests.get(url, verify=False)
+response = requests.get(url, verify=False, headers={'user-agent':"TBIA"})
 
 
 if response.status_code == 200:
@@ -64,7 +64,7 @@ for p in range(current_page,total_page,10):
         print('page:',c)
         time.sleep(5)
         url = f"https://brmas.openmuseum.tw/api/v2/specimen_brmas/list?token={os.getenv('ASIZ_KEY')}&page={c}&per_page=1000"
-        response = requests.get(url, verify=False)
+        response = requests.get(url, verify=False, headers={'user-agent':"TBIA"})
         if response.status_code == 200:
             result = response.json()
         data += result.get('data')
@@ -155,12 +155,12 @@ for p in range(current_page,total_page,10):
         for d_col in ['year','month','day']:
             if d_col in df.keys():
                 df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
-        df = df.replace(to_none_dict)
+        df = df.replace(to_quote_dict)
         df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
         # 資料集
         ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
         # return tbiaDatasetID 並加上去
-        return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
+        return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version, group=group)
         df = df.merge(return_dataset_id)
         # 取得已建立的tbiaID
         df['catalogNumber'] = df['catalogNumber'].astype('str')
@@ -174,7 +174,6 @@ for p in range(current_page,total_page,10):
         if len(existed_records):
             df = df.merge(existed_records, how='left')
             df = df.replace(to_none_dict)
-            # 如果已存在，取存在的tbiaID
             df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
             df = df.drop(columns=['tbiaID'])
         # 更新match_log

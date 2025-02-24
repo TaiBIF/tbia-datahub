@@ -463,7 +463,7 @@ def control_basis_of_record(basisOfRecord):
         basisOfRecord = ''
     return basisOfRecord
 
-def update_dataset_key(ds_name, rights_holder, update_version):
+def update_dataset_key(ds_name, rights_holder, update_version, group):
     # 202404 這邊不需要考慮record_type了
     # TODO 不考慮record_type的話 可能會把原本deprecated的資料集打開 -> 應該改成直接刪掉deprecated的資料集 如果是之前重複的話
     # 先確定之前的search_query再次查詢會不會有問題  or 只考慮把有兩個重複的資料集拿掉
@@ -494,8 +494,8 @@ def update_dataset_key(ds_name, rights_holder, update_version):
                                        WHERE "name" = %s AND rights_holder = %s;
                 ELSE 
                     INSERT INTO dataset ("rights_holder", "name", "sourceDatasetID", 
-                    "datasetURL","gbifDatasetID", "update_version", "deprecated", created, modified, "datasetLicense", "datasetPublisher", "tbiaDatasetID")
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                    "datasetURL","gbifDatasetID", "update_version", "deprecated", created, modified, "datasetLicense", "datasetPublisher", "tbiaDatasetID", "group")
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                 END IF;
                 END $$;
             """
@@ -507,7 +507,7 @@ def update_dataset_key(ds_name, rights_holder, update_version):
                                 sourceDatasetID, gbifDatasetID, r.get('datasetURL'), False, now, update_version, datasetLicense, datasetPublisher,  # update
                                 r.get('datasetName'), rights_holder, # condition
                                 rights_holder, r.get('datasetName'),  sourceDatasetID, datasetURL, # insert
-                                gbifDatasetID, update_version, False, now, now, datasetLicense, datasetPublisher, tbiaDatasetID))
+                                gbifDatasetID, update_version, False, now, now, datasetLicense, datasetPublisher, tbiaDatasetID, group))
             conn.commit()
         else:
             # 如果沒有sourceDatasetID 以 datasetName 更新
@@ -521,8 +521,8 @@ def update_dataset_key(ds_name, rights_holder, update_version):
                         WHERE "name" = %s AND rights_holder = %s ;
                 ELSE 
                     INSERT INTO dataset ("rights_holder", "name", "sourceDatasetID", 
-                    "datasetURL","gbifDatasetID", "update_version", "deprecated", created, modified, "datasetLicense", "datasetPublisher", "tbiaDatasetID") 
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                    "datasetURL","gbifDatasetID", "update_version", "deprecated", created, modified, "datasetLicense", "datasetPublisher", "tbiaDatasetID", "group") 
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                 END IF;
                 END $$;
             """
@@ -531,7 +531,7 @@ def update_dataset_key(ds_name, rights_holder, update_version):
                                 r.get('sourceDatasetID'), gbifDatasetID, r.get('datasetURL'), False, now, update_version, datasetLicense, datasetPublisher,  # update
                                 r.get('datasetName'), rights_holder,   # condition
                                 rights_holder, r.get('datasetName'),  sourceDatasetID, datasetURL,  # insert
-                                gbifDatasetID, update_version, False, now, now, datasetLicense, datasetPublisher, tbiaDatasetID))
+                                gbifDatasetID, update_version, False, now, now, datasetLicense, datasetPublisher, tbiaDatasetID, group))
             conn.commit()
     dataset_ids = []
     query = '''SELECT "tbiaDatasetID", "name", "sourceDatasetID" FROM dataset WHERE rights_holder = %s AND deprecated = 'f' ''';

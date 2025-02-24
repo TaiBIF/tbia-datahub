@@ -150,8 +150,42 @@ for d in dataset_list[d_list_index:]:
                 if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
                     df['associatedMedia'] = df['associatedMedia'].replace({None: '', np.nan: ''})
                     df['associatedMedia'] = df.apply(lambda x: x.associatedMedia if x.mediaLicense else '', axis=1)
-                df['media_rule_list'] = df[df.associatedMedia.notnull()]['associatedMedia'].apply(lambda x: get_media_rule(x))
-                media_rule_list += list(df[df.media_rule_list.notnull()].media_rule_list.unique())
+                    df['media_rule_list'] = df[df.associatedMedia.notnull()]['associatedMedia'].apply(lambda x: get_media_rule(x))
+                    media_rule_list += list(df[df.media_rule_list.notnull()].media_rule_list.unique())
+                # 地理資訊
+                for g in geo_wo_raw_keys:
+                    if g not in df.keys():
+                        df[g] = ''
+                df[geo_wo_raw_keys] = df.apply(lambda x: pd.Series(create_grid_data_new(x.verbatimLongitude, x.verbatimLatitude)),  axis=1)
+                # 年月日
+                df[date_keys] = df.apply(lambda x: pd.Series(convert_year_month_day_new(x.to_dict())), axis=1)
+                for d_col in ['year','month','day']:
+                    if d_col in df.keys():
+                        df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
+                df = df.replace(to_quote_dict)
+                df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
+                # 資料集
+                df['datasetURL'] = df['gbifDatasetID'].apply(lambda x: 'https://www.gbif.org/dataset/' + x if x else '')
+                ds_name = df[['datasetName','gbifDatasetID','sourceDatasetID','datasetURL']]
+                ds_name = ds_name.merge(dataset[['taibifDatasetID','datasetPublisher','datasetLicense']], left_on='sourceDatasetID', right_on='taibifDatasetID')
+                ds_name = ds_name.drop_duplicates().to_dict(orient='records')
+                # return tbiaDatasetID 並加上去
+                return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version, group=group)
+                df = df.merge(return_dataset_id)
+                # 取得已建立的tbiaID
+                df['occurrenceID'] = df['occurrenceID'].astype('str')
+                if 'catalogNumber' not in df.keys():
+                    df['catalogNumber'] = ''
+                else:
+                    df['catalogNumber'] = df['catalogNumber'].astype('str')
+                existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
+                existed_records = get_existed_records(occ_ids=df[df.occurrenceID!='']['occurrenceID'].to_list(), rights_holder=rights_holder, cata_ids=df[df.catalogNumber!='']['catalogNumber'].to_list(), get_reference=True)
+                existed_records = existed_records.replace({nan:''})
+                if len(existed_records):
+                    df = df.merge(existed_records, how='left')
+                    df = df.replace(to_none_dict)
+                    df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
+                    df = df.drop(columns=['tbiaID'])
                 # 如果是新的records 再更新GBIF ID
                 for i in df.index:
                     row = df.loc[i]
@@ -167,41 +201,6 @@ for d in dataset_list[d_list_index:]:
                         gbif_id = get_gbif_id(row.gbifDatasetID, row.occurrenceID)
                         if gbif_id:
                             df.loc[i, 'references'] = f"https://www.gbif.org/occurrence/{gbif_id}"
-                # 地理資訊
-                for g in geo_wo_raw_keys:
-                    if g not in df.keys():
-                        df[g] = ''
-                df[geo_wo_raw_keys] = df.apply(lambda x: pd.Series(create_grid_data_new(x.verbatimLongitude, x.verbatimLatitude)),  axis=1)
-                # 年月日
-                df[date_keys] = df.apply(lambda x: pd.Series(convert_year_month_day_new(x.to_dict())), axis=1)
-                for d_col in ['year','month','day']:
-                    if d_col in df.keys():
-                        df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
-                df = df.replace(to_none_dict)
-                df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
-                # 資料集
-                df['datasetURL'] = df['gbifDatasetID'].apply(lambda x: 'https://www.gbif.org/dataset/' + x if x else '')
-                ds_name = df[['datasetName','gbifDatasetID','sourceDatasetID','datasetURL']]
-                ds_name = ds_name.merge(dataset[['taibifDatasetID','datasetPublisher','datasetLicense']], left_on='sourceDatasetID', right_on='taibifDatasetID')
-                ds_name = ds_name.drop_duplicates().to_dict(orient='records')
-                # return tbiaDatasetID 並加上去
-                return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
-                df = df.merge(return_dataset_id)
-                # 取得已建立的tbiaID
-                df['occurrenceID'] = df['occurrenceID'].astype('str')
-                if 'catalogNumber' not in df.keys():
-                    df['catalogNumber'] = ''
-                else:
-                    df['catalogNumber'] = df['catalogNumber'].astype('str')
-                existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
-                existed_records = get_existed_records(occ_ids=df[df.occurrenceID!='']['occurrenceID'].to_list(), rights_holder=rights_holder, cata_ids=df[df.catalogNumber!='']['catalogNumber'].to_list(), get_reference=True)
-                existed_records = existed_records.replace({nan:''})
-                if len(existed_records):
-                    df = df.merge(existed_records, how='left')
-                    df = df.replace(to_none_dict)
-                    # 如果已存在，取存在的tbiaID
-                    df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
-                    df = df.drop(columns=['tbiaID'])
                 # 更新match_log
                 match_log = df[match_log_cols]
                 match_log = match_log.reset_index(drop=True)

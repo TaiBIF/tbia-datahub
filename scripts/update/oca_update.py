@@ -257,8 +257,8 @@ media_rule_list = []
 if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
     df['associatedMedia'] = df['associatedMedia'].replace({None: '', np.nan: ''})
     df['associatedMedia'] = df.apply(lambda x: x.associatedMedia if x.mediaLicense else '', axis=1)
-df['media_rule_list'] = df[df.associatedMedia.notnull()]['associatedMedia'].apply(lambda x: get_media_rule(x))
-media_rule_list += list(df[df.media_rule_list.notnull()].media_rule_list.unique())
+    df['media_rule_list'] = df[df.associatedMedia.notnull()]['associatedMedia'].apply(lambda x: get_media_rule(x))
+    media_rule_list += list(df[df.media_rule_list.notnull()].media_rule_list.unique())
 
 
 for i in df.index:
@@ -288,17 +288,17 @@ for d_col in ['year','month','day']:
     if d_col in df.keys():
         df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
 
-df = df.replace(to_none_dict)
+df = df.replace(to_quote_dict)
 df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
 
 
 # 資料集
 ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
 # return tbiaDatasetID 並加上去
-return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version)
+return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version, group=group)
 df = df.merge(return_dataset_id)
 
-df = df.replace(to_none_dict)
+df = df.replace(to_quote_dict)
 df['catalogNumber'] = ''
 
 # 取得已建立的tbiaID
@@ -311,7 +311,6 @@ if 'occurrenceID' in df.keys():
     if len(existed_records):
         df = df.merge(existed_records, how='left')
         df = df.replace(to_none_dict)
-        # 如果已存在，取存在的tbiaID
         df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
         df = df.drop(columns=['tbiaID'])
 else:
