@@ -1042,14 +1042,15 @@ def return_town(grid_data):
 
 
 def coor_precision(row):
+    row = row.to_dict()
     try:
-        coordinatePrecision = float(row.coordinatePrecision)
+        coordinatePrecision = float(row.get('coordinatePrecision'))
     except:
         coordinatePrecision = None
     if not coordinatePrecision:
-        if row.sensitiveCategory == '輕度':
+        if row.get('sensitiveCategory') == '輕度':
             coordinatePrecision = 0.01
-        elif row.sensitiveCategory == '重度':
+        elif row.get('sensitiveCategory') == '重度':
             coordinatePrecision = 0.1
     return coordinatePrecision
 
