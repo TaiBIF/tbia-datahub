@@ -604,11 +604,11 @@ def update_match_log(match_log, now):
     match_log['created'] = now
     match_log['modified'] = now
     match_log = match_log.rename(columns={'id': 'tbiaID','rightsHolder':'rights_holder'})
-    for l in range(0, len(match_log), 1000):
-        match_log[l:l+1000].to_sql('match_log', db,
-                if_exists='append',
-                index=False,
-                method=matchlog_upsert)
+    match_log.to_sql('match_log', db,
+            if_exists='append',
+            index=False,
+            chunksize=500,
+            method=matchlog_upsert)
     return match_log
 
 
@@ -635,10 +635,9 @@ def get_gbif_id(gbifDatasetID, occurrenceID):
 # 更新資料庫內的records
 
 def records_upsert(table, conn, keys, data_iter):
-    data = [dict(zip(keys, row)) for row in data_iter]
     # 如果重複的時候，不要update的欄位
     not_set_list = ['created', 'tbiaID']
-    insert_statement = insert(table.table).values(data)
+    insert_statement = insert(table.table).values(list(data_iter))
     upsert_statement = insert_statement.on_conflict_do_update(
         constraint=f"records_unique",
         set_={c.key: c for c in insert_statement.excluded if c.key not in not_set_list},

@@ -29,14 +29,14 @@ class MatchLog(Base):
     match_higher_taxon: Mapped[bool] = mapped_column(server_default='f')
 
     match_stage: Mapped[Optional[int]]
-    stage_1: Mapped[Optional[str]] = mapped_column(String(20), index=True)
-    stage_2: Mapped[Optional[str]] = mapped_column(String(20), index=True)
-    stage_3: Mapped[Optional[str]] = mapped_column(String(20), index=True)
-    stage_4: Mapped[Optional[str]] = mapped_column(String(20), index=True)
-    stage_5: Mapped[Optional[str]] = mapped_column(String(20), index=True)
-    stage_6: Mapped[Optional[str]] = mapped_column(String(20), index=True)
-    stage_7: Mapped[Optional[str]] = mapped_column(String(20), index=True)
-    stage_8: Mapped[Optional[str]] = mapped_column(String(20), index=True)
+    stage_1: Mapped[Optional[str]] = mapped_column(String(20))
+    stage_2: Mapped[Optional[str]] = mapped_column(String(20))
+    stage_3: Mapped[Optional[str]] = mapped_column(String(20))
+    stage_4: Mapped[Optional[str]] = mapped_column(String(20))
+    stage_5: Mapped[Optional[str]] = mapped_column(String(20))
+    stage_6: Mapped[Optional[str]] = mapped_column(String(20))
+    stage_7: Mapped[Optional[str]] = mapped_column(String(20))
+    stage_8: Mapped[Optional[str]] = mapped_column(String(20))
     created: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     modified: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     

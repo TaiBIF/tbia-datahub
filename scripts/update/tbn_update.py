@@ -261,11 +261,11 @@ for url in url_list[url_index:]:
             df = df.rename(columns=({'id': 'tbiaID'}))
             df = df.drop(columns=[ck for ck in df.keys() if ck not in records_cols],errors='ignore')
             now_s = time.time()
-            for l in range(0, len(df), 1000):
-                df[l:l+1000].to_sql('records', db,
-                        if_exists='append',
-                        index=False,
-                        method=records_upsert)
+            df.to_sql('records', db,
+                    if_exists='append',
+                    index=False,
+                    chunksize=500,
+                    method=records_upsert)
             print('tosql', time.time()-now_s)
             # 更新 media rule
             for mm in media_rule_list:
