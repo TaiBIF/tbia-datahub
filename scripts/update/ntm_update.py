@@ -202,6 +202,7 @@ for d in dataset_list[d_list_index:]:
                         gbif_id = get_gbif_id(row.gbifDatasetID, row.occurrenceID)
                         if gbif_id:
                             df.loc[i, 'references'] = f"https://www.gbif.org/occurrence/{gbif_id}"
+                df = df.replace(to_none_dict)
                 # 更新match_log
                 match_log = df[match_log_cols]
                 match_log = match_log.reset_index(drop=True)

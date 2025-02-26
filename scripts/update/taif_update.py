@@ -151,6 +151,7 @@ for p in range(current_page,total_page,10):
             df = df.replace(to_none_dict)
             df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
             df = df.drop(columns=['tbiaID'])
+        df = df.replace(to_none_dict)
         # 更新match_log
         match_log = df[match_log_cols]
         match_log = match_log.reset_index(drop=True)

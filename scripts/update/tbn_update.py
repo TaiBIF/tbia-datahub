@@ -247,6 +247,7 @@ for url in url_list[url_index:]:
                 df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
                 df = df.drop(columns=['tbiaID'])
             print('get_existed', time.time()-now_s)
+            df = df.replace(to_none_dict)
             # 更新match_log
             now_s = time.time()
             match_log = df[match_log_cols]

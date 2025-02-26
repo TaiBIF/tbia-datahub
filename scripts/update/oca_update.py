@@ -317,9 +317,8 @@ else:
     df['occurrenceID'] = ''
 
 
-df = df.replace({to_none_dict})
 
-
+df = df.replace(to_none_dict)
 # 更新match_log
 match_log = df[match_log_cols]
 match_log = match_log.reset_index(drop=True)
