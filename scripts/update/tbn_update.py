@@ -215,13 +215,12 @@ for url in url_list[url_index:]:
             df[geo_keys] = df.apply(lambda x: pd.Series(create_blurred_grid_data_new(x.verbatimLongitude, x.verbatimLatitude, x.coordinatePrecision, x.dataGeneralizations, is_full_hidden=x.is_hidden)),  axis=1)
             print('coor', time.time()-now_s)
             now_s = time.time()
-            # 待處理
-            print(time.time()-now_s)
             # 年月日
             df[date_keys] = df.apply(lambda x: pd.Series(convert_year_month_day_new(x.to_dict())), axis=1)
             for d_col in ['year','month','day']:
                 if d_col in df.keys():
                     df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
+            print('date', time.time()-now_s)
             df = df.replace(to_quote_dict)
             df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
             # 資料集

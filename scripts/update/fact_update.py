@@ -168,11 +168,11 @@ for p in range(current_page,total_page,10):
         df['update_version'] = int(update_version)
         df = df.rename(columns=({'id': 'tbiaID'}))
         df = df.drop(columns=[ck for ck in df.keys() if ck not in records_cols],errors='ignore')
-        for l in range(0, len(df), 1000):
-            df[l:l+1000].to_sql('records', db,
-                    if_exists='append',
-                    index=False,
-                    method=records_upsert)
+        df.to_sql('records', db,
+                if_exists='append',
+                index=False,
+                chunksize=500,
+                method=records_upsert)
         for mm in media_rule_list:
             update_media_rule(media_rule=mm,rights_holder=rights_holder)
     # 成功之後 更新update_update_version
