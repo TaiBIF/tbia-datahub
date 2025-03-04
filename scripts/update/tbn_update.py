@@ -173,17 +173,24 @@ for url in url_list[url_index:]:
                                     'countyCode','tfNameCode', 'scientificNameID'],errors='ignore')
             df['taxonID'] = df['taxonID'].apply(lambda x: x if len(str(x)) == 8 else '')
             sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
+            sci_names['sci_index'] = sci_names.index
+            # test = df.merge(sci_names)
+            df = df.merge(sci_names)
+            # TODO 應該在這邊就先用sci_index和原本的df merge 才不會後面有複合種的問題
             now_s = time.time()
             sci_names = matching_flow_new(sci_names)
             print('match', time.time()-now_s)
             df = df.drop(columns=['taxonID'], errors='ignore')
             match_taxon_id = sci_names
             if len(match_taxon_id):
-                match_taxon_id = match_taxon_id.replace({nan: ''})
-                match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
-                df[df_sci_cols] = df[df_sci_cols].replace({'': '-999999',None:'-999999'})
-                df = df.merge(match_taxon_id, on=df_sci_cols, how='left')
-                df[sci_cols] = df[sci_cols].replace({'-999999': ''})
+                df = df.merge(match_taxon_id[['taxonID','sci_index',
+                    'match_stage', 'match_higher_taxon', 'stage_1', 'stage_2', 'stage_3',
+                    'stage_4', 'stage_5', 'stage_6', 'stage_7', 'stage_8']], on='sci_index', how='left')
+                # match_taxon_id = match_taxon_id.replace({nan: ''})
+                # match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
+                # df[df_sci_cols] = df[df_sci_cols].replace({'': '-999999',None:'-999999'})
+                # df = df.merge(match_taxon_id, on=df_sci_cols, how='left')
+                # df[sci_cols] = df[sci_cols].replace({'-999999': ''})
             df['references'] = df.apply(lambda x: f"https://www.tbn.org.tw/occurrence/{x.occurrenceID}" if x.occurrenceID else None, axis=1)
             df['sourceModified'] = df['sourceModified'].apply(lambda x: convert_date(x))
             df['sourceCreated'] = df['sourceCreated'].apply(lambda x: convert_date(x))
