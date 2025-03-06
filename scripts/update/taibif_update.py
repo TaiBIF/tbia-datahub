@@ -128,7 +128,7 @@ for d in dataset_list[d_list_index:]: # 20
             df = df.rename(columns= {
                                     'originalOccurrenceID': 'sourceOccurrenceID',
                                     'taibifOccurrenceID': 'occurrenceID', # 使用TaiBIF給的id, 避免空值
-                                    'taibifScientificName	': 'sourceScientificName',
+                                    'taibifScientificName': 'sourceScientificName',
                                     'originalScientificName': 'originalVernacularName',
                                     'taxonRank': 'sourceTaxonRank',
                                     'vernacularName': 'sourceVernacularName',
