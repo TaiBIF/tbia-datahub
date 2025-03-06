@@ -100,32 +100,34 @@ else:
     url_index = note.get('url_index')
 
 
-
 for url in url_list[url_index:]:
     # 先取得總頁數
-    response = requests.get(url + '&limit=1')
-    if response.status_code == 200:
-        result = response.json()
-        total_count = result['meta']['total'] 
-        total_page = math.ceil(total_count/1000) # 1182
-    for p in range(current_page,total_page,10):
-        data = []
-        c = p
-        while c < p + 10 and c < total_page:
-            time.sleep(0.5)
-            if not request_url:
-                request_url = url
-            if request_url.find('limit=1000') < 0:
-                request_url += '&limit=1000'
-            if request_url.find(f"apikey={os.getenv('TBN_KEY')}") < 0:
-                request_url += f"&apikey={os.getenv('TBN_KEY')}"
-            print(c, request_url)
-            response = requests.get(request_url)
-            if response.status_code == 200:
-                result = response.json()
-                request_url = result['links']['next']
-                data += result["data"]
+    # response = requests.get(url + '&limit=1')
+    # if response.status_code == 200:
+    #     result = response.json()
+    #     total_count = result['meta']['total'] 
+    #     total_page = math.ceil(total_count/1000) # 1182
+    # TODO 這邊total_page可能會改變 會造成下面有問題
+    # for p in range(current_page,total_page,10):
+        # data = []
+        # c = p
+    c = current_page
+    while request_url:
+        time.sleep(0.5)
+        if not request_url:
+            request_url = url
+        if request_url.find('limit=1000') < 0:
+            request_url += '&limit=1000'
+        if request_url.find(f"apikey={os.getenv('TBN_KEY')}") < 0:
+            request_url += f"&apikey={os.getenv('TBN_KEY')}"
+        print(c, request_url)
+        response = requests.get(request_url)
+        if response.status_code == 200:
+            result = response.json()
+            request_url = result['links']['next']
+            data = result["data"]
             c += 1
+            # c += 1
         df = pd.DataFrame(data)
         # 如果學名相關的欄位都是空值才排除
         df = df.replace(to_quote_dict)
