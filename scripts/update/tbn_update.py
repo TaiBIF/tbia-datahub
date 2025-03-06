@@ -261,7 +261,7 @@ for url in url_list[url_index:]:
             match_log = df[match_log_cols]
             match_log = match_log.reset_index(drop=True)
             match_log = update_match_log(match_log=match_log, now=now)
-            match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{url_index}_{p}.csv',index=None)
+            match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{url_index}_{c}.csv',index=None)
             print('matchlog', time.time()-now_s)
             # 用tbiaID更新records
             df['is_deleted'] = False
