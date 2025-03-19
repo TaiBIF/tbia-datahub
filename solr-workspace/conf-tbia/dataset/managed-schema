@@ -477,6 +477,9 @@
   <field name="created" type="pdates"/>
   <field name="modified" type="pdates"/>
 
+  <field name="is_duplicated_name" type="boolean"/>
+
+
   <!-- <field name="update_version" type="string"/> -->
   <field name="downloadCount" type="string"/>
 
