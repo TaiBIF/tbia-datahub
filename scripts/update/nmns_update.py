@@ -122,9 +122,6 @@ for now_category in category_list[category_index:]:
             print(now_category, len(data), all_count)
             df = pd.DataFrame(data)
             data = [] # 重新下一個loop
-            for fl in field_list:
-                if fl not in df.keys():
-                    df[fl] = ''
             df = df.replace(to_quote_dict)
             # 如果有資料沒有這些欄位 要先幫忙補上去
             for sci_key in ['sourceScientificName', 'sourceVernacularName', 'sourceOrder', 'sourceFamily']:
@@ -134,6 +131,9 @@ for now_category in category_list[category_index:]:
                 df['sourceVernacularName'] = ''
             if 'genus' in df.keys() and 'specificEpithet' in df.keys():
                 df['sourceScientificName'] = df.apply(lambda x: x.genus + ' ' + x.specificEpithet ,axis=1)
+            for fl in field_list:
+                if fl not in df.keys():
+                    df[fl] = ''
             # 如果學名相關的欄位都是空值才排除
             df = df[~((df.sourceScientificName=='')&(df.sourceVernacularName=='')&(df.sourceOrder=='')&(df.sourceFamily==''))]
             media_rule_list = []
