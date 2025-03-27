@@ -127,8 +127,8 @@ for now_category in category_list[category_index:]:
             for sci_key in ['sourceScientificName', 'sourceVernacularName', 'sourceOrder', 'sourceFamily']:
                 if sci_key not in df.keys():
                     df[sci_key] = ''
-            if now_category == '真菌學門':
-                df['sourceVernacularName'] = ''
+            # if now_category == '真菌學門':
+            #     df['sourceVernacularName'] = ''
             if 'genus' in df.keys() and 'specificEpithet' in df.keys():
                 df['sourceScientificName'] = df.apply(lambda x: x.genus + ' ' + x.specificEpithet ,axis=1)
             for fl in field_list:
