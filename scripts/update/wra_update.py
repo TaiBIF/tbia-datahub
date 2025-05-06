@@ -69,19 +69,25 @@ now = datetime.now() + timedelta(hours=8)
 
 
 for d in dataset_list[d_list_index:]:
-    total_count = d[1]
-    total_page = math.ceil (total_count / 1000)
-    for p in range(current_page,total_page,10):
+    # total_count = d[1]
+    # total_page = math.ceil (total_count / 1000)
+    # for p in range(current_page,total_page,10):
+    #     data = []
+    #     c = p
+    if not current_page:
+        url = f"https://portal.taibif.tw/api/v3/occurrence?taibifDatasetID={d[0]}&rows=1000&offset=0"
+    c = current_page
+    while url:
         data = []
-        c = p
-        while c < p + 10 and c < total_page:
-            offset = 1000 * c
-            print('page:',c , ' , offset:', offset)
-            url = f"https://portal.taibif.tw/api/v3/occurrence?taibifDatasetID={d[0]}&rows=1000&offset={offset}"
-            response = requests.get(url)
-            if response.status_code == 200:
-                result = response.json()
-                data += result.get('data')
+        offset = 1000 * c
+        url = f"https://portal.taibif.tw/api/v3/occurrence?taibifDatasetID={d[0]}&rows=1000&offset={offset}"
+        response = requests.get(url)
+        if response.status_code == 200:
+            result = response.json()
+            print('page:',c , ', offset:', offset, ', total:', result.get('count'))
+            data = result.get('data')
+            if len(data) < 1000:
+                url = None
             c+=1
         if len(data):
             df = pd.DataFrame(data)
@@ -206,7 +212,7 @@ for d in dataset_list[d_list_index:]:
                 match_log = df[match_log_cols]
                 match_log = match_log.reset_index(drop=True)
                 match_log = update_match_log(match_log=match_log, now=now)
-                match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{d_list_index}_{p}.csv',index=None)
+                match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{d_list_index}_{c}.csv',index=None)
                 # 用tbiaID更新records
                 df['is_deleted'] = False
                 df['update_version'] = update_version
