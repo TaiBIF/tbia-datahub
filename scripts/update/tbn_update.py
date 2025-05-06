@@ -111,23 +111,23 @@ for url in url_list[url_index:]:
     # for p in range(current_page,total_page,10):
         # data = []
         # c = p
+    if not request_url:
+        request_url = url
     c = current_page
     while request_url:
         time.sleep(0.5)
-        if not request_url:
-            request_url = url
         if request_url.find('limit=1000') < 0:
             request_url += '&limit=1000'
         if request_url.find(f"apikey={os.getenv('TBN_KEY')}") < 0:
             request_url += f"&apikey={os.getenv('TBN_KEY')}"
-        print(c, request_url)
         response = requests.get(request_url)
         if response.status_code == 200:
             result = response.json()
+            total_count = result['meta']['total']
+            print(c, ',', (c+1)*1000, '/', total_count, ',', request_url)
             request_url = result['links']['next']
             data = result["data"]
             c += 1
-            # c += 1
         df = pd.DataFrame(data)
         # 如果學名相關的欄位都是空值才排除
         df = df.replace(to_quote_dict)
@@ -176,9 +176,8 @@ for url in url_list[url_index:]:
             df['taxonID'] = df['taxonID'].apply(lambda x: x if len(str(x)) == 8 else '')
             sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
             sci_names['sci_index'] = sci_names.index
-            # test = df.merge(sci_names)
             df = df.merge(sci_names)
-            # TODO 應該在這邊就先用sci_index和原本的df merge 才不會後面有複合種的問題
+            # NOTE 應該在這邊就先用sci_index和原本的df merge 才不會後面有複合種的問題
             now_s = time.time()
             sci_names = matching_flow_new(sci_names)
             print('match', time.time()-now_s)
