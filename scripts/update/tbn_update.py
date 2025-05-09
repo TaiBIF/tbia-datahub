@@ -101,19 +101,10 @@ else:
 
 
 for url in url_list[url_index:]:
-    # 先取得總頁數
-    # response = requests.get(url + '&limit=1')
-    # if response.status_code == 200:
-    #     result = response.json()
-    #     total_count = result['meta']['total'] 
-    #     total_page = math.ceil(total_count/1000) # 1182
-    # TODO 這邊total_page可能會改變 會造成下面有問題
-    # for p in range(current_page,total_page,10):
-        # data = []
-        # c = p
     if not request_url:
         request_url = url
     c = current_page
+    data = []
     while request_url:
         time.sleep(0.5)
         if request_url.find('limit=1000') < 0:
@@ -126,159 +117,163 @@ for url in url_list[url_index:]:
             total_count = result['meta']['total']
             print(c, ',', (c+1)*1000, '/', total_count, ',', request_url)
             request_url = result['links']['next']
-            data = result["data"]
+            data += result["data"]
             c += 1
-        df = pd.DataFrame(data)
-        # 如果學名相關的欄位都是空值才排除
-        df = df.replace(to_quote_dict)
-        df['originalVernacularName'] = df['originalVernacularName'].replace({'原始資料無物種資訊': ''})
-        df = df[~((df.originalVernacularName=='')&(df.simplifiedScientificName=='')&(df.vernacularName=='')&(df.familyScientificName=='')&(df.taiCOLTaxonID==''))]
-        if 'sensitiveCategory' in df.keys():
-            df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
-        if 'license' in df.keys():
-            df = df[(df.license!='')&(~df.license.str.contains('ND|nd',regex=True))]
-        media_rule_list = []
-        if len(df):
-            df = df.reset_index(drop=True)
+        if c % 10 == 0 or not request_url:
+            df = pd.DataFrame(data)
+            print('df', len(df))
+            # 如果學名相關的欄位都是空值才排除
             df = df.replace(to_quote_dict)
-            # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
-            df['id'] = df.apply(lambda x: str(bson.objectid.ObjectId()), axis=1)
-            df['locality'] = df.apply(lambda x: x.county + x.municipality, axis = 1)
-            df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
-            # 若沒有individualCount 則用organismQuantity 
-            df['organismQuantity'] = df.apply(lambda x: x.individualCount if x.individualCount else x.organismQuantity, axis = 1)
-            df = df.rename(columns={
-                'created': 'sourceCreated',
-                'modified': 'sourceModified',
-                'simplifiedScientificName': 'sourceScientificName',
-                'decimalLatitude': 'verbatimLatitude', 
-                'decimalLongitude': 'verbatimLongitude',
-                'geodeticDatum': 'verbatimSRS',
-                'taiCOLTaxonID': 'taxonID',
-                'taxonUUID': 'sourceTaxonID',
-                'taxonRank': 'sourceTaxonRank',
-                'vernacularName': 'sourceVernacularName',
-                'familyScientificName': 'sourceFamily',
-                'datasetUUID': 'sourceDatasetID'
-            })
-            for col in cols_str_ends:
-                if col in df.keys():
-                    df[col] = df[col].apply(check_id_str_ends)
-            df = df.drop(columns=['externalID','minimumElevationInMeters','gridID','adminareaCode',
-                                'county','municipality','hour','minute','protectedStatusTW',
-                                    'categoryIUCN', 'categoryRedlistTW', 'endemism', 'nativeness',
-                                    'taxonGroup','scientificName','taiCOLNameCode','familyVernacularName', 'datasetAuthor', 
-                                    'resourceCitationIdentifier','establishmentMeans','individualCount','partner',
-                                    'identificationVerificationStatus', 'identifiedBy', 'dataSensitiveCategory',
-                                    'eventID', 'samplingProtocol','source','selfProduced',
-                                    'collectionID','verbatimEventDate','eventTime', 'eventPlaceAdminarea',
-                                    'countyCode','tfNameCode', 'scientificNameID'],errors='ignore')
-            df['taxonID'] = df['taxonID'].apply(lambda x: x if len(str(x)) == 8 else '')
-            sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
-            sci_names['sci_index'] = sci_names.index
-            df = df.merge(sci_names)
-            # NOTE 應該在這邊就先用sci_index和原本的df merge 才不會後面有複合種的問題
-            now_s = time.time()
-            sci_names = matching_flow_new(sci_names)
-            print('match', time.time()-now_s)
-            df = df.drop(columns=['taxonID'], errors='ignore')
-            match_taxon_id = sci_names
-            if len(match_taxon_id):
-                df = df.merge(match_taxon_id[['taxonID','sci_index',
-                    'match_stage', 'match_higher_taxon', 'stage_1', 'stage_2', 'stage_3',
-                    'stage_4', 'stage_5', 'stage_6', 'stage_7', 'stage_8']], on='sci_index', how='left')
-                # match_taxon_id = match_taxon_id.replace({nan: ''})
-                # match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
-                # df[df_sci_cols] = df[df_sci_cols].replace({'': '-999999',None:'-999999'})
-                # df = df.merge(match_taxon_id, on=df_sci_cols, how='left')
-                # df[sci_cols] = df[sci_cols].replace({'-999999': ''})
-            df['references'] = df.apply(lambda x: f"https://www.tbn.org.tw/occurrence/{x.occurrenceID}" if x.occurrenceID else None, axis=1)
-            df['sourceModified'] = df['sourceModified'].apply(lambda x: convert_date(x))
-            df['sourceCreated'] = df['sourceCreated'].apply(lambda x: convert_date(x))
-            df['group'] = group
-            df['rightsHolder'] = rights_holder
-            df['created'] = now
-            df['modified'] = now
-            # 數量
-            df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
-            # basisOfRecord
-            df['basisOfRecord'] = df['basisOfRecord'].apply(lambda x: control_basis_of_record(x))
-            df['recordType'] = df.apply(lambda x: 'col' if 'Specimen' in x.basisOfRecord else 'occ', axis=1)
-            #  如果有mediaLicense才放associatedMedia
-            if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
-                df['associatedMedia'] = df['associatedMedia'].replace({None: '', np.nan: ''})
-                df['associatedMedia'] = df.apply(lambda x: x.associatedMedia if x.mediaLicense else '', axis=1)
-                df['media_rule_list'] = df[df.associatedMedia.notnull()]['associatedMedia'].apply(lambda x: get_media_rule(x))
-                media_rule_list += list(df[df.media_rule_list.notnull()].media_rule_list.unique())
-            # dataGeneralizations 已標準化
-            # 座標模糊化
-            now_s = time.time()
-            # 地理資訊
-            df['coordinatePrecision'] = df.apply(lambda x: coor_precision(x), axis=1)
-            df['coordinatePrecision'] = df['coordinatePrecision'].replace({np.nan: None})
-            df['is_hidden'] = df.apply(lambda x: True if x.sensitiveCategory in ['縣市','座標不開放'] else False, axis=1)
-            for g in geo_keys:
-                if g not in df.keys():
-                    df[g] = ''
-            df[geo_keys] = df.apply(lambda x: pd.Series(create_blurred_grid_data_new(x.verbatimLongitude, x.verbatimLatitude, x.coordinatePrecision, x.dataGeneralizations, is_full_hidden=x.is_hidden)),  axis=1)
-            print('coor', time.time()-now_s)
-            now_s = time.time()
-            # 年月日
-            df[date_keys] = df.apply(lambda x: pd.Series(convert_year_month_day_new(x.to_dict())), axis=1)
-            for d_col in ['year','month','day']:
-                if d_col in df.keys():
-                    df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
-            print('date', time.time()-now_s)
-            df = df.replace(to_quote_dict)
-            df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
-            # 資料集
-            ds_name = df[['datasetName','sourceDatasetID','datasetURL','datasetPublisher']].drop_duplicates()
-            ds_name = ds_name.merge(dataset[['datasetUUID','datasetLicense']], left_on='sourceDatasetID', right_on='datasetUUID')
-            ds_name = ds_name.drop_duplicates().to_dict(orient='records')
-            # return tbiaDatasetID 並加上去
-            return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version, group=group)
-            df = df.merge(return_dataset_id)
-            # 取得已建立的tbiaID
-            df['occurrenceID'] = df['occurrenceID'].astype('str')
-            if 'catalogNumber' not in df.keys():
-                df['catalogNumber'] = ''
-            else:
-                df['catalogNumber'] = df['catalogNumber'].astype('str')
-            now_s = time.time()
-            existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
-            existed_records = get_existed_records(occ_ids=df[df.occurrenceID!='']['occurrenceID'].to_list(), rights_holder=rights_holder, cata_ids=df[df.catalogNumber!='']['catalogNumber'].to_list())
-            existed_records = existed_records.replace({nan:''})
-            if len(existed_records):
-                df = df.merge(existed_records, how='left')
+            df['originalVernacularName'] = df['originalVernacularName'].replace({'原始資料無物種資訊': ''})
+            df = df[~((df.originalVernacularName=='')&(df.simplifiedScientificName=='')&(df.vernacularName=='')&(df.familyScientificName=='')&(df.taiCOLTaxonID==''))]
+            if 'sensitiveCategory' in df.keys():
+                df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
+            if 'license' in df.keys():
+                df = df[(df.license!='')&(~df.license.str.contains('ND|nd',regex=True))]
+            media_rule_list = []
+            if len(df):
+                df = df.reset_index(drop=True)
+                df = df.replace(to_quote_dict)
+                # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
+                df['id'] = df.apply(lambda x: str(bson.objectid.ObjectId()), axis=1)
+                df['locality'] = df.apply(lambda x: x.county + x.municipality, axis = 1)
+                df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
+                # 若沒有individualCount 則用organismQuantity 
+                df['organismQuantity'] = df.apply(lambda x: x.individualCount if x.individualCount else x.organismQuantity, axis = 1)
+                df = df.rename(columns={
+                    'created': 'sourceCreated',
+                    'modified': 'sourceModified',
+                    'simplifiedScientificName': 'sourceScientificName',
+                    'decimalLatitude': 'verbatimLatitude', 
+                    'decimalLongitude': 'verbatimLongitude',
+                    'geodeticDatum': 'verbatimSRS',
+                    'taiCOLTaxonID': 'taxonID',
+                    'taxonUUID': 'sourceTaxonID',
+                    'taxonRank': 'sourceTaxonRank',
+                    'vernacularName': 'sourceVernacularName',
+                    'familyScientificName': 'sourceFamily',
+                    'datasetUUID': 'sourceDatasetID'
+                })
+                for col in cols_str_ends:
+                    if col in df.keys():
+                        df[col] = df[col].apply(check_id_str_ends)
+                df = df.drop(columns=['externalID','minimumElevationInMeters','gridID','adminareaCode',
+                                    'county','municipality','hour','minute','protectedStatusTW',
+                                        'categoryIUCN', 'categoryRedlistTW', 'endemism', 'nativeness',
+                                        'taxonGroup','scientificName','taiCOLNameCode','familyVernacularName', 'datasetAuthor', 
+                                        'resourceCitationIdentifier','establishmentMeans','individualCount','partner',
+                                        'identificationVerificationStatus', 'identifiedBy', 'dataSensitiveCategory',
+                                        'eventID', 'samplingProtocol','source','selfProduced',
+                                        'collectionID','verbatimEventDate','eventTime', 'eventPlaceAdminarea',
+                                        'countyCode','tfNameCode', 'scientificNameID'],errors='ignore')
+                df['taxonID'] = df['taxonID'].apply(lambda x: x if len(str(x)) == 8 else '')
+                sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
+                sci_names['sci_index'] = sci_names.index
+                df = df.merge(sci_names)
+                # NOTE 應該在這邊就先用sci_index和原本的df merge 才不會後面有複合種的問題
+                now_s = time.time()
+                sci_names = matching_flow_new(sci_names)
+                print('match', time.time()-now_s)
+                df = df.drop(columns=['taxonID'], errors='ignore')
+                match_taxon_id = sci_names
+                if len(match_taxon_id):
+                    df = df.merge(match_taxon_id[['taxonID','sci_index',
+                        'match_stage', 'match_higher_taxon', 'stage_1', 'stage_2', 'stage_3',
+                        'stage_4', 'stage_5', 'stage_6', 'stage_7', 'stage_8']], on='sci_index', how='left')
+                    # match_taxon_id = match_taxon_id.replace({nan: ''})
+                    # match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
+                    # df[df_sci_cols] = df[df_sci_cols].replace({'': '-999999',None:'-999999'})
+                    # df = df.merge(match_taxon_id, on=df_sci_cols, how='left')
+                    # df[sci_cols] = df[sci_cols].replace({'-999999': ''})
+                df['references'] = df.apply(lambda x: f"https://www.tbn.org.tw/occurrence/{x.occurrenceID}" if x.occurrenceID else None, axis=1)
+                df['sourceModified'] = df['sourceModified'].apply(lambda x: convert_date(x))
+                df['sourceCreated'] = df['sourceCreated'].apply(lambda x: convert_date(x))
+                df['group'] = group
+                df['rightsHolder'] = rights_holder
+                df['created'] = now
+                df['modified'] = now
+                # 數量
+                df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
+                # basisOfRecord
+                df['basisOfRecord'] = df['basisOfRecord'].apply(lambda x: control_basis_of_record(x))
+                df['recordType'] = df.apply(lambda x: 'col' if 'Specimen' in x.basisOfRecord else 'occ', axis=1)
+                #  如果有mediaLicense才放associatedMedia
+                if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
+                    df['associatedMedia'] = df['associatedMedia'].replace({None: '', np.nan: ''})
+                    df['associatedMedia'] = df.apply(lambda x: x.associatedMedia if x.mediaLicense else '', axis=1)
+                    df['media_rule_list'] = df[df.associatedMedia.notnull()]['associatedMedia'].apply(lambda x: get_media_rule(x))
+                    media_rule_list += list(df[df.media_rule_list.notnull()].media_rule_list.unique())
+                # dataGeneralizations 已標準化
+                # 座標模糊化
+                now_s = time.time()
+                # 地理資訊
+                df['coordinatePrecision'] = df.apply(lambda x: coor_precision(x), axis=1)
+                df['coordinatePrecision'] = df['coordinatePrecision'].replace({np.nan: None})
+                df['is_hidden'] = df.apply(lambda x: True if x.sensitiveCategory in ['縣市','座標不開放'] else False, axis=1)
+                for g in geo_keys:
+                    if g not in df.keys():
+                        df[g] = ''
+                df[geo_keys] = df.apply(lambda x: pd.Series(create_blurred_grid_data_new(x.verbatimLongitude, x.verbatimLatitude, x.coordinatePrecision, x.dataGeneralizations, is_full_hidden=x.is_hidden)),  axis=1)
+                print('coor', time.time()-now_s)
+                now_s = time.time()
+                # 年月日
+                df[date_keys] = df.apply(lambda x: pd.Series(convert_year_month_day_new(x.to_dict())), axis=1)
+                for d_col in ['year','month','day']:
+                    if d_col in df.keys():
+                        df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
+                print('date', time.time()-now_s)
+                df = df.replace(to_quote_dict)
+                df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
+                # 資料集
+                ds_name = df[['datasetName','sourceDatasetID','datasetURL','datasetPublisher']].drop_duplicates()
+                ds_name = ds_name.merge(dataset[['datasetUUID','datasetLicense']], left_on='sourceDatasetID', right_on='datasetUUID')
+                ds_name = ds_name.drop_duplicates().to_dict(orient='records')
+                # return tbiaDatasetID 並加上去
+                return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version, group=group)
+                df = df.merge(return_dataset_id)
+                # 取得已建立的tbiaID
+                df['occurrenceID'] = df['occurrenceID'].astype('str')
+                if 'catalogNumber' not in df.keys():
+                    df['catalogNumber'] = ''
+                else:
+                    df['catalogNumber'] = df['catalogNumber'].astype('str')
+                now_s = time.time()
+                existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
+                existed_records = get_existed_records(occ_ids=df[df.occurrenceID!='']['occurrenceID'].to_list(), rights_holder=rights_holder, cata_ids=df[df.catalogNumber!='']['catalogNumber'].to_list())
+                existed_records = existed_records.replace({nan:''})
+                if len(existed_records):
+                    df = df.merge(existed_records, how='left')
+                    df = df.replace(to_none_dict)
+                    df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
+                    df = df.drop(columns=['tbiaID'])
+                print('get_existed', time.time()-now_s)
                 df = df.replace(to_none_dict)
-                df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
-                df = df.drop(columns=['tbiaID'])
-            print('get_existed', time.time()-now_s)
-            df = df.replace(to_none_dict)
-            # 更新match_log
-            now_s = time.time()
-            match_log = df[match_log_cols]
-            match_log = match_log.reset_index(drop=True)
-            match_log = update_match_log(match_log=match_log, now=now)
-            match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{url_index}_{c}.csv',index=None)
-            print('matchlog', time.time()-now_s)
-            # 用tbiaID更新records
-            df['is_deleted'] = False
-            df['update_version'] = int(update_version)
-            df = df.rename(columns=({'id': 'tbiaID'}))
-            df = df.drop(columns=[ck for ck in df.keys() if ck not in records_cols],errors='ignore')
-            now_s = time.time()
-            df.to_sql('records', db,
-                    if_exists='append',
-                    index=False,
-                    chunksize=500,
-                    method=records_upsert)
-            print('tosql', time.time()-now_s)
-            # 更新 media rule
-            for mm in media_rule_list:
-                update_media_rule(media_rule=mm,rights_holder=rights_holder)
-        # 成功之後 更新update_update_version 也有可能這批page 沒有資料 一樣從下一個c開始
-        update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=json.dumps({'url_index': url_index, 'request_url': request_url}))
+                # 更新match_log
+                now_s = time.time()
+                match_log = df[match_log_cols]
+                match_log = match_log.reset_index(drop=True)
+                match_log = update_match_log(match_log=match_log, now=now)
+                match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{url_index}_{c}.csv',index=None)
+                print('matchlog', time.time()-now_s)
+                # 用tbiaID更新records
+                df['is_deleted'] = False
+                df['update_version'] = int(update_version)
+                df = df.rename(columns=({'id': 'tbiaID'}))
+                df = df.drop(columns=[ck for ck in df.keys() if ck not in records_cols],errors='ignore')
+                now_s = time.time()
+                df.to_sql('records', db,
+                        if_exists='append',
+                        index=False,
+                        chunksize=500,
+                        method=records_upsert)
+                print('tosql', time.time()-now_s)
+                # 更新 media rule
+                for mm in media_rule_list:
+                    update_media_rule(media_rule=mm,rights_holder=rights_holder)
+            # 成功之後 更新update_update_version 也有可能這批page 沒有資料 一樣從下一個c開始
+            data = []
+            print('saved current page', c)
+            update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=json.dumps({'url_index': url_index, 'request_url': request_url}))
     url_index += 1
     current_page = 0 # 換成新的url時要重新開始
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=0, note=json.dumps({'url_index': url_index, 'request_url': None}))
