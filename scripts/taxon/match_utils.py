@@ -51,7 +51,8 @@ def match_name_new(matching_df, is_parent, match_stage, sci_names, specific_rank
                     continue
                 filtered_rs = row.results
                 # 202505 改為 只取分數高於0.7
-                filtered_rs = [fr for fr in filtered_rs if fr.get('score') > 0.7]
+                if filtered_rs:
+                    filtered_rs = [fr for fr in filtered_rs if fr.get('score') > 0.7]
                 filtered_rss = []
                 if filtered_rs:
                     # 排除掉同個taxonID但有不同name的情況
