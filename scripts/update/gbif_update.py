@@ -157,7 +157,6 @@ for d in dataset_list[d_list_index:]:
                     'countryCode', 'country', 'county',
                     'habitatReserve', 'wildlifeReserve', 'occurrenceStatus', 'selfProduced',
                     'datasetShortName','establishmentMeans', 'issue'])
-                df = df.drop_duplicates()
                 for col in cols_str_ends:
                     if col in df.keys():
                         df[col] = df[col].apply(check_id_str_ends)
@@ -226,6 +225,7 @@ for d in dataset_list[d_list_index:]:
                     df = df.replace(to_none_dict)
                     df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
                     df = df.drop(columns=['tbiaID'])
+                df = df.drop_duplicates()
                 df = df.replace(to_none_dict)
                 # 更新match_log
                 match_log = df[match_log_cols]
