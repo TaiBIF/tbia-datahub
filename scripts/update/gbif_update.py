@@ -147,7 +147,7 @@ for d in dataset_list[d_list_index:]:
             else:
                 df = []
             media_rule_list = []
-            df = df.drop_duplicates()
+            # df = df.drop_duplicates()
             if len(df):
                 df = df.reset_index(drop=True)
                 df = df.replace(to_quote_dict)
@@ -157,6 +157,7 @@ for d in dataset_list[d_list_index:]:
                     'countryCode', 'country', 'county',
                     'habitatReserve', 'wildlifeReserve', 'occurrenceStatus', 'selfProduced',
                     'datasetShortName','establishmentMeans', 'issue'])
+                df = df.drop_duplicates()
                 for col in cols_str_ends:
                     if col in df.keys():
                         df[col] = df[col].apply(check_id_str_ends)
