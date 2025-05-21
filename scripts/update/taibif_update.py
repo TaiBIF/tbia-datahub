@@ -105,24 +105,27 @@ if not dataset_list:
 now = datetime.now() + timedelta(hours=8)
 
 
-for d in dataset_list[d_list_index:]: # 20
-    total_count = d[1]
-    total_page = math.ceil (total_count / 1000)
-    for p in range(current_page,total_page,10):
+for d in dataset_list[d_list_index:]:
+    c = current_page
+    has_more_data = True
+    while has_more_data:
         data = []
         media_rule_list = []
-        c = p
-        while c < p + 10 and c < total_page:
+        p = c + 10
+        while c < p and has_more_data:
             time.sleep(1)
             offset = 1000 * c
-            print(d[0], 'page:',c , ' , offset:', offset)
+            print(d[0], d[1], '/ page:',c , ' , offset:', offset)
             url = f"https://portal.taibif.tw/api/v3/occurrence?taibifDatasetID={d[0]}&rows=1000&offset={offset}"
             response = requests.get(url)
             if response.status_code == 200:
                 result = response.json()
                 data += result.get('data')
+                if len(result.get('data')) < 1000:
+                    has_more_data = False
             c+=1
         if len(data):
+            print('data', len(data))
             df = pd.DataFrame(data)
             df = df.replace(to_quote_dict)
             df = df.rename(columns= {
@@ -226,12 +229,13 @@ for d in dataset_list[d_list_index:]: # 20
                     df = df.replace(to_none_dict)
                     df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
                     df = df.drop(columns=['tbiaID'])
+                df = df.drop_duplicates()
                 df = df.replace(to_none_dict)
                 # 更新match_log
                 match_log = df[match_log_cols]
                 match_log = match_log.reset_index(drop=True)
                 match_log = update_match_log(match_log=match_log, now=now)
-                match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{d_list_index}_{p}.csv',index=None)
+                match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{d_list_index}_{c}.csv',index=None)
                 # 用tbiaID更新records
                 df['is_deleted'] = False
                 df['update_version'] = int(update_version)
@@ -245,7 +249,8 @@ for d in dataset_list[d_list_index:]: # 20
                 for mm in media_rule_list:
                     update_media_rule(media_rule=mm,rights_holder=rights_holder)
         # 成功之後 更新update_update_version
-        update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}))
+        update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=p, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}))
+        print('saved', p)
     d_list_index += 1
     current_page = 0 # 換成新的url時要重新開始
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=0, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}))
