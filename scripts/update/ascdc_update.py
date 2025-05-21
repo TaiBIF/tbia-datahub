@@ -44,29 +44,33 @@ if response.status_code == 200:
 current_page, note = insert_new_update_version(rights_holder=rights_holder,update_version=update_version)
 
 
-url = f"https://datahub.openmuseum.tw/api/v2/fishdb_occurrence/list?token={os.getenv('ASCDC_KEY')}&page=1&per_page=100"
-response = requests.get(url, verify=False, headers={'user-agent':"TBIA"})
+# url = f"https://datahub.openmuseum.tw/api/v2/fishdb_occurrence/list?token={os.getenv('ASCDC_KEY')}&page=1&per_page=100"
+# response = requests.get(url, verify=False, headers={'user-agent':"TBIA"})
 
-if response.status_code == 200:
-    result = response.json()
-    total = result['meta']['total']
-    total_page = math.ceil(total / 100)
+# if response.status_code == 200:
+#     result = response.json()
+#     total = result['meta']['total']
+#     total_page = math.ceil(total / 100)
 
 now = datetime.now() + timedelta(hours=8)
 
-for p in range(current_page,total_page,10):
-    print(p)
+c = current_page
+has_more_data = True
+
+while has_more_data:
     data = []
-    c = p
-    while c < p + 10 and c < total_page:
+    p = c + 10
+    while c < p and has_more_data:
         c+=1
         print('page:',c)
-        time.sleep(5)
+        time.sleep(1)
         url = f"https://datahub.openmuseum.tw/api/v2/fishdb_occurrence/list?token={os.getenv('ASCDC_KEY')}&page={c}&per_page=100"
         response = requests.get(url, verify=False, headers={'user-agent':"TBIA"})
         if response.status_code == 200:
             result = response.json()
             data += result.get('data')
+            if len(result.get('data')) < 100:
+                has_more_data = False
     df = pd.DataFrame(data)
     # 如果學名相關的欄位都是空值才排除
     df = df.replace(to_quote_dict)
@@ -163,7 +167,7 @@ for p in range(current_page,total_page,10):
         for mm in media_rule_list:
             update_media_rule(media_rule=mm,rights_holder=rights_holder)
     # 成功之後 更新update_update_version
-    update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
+    update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=p, note=None)
 
 
 # 刪除is_deleted的records & match_log
