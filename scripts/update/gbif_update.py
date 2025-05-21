@@ -120,7 +120,6 @@ for d in dataset_list[d_list_index:]:
         if len(data):
             print('data', len(data))
             df = pd.DataFrame(data)
-            df = df.drop_duplicates()
             df = df.replace(to_quote_dict)
             df = df.rename(columns= {
                                     'originalOccurrenceID': 'sourceOccurrenceID',
@@ -148,6 +147,7 @@ for d in dataset_list[d_list_index:]:
             else:
                 df = []
             media_rule_list = []
+            df = df.drop_duplicates()
             if len(df):
                 df = df.reset_index(drop=True)
                 df = df.replace(to_quote_dict)
