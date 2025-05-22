@@ -60,13 +60,15 @@ now = datetime.now() + timedelta(hours=8)
 c = current_page
 has_more_data = True
 
+# NOTE 這邊會有資料上限的問題
+
 while has_more_data:
     data = []
     p = c + 10
     while c < p and has_more_data:
         c+=1
         print('page:',c)
-        time.sleep(1)
+        time.sleep(5)
         url = f"https://fact.tfri.gov.tw/api/1/occurrence/?token={os.getenv('FACT_KEY')}&page={c}&per_page=1000"
         response = requests.get(url, verify=False, headers={'user-agent':"TBIA"})
         if response.status_code == 200:
@@ -75,6 +77,7 @@ while has_more_data:
             if len(result.get('data')) < 1000:
                 has_more_data = False
     if len(data):
+        print(len(data))
         df = pd.DataFrame(data)
         # 如果學名相關的欄位都是空值才排除
         df = df.replace(to_quote_dict)
