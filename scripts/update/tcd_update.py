@@ -66,7 +66,7 @@ while has_more_data:
         if response.status_code == 200:
             result = response.json()
             data += result.get('Data')
-            if len(result.get('data')) < 300:
+            if len(result.get('Data')) < 300:
                 has_more_data = False
     if len(data):
         df = pd.DataFrame(data)
