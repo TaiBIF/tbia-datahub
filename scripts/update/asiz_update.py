@@ -68,10 +68,11 @@ while has_more_data:
         response = requests.get(url, verify=False, headers={'user-agent':"TBIA"})
         if response.status_code == 200:
             result = response.json()
-        data += result.get('data')
-        if len(result.get('data')) < 1000:
-            has_more_data = False
+            data += result.get('data')
+            if len(result.get('data')) < 1000:
+                has_more_data = False
     if len(data):
+        print(len(data))
         df = pd.DataFrame(data)
         # 如果學名相關的欄位都是空值才排除
         df = df.replace(to_quote_dict)
