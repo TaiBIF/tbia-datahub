@@ -134,14 +134,15 @@ if r.status_code == 200:
 
 # 結構化檔案
 
-ocas = pd.read_csv('海保署資料集清單_202408.csv')
+ocas = pd.read_csv('海保署資料集清單_202505.csv')
 
 # 校定物種學名編碼 -> 裡面有可能是taxonID也有可能是namecode 如果不是t開頭的七位數
 
 unused_keys = ['界中文名','門中文名','綱中文名','目中文名','科中文名','屬中文名','\ufeff計畫/案件名稱','計畫/案件名稱','調查方法','調查方式','所處位置', '備註', 
                '界2','物種俗名','界','門','屬','屬 (Genus)', '中文科別', '屬名', '種名', '站點名稱', '時間(hhmm)', '網目尺寸(mm)', '直徑(cm)', '長度(m)',
                '開始時間(hh:mm)', '結束時間(hh:mm)', '期間(hh:mm)', '流量計數開始', '流量計數結束', '流量差異', '海水量(m3)', '仔稚魚編號', '航次', '深度(m)',
-               '所屬計畫類別', '採樣所屬季節']
+               '所屬計畫類別', '採樣所屬季節', '鑒定者', '覆蓋率', '潮帶位置', '重量', '重量單位', '體長', '體長單位', '體寬', '體寬單位', '性別', '生活史階段',
+                '行為', '深度(公尺)', '高度(公尺)', '環境溫度(°C)','觀察記錄起始時間', '觀察記錄結束時間','鑑定者']
 
 for i in ocas.index:
     row = ocas.iloc[i]
@@ -166,6 +167,7 @@ for i in ocas.index:
         except:
             pass
     if len(df):
+        # print(df.keys())
         df = df.replace({nan: None, '#N/A': None, 'nan': None})
         df = df.rename(columns={'經度': 'verbatimLongitude', '緯度': 'verbatimLatitude', 
                                 '東經（E）': 'verbatimLongitude', '北緯（N）': 'verbatimLatitude', 
@@ -182,7 +184,8 @@ for i in ocas.index:
                                 '目名': 'sourceOrder', '目': 'sourceOrder', '目 (Order)': 'sourceOrder', '所屬目別': 'sourceOrder',
                                 '科名': 'sourceFamily', '科': 'sourceFamily', '科 (Family)': 'sourceFamily',
                                 '科別': 'sourceFamily', '所屬科別': 'sourceFamily', '科別(Family)': 'sourceFamily',
-                                '西元年': 'year', '年': 'year', '月': 'month', '日': 'day'})
+                                '西元年': 'year', '年': 'year', '月': 'month', '日': 'day',
+                                '大地基準': 'verbatimSRS', '記錄者/採集者': 'recordedBy'})
         # 這邊要處理scientificNameID 裡面可能有一些是taxonID
         if 'scientificNameID' in df.keys():
             df['taxonID'] = df['scientificNameID']
@@ -194,6 +197,7 @@ for i in ocas.index:
             df['sourceVernacularName'] = df['sourceVernacularName'].apply(lambda x: x.lstrip(';'))
         df['datasetName'] = row.d_name
         drop_keys = [k for k in df.keys() if k in unused_keys]
+        # print(drop_keys)
         df = df.drop(columns=drop_keys)
         df = df.drop(columns=['drop'], errors='ignore')
         final_df = pd.concat([df,final_df])
