@@ -69,27 +69,34 @@ if not dataset_list:
 now = datetime.now() + timedelta(hours=8)
 
 
+
 for d in dataset_list[d_list_index:]:
-    # total_count = d[1]
-    # total_page = math.ceil (total_count / 1000)
-    # for p in range(current_page,total_page,10):
-    #     data = []
-    #     c = p
-    if not current_page:
-        url = f"https://portal.taibif.tw/api/v3/occurrence?taibifDatasetID={d[0]}&rows=1000&offset=0"
     c = current_page
-    while url:
+    has_more_data = True
+    total_count = None
+    while has_more_data:
         data = []
-        offset = 1000 * c
-        url = f"https://portal.taibif.tw/api/v3/occurrence?taibifDatasetID={d[0]}&rows=1000&offset={offset}"
-        response = requests.get(url)
-        if response.status_code == 200:
-            result = response.json()
-            print('page:',c , ', offset:', offset, ', total:', result.get('count'))
-            data = result.get('data')
-            if len(data) < 1000:
-                url = None
-            c+=1
+        media_rule_list = []
+        p = c + 10
+        while c < p and has_more_data:
+            time.sleep(1)
+            offset = 1000 * c
+            print(d[0], d[1], '/ page:',c , ' , offset:', offset)
+            url = f"https://portal.taibif.tw/api/v3/occurrence?taibifDatasetID={d[0]}&rows=1000&offset={offset}"
+            response = requests.get(url)
+            if response.status_code == 200:
+                result = response.json()
+                data += result.get('data')
+                if total_count is None:
+                    total_count = result.get('count') if result.get('count') else 0
+                else:
+                    if isinstance(result.get('count'), int):
+                        if result.get('count') > total_count:
+                            total_count = result.get('count')
+                if offset + 1000 > total_count:
+                    has_more_data = False
+                else:
+                    c+=1
         if len(data):
             df = pd.DataFrame(data)
             df = df.replace(to_quote_dict)

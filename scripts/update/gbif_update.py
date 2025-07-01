@@ -57,7 +57,10 @@ partners = ['6ddd1cf5-0655-44ac-a572-cb581a054992', # 林保署
             '7f2ff82e-193e-48eb-8fb5-bad64c84782a', # 國家公園
             'f40c7fe5-e64a-450c-b229-21d674ef3c28', # 國家公園
             'c57cd401-ff9e-43bd-9403-089b88a97dea', # 台博館
-            'b6b89e2d-e881-41f3-bc57-213815cb9742'] # 水利署
+            'b6b89e2d-e881-41f3-bc57-213815cb9742', # 水利署
+            '3eff04f7-c90b-4aae-ad2e-9bbdb225ba69', # 科博館
+            ]
+
 # 排除重複資料集
 # 單位間
 # GBIF 需要排除的生多所資料
@@ -98,9 +101,11 @@ if not dataset_list:
 now = datetime.now() + timedelta(hours=8)
 
 
+
 for d in dataset_list[d_list_index:]:
     c = current_page
     has_more_data = True
+    total_count = None
     while has_more_data:
         data = []
         media_rule_list = []
@@ -114,11 +119,18 @@ for d in dataset_list[d_list_index:]:
             if response.status_code == 200:
                 result = response.json()
                 data += result.get('data')
-                if len(result.get('data')) < 1000:
+                if total_count is None:
+                    total_count = result.get('count') if result.get('count') else 0
+                else:
+                    if isinstance(result.get('count'), int):
+                        if result.get('count') > total_count:
+                            total_count = result.get('count')
+                if offset + 1000 > total_count:
                     has_more_data = False
-            c+=1
+                else:
+                    c+=1
         if len(data):
-            print('data', len(data))
+            print('data', len(data), c)
             df = pd.DataFrame(data)
             df = df.replace(to_quote_dict)
             df = df.rename(columns= {
@@ -245,8 +257,8 @@ for d in dataset_list[d_list_index:]:
                 for mm in media_rule_list:
                     update_media_rule(media_rule=mm,rights_holder=rights_holder)
         # 成功之後 更新update_update_version
-        update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=p, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}))
-        print('saved', p)
+        update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}))
+        print('saved', c)
     d_list_index += 1
     current_page = 0 # 換成新的url時要重新開始
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=0, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}))
