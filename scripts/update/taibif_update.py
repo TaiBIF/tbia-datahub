@@ -115,11 +115,11 @@ for d in dataset_list[d_list_index:]:
     c = current_page
     has_more_data = True
     total_count = None
-    while has_more_data:
+    while has_more_data: # 尚未到資料集的總數
         data = []
         media_rule_list = []
         p = c + 10
-        while c < p and has_more_data:
+        while c < p: # 每次處理10頁 還沒到十頁的時候不中斷
             time.sleep(1)
             offset = 1000 * c
             print(d[0], d[1], '/ page:',c , ' , offset:', offset)
@@ -134,8 +134,9 @@ for d in dataset_list[d_list_index:]:
                     if isinstance(result.get('count'), int):
                         if result.get('count') > total_count:
                             total_count = result.get('count')
-                if offset + 1000 > total_count:
+                if offset + 1000 >= total_count:
                     has_more_data = False
+                    break
                 else:
                     c+=1
         if len(data):

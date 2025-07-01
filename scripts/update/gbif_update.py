@@ -1,3 +1,20 @@
+
+
+
+# for dataset in dataset_list:
+# │
+# ├─ while not is_reaching_end:   ← 一次處理 10 頁的單位
+# │   │
+# │   ├─ while c < p:              ← 一頁一頁抓，最多抓 10 頁
+# │   │   ├─ 抓 API（offset = 1000 * c）
+# │   │   ├─ 加入 data[]
+# │   │   ├─ 判斷是否為最後一頁（offset + 1000 >= total_count）
+# │   │   └─ 若不是最後一頁，c += 1
+# │   │
+# │   └─ 把這 10 頁資料做後處理（例如轉成 df）
+# │
+# └─ 換下一個 dataset（d_list_index += 1）
+
 import numpy as np
 from numpy import nan
 import requests
@@ -6,7 +23,6 @@ import bson
 import time
 import os
 from datetime import datetime, timedelta
-
 import math 
 
 from dotenv import load_dotenv
@@ -106,11 +122,11 @@ for d in dataset_list[d_list_index:]:
     c = current_page
     has_more_data = True
     total_count = None
-    while has_more_data:
+    while has_more_data: # 尚未到資料集的總數
         data = []
         media_rule_list = []
         p = c + 10
-        while c < p and has_more_data:
+        while c < p: # 每次處理10頁 還沒到十頁的時候不中斷
             time.sleep(1)
             offset = 1000 * c
             print(d[0], d[1], '/ page:',c , ' , offset:', offset)
@@ -125,12 +141,13 @@ for d in dataset_list[d_list_index:]:
                     if isinstance(result.get('count'), int):
                         if result.get('count') > total_count:
                             total_count = result.get('count')
-                if offset + 1000 > total_count:
+                if offset + 1000 >= total_count:
                     has_more_data = False
+                    break
                 else:
                     c+=1
         if len(data):
-            print('data', len(data), c)
+            print('data', len(data))
             df = pd.DataFrame(data)
             df = df.replace(to_quote_dict)
             df = df.rename(columns= {
