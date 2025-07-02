@@ -46,44 +46,40 @@ if response.status_code == 200:
 # 若不存在 insert一個新的update_version
 current_page, note = insert_new_update_version(rights_holder=rights_holder,update_version=update_version)
 
-# url = f"https://ecollect.forest.gov.tw/EcologicalTBiAOpenApi/api/Data/Get?Token={os.getenv('FOREST_KEY')}"
-# response = requests.get(url)
-# if response.status_code == 200:
-#     result = response.json()
-#     total_page = result['Meta']['TotalPages']
-
 now = datetime.now() + timedelta(hours=8)
 
-# for p in range(current_page,total_page,10):
-# # for p in [0]:
-#     print(p)
-#     data = []
-#     c = p
 c = current_page
 
 if c == 0:
     c += 1
 
-url = f"https://ecollect.forest.gov.tw/EcologicalTBiAOpenApi/api/Data/Get?Token={os.getenv('FOREST_KEY')}&Page={c}"
+has_more_data = True
+should_stop = False
 
-while url:
+while has_more_data:
     data = []
-    # print('page:',c)
-    # time.sleep(30)
-    url = f"https://ecollect.forest.gov.tw/EcologicalTBiAOpenApi/api/Data/Get?Token={os.getenv('FOREST_KEY')}&Page={c}"
-    response = requests.get(url,  verify=False)
-    if response.status_code == 200:
-        result = response.json()
-        total_page = result['Meta']['TotalPages']
-        data = result.get('Data')
-        print(c, total_page)
-        if len(data) < 300 or c >= total_page:
-            url = None
-        c+=1
+    p = c + 10
+    while c < p: # 每次處理10頁 還沒到十頁的時候不中斷
+        url = f"https://ecollect.forest.gov.tw/EcologicalTBiAOpenApi/api/Data/Get?Token={os.getenv('FOREST_KEY')}&Page={c}"
+        response = requests.get(url,  verify=False)
+        if response.status_code == 200:
+            result = response.json()
+            total_page = result['Meta']['TotalPages']
+            data += result.get('Data')
+            print(c, total_page)
+            if c >= total_page:
+                has_more_data = False
+                break
+            c+=1
+        else:
+            print(f"Error: HTTP {response.status_code}")
+            should_stop = True
+            break  # 跳出內層 while
+    if should_stop:
+        break # 跳出外層 while
     if len(data):
-        # print(data[0])
+        print(len(data))
         df = pd.DataFrame(data)
-        # df.to_csv('/bucket/forest_{}.csv'.format(p), index=None) # 存原始資料 確認是否有重複的問題
         # 如果學名相關的欄位都是空值才排除
         df = df.replace(to_quote_dict)
         df = df[~((df.isPreferredName=='')&(df.scientificName==''))]
@@ -192,8 +188,8 @@ while url:
             # 更新 media rule
             for mm in media_rule_list:
                 update_media_rule(media_rule=mm,rights_holder=rights_holder)
-    # 成功之後 更新update_update_version 也有可能這批page 沒有資料 一樣從下一個c開始
-    update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
+            # 成功之後 更新update_update_version 也有可能這批page 沒有資料 一樣從下一個c開始
+            update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
 
 
 # 刪除is_deleted的records & match_log
