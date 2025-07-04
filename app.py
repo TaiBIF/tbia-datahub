@@ -17,13 +17,6 @@ db_settings = {
     "database": os.getenv('POSTGRES_DB'),
 }
 
-portal_db_settings = {
-    "host": os.getenv('PORTAL_POSTGRES_HOST'),
-    "port": int(os.getenv('PORTAL_POSTGRES_PORT')),
-    "user": os.getenv('PORTAL_POSTGRES_USER'),
-    "password": os.getenv('PORTAL_POSTGRES_PASSWORD'),
-    "database": os.getenv('PORTAL_POSTGRES_DB'),
-}
 
 # connect to the database
 db_string = 'postgresql://{}:{}@{}:{}/{}'.format(db_settings.get('user'), db_settings.get('password'), db_settings.get('host'), db_settings.get('port'), db_settings.get('database'))

@@ -1,4 +1,6 @@
-version: '3.7'
+networks:
+  datahub:
+    external: true
 
 services:
   app:
@@ -15,18 +17,16 @@ services:
       - ../tbia-volumes/solr:/solr
       - ../tbia-volumes/media:/portal/media
     depends_on:
-      - postgres
+      - postgres-datahub
     env_file:
       - .env
     extra_hosts:
       - "host.docker.internal:host-gateway" 
-  postgres:
+  postgres-datahub:
     build: ./postgres
     container_name: tbia-datahub-db-container
     image: tbia-datahub-db-image
     restart: always
-    ports:
-      - 5433:5432
     volumes:
       - ../tbia-volumes/datahub_pgdata:/var/lib/postgresql/data/pgdata
       - ../tbia-volumes/datahub_bucket:/bucket
@@ -34,29 +34,29 @@ services:
       - ../tbia-volumes/solr:/solr
       - ../tbia-volumes/media:/portal/media
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=example
-      - POSTGRES_DB=tbiadata
+      - POSTGRES_HOST=postgres-datahub
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_PORT=5432
-      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=${POSTGRES_DB}
       - PGDATA=/var/lib/postgresql/data/pgdata
     shm_size: 1g
-    # command: -p 5433
+    command: |
+            postgres
+              -c work_mem=256MB
+              -c maintenance_work_mem=1GB
+    networks:
+      - datahub
   solr:
     build: ./solr-workspace
     image: tbia-solr-image
     container_name: tbia-solr
     ports:
-      - "8983:8983"
+      - "127.0.0.1:8983:8983"
     restart: always
     volumes:
       - ../tbia-volumes/solr:/var/solr
       - ../tbia-volumes/datahub_bucket:/bucket
       - ./solr-workspace/:/workspace
-    command:
-      - solr-precreate
-      - tbia_records
     environment:
       - SOLR_JAVA_MEM=-Xms4g -Xmx4g
-
-
