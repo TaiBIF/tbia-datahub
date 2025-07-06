@@ -22,6 +22,8 @@ services:
       - .env
     extra_hosts:
       - "host.docker.internal:host-gateway" 
+    networks:
+      - datahub
   postgres-datahub:
     build: ./postgres
     container_name: tbia-datahub-db-container
@@ -60,3 +62,5 @@ services:
       - ./solr-workspace/:/workspace
     environment:
       - SOLR_JAVA_MEM=-Xms4g -Xmx4g
+    networks:
+      - datahub
