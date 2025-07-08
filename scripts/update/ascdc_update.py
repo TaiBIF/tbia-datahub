@@ -43,25 +43,22 @@ if response.status_code == 200:
 # 若不存在 insert一個新的update_version
 current_page, note = insert_new_update_version(rights_holder=rights_holder,update_version=update_version)
 
-
-# url = f"https://datahub.openmuseum.tw/api/v2/fishdb_occurrence/list?token={os.getenv('ASCDC_KEY')}&page=1&per_page=100"
-# response = requests.get(url, verify=False, headers={'user-agent':"TBIA"})
-
-# if response.status_code == 200:
-#     result = response.json()
-#     total = result['meta']['total']
-#     total_page = math.ceil(total / 100)
-
 now = datetime.now() + timedelta(hours=8)
 
 c = current_page
+
+if c == 0:
+    c += 1
+
 has_more_data = True
+should_stop = False
+
+total_count = None
 
 while has_more_data:
     data = []
     p = c + 10
-    while c < p and has_more_data:
-        c+=1
+    while c < p: # 每次處理10頁 還沒到十頁的時候不中斷
         print('page:',c)
         time.sleep(1)
         url = f"https://datahub.openmuseum.tw/api/v2/fishdb_occurrence/list?token={os.getenv('ASCDC_KEY')}&page={c}&per_page=100"
@@ -69,8 +66,22 @@ while has_more_data:
         if response.status_code == 200:
             result = response.json()
             data += result.get('data')
-            if len(result.get('data')) < 100:
+            if total_count is None:
+                total_count = result['meta']['total'] if result['meta']['total'] else 0
+            else:
+                if isinstance(result['meta']['total'], int):
+                    if result['meta']['total'] > total_count:
+                        total_count = result['meta']['total']
+            if c*100 >= total_count: # 當前的頁數已經超過總數
                 has_more_data = False
+                break
+            c+=1
+        else:
+            print(f"Error: HTTP {response.status_code}")
+            should_stop = True
+            break  # 跳出內層 while
+    if should_stop:
+        break # 跳出外層 while
     df = pd.DataFrame(data)
     # 如果學名相關的欄位都是空值才排除
     df = df.replace(to_quote_dict)
@@ -153,7 +164,7 @@ while has_more_data:
         match_log = df[match_log_cols]
         match_log = match_log.reset_index(drop=True)
         match_log = update_match_log(match_log=match_log, now=now)
-        match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{p}.csv',index=None)
+        match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{c}.csv',index=None)
         # 用tbiaID更新records
         df['is_deleted'] = False
         df['update_version'] = int(update_version)
@@ -167,7 +178,7 @@ while has_more_data:
         for mm in media_rule_list:
             update_media_rule(media_rule=mm,rights_holder=rights_holder)
     # 成功之後 更新update_update_version
-    update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=p, note=None)
+    update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
 
 
 # 刪除is_deleted的records & match_log

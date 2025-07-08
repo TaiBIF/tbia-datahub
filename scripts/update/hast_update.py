@@ -44,33 +44,35 @@ if response.status_code == 200:
 current_page, note = insert_new_update_version(rights_holder=rights_holder,update_version=update_version)
 
 
-# url = f"https://hast.biodiv.tw/api/v1/occurrence"
-# response = requests.get(url, verify=False)
-# if response.status_code == 200:
-#     result = response.json()
-#     total = result['meta']['total']
-#     total_page = result['meta']['pagination']['num_pages']
-
 now = datetime.now() + timedelta(hours=8) 
 
 c = current_page
 has_more_data = True
+should_stop = False
 
 while has_more_data:
     data = []
     p = c + 10
     while c < p and has_more_data:
         offset = 300 * c
-        print('page:',c , ' , offset:', offset)
         time.sleep(1)
         url = f"https://hast.biodiv.tw/api/v1/occurrence?offset={offset}"
         response = requests.get(url, verify=False)
         if response.status_code == 200:
             result = response.json()
+            total_page = result['meta']['pagination']['num_pages']
             data += result.get('data')
-            if len(result.get('data')) < 300:
+            print('page:',c , ' , offset:', offset, 'total page:', total_page)
+            if c + 1 >= total_page:
                 has_more_data = False
-        c+=1
+                break
+            c+=1
+        else:
+            print(f"Error: HTTP {response.status_code}")
+            should_stop = True
+            break  # 跳出內層 while
+    if should_stop:
+        break # 跳出外層 while
     if len(data):
         df = pd.DataFrame(data)
         # 如果學名相關的欄位都是空值才排除
@@ -163,7 +165,7 @@ while has_more_data:
             match_log = df[match_log_cols]
             match_log = match_log.reset_index(drop=True)
             match_log = update_match_log(match_log=match_log, now=now)
-            match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{p}.csv',index=None)
+            match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{c}.csv',index=None)
             # 用tbiaID更新records
             df['is_deleted'] = False
             df['update_version'] = int(update_version)
@@ -177,7 +179,7 @@ while has_more_data:
             for mm in media_rule_list:
                 update_media_rule(media_rule=mm,rights_holder=rights_holder)
     # 成功之後 更新update_update_version
-    update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=p, note=None)
+    update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
 
 
 # 刪除is_deleted的records & match_log

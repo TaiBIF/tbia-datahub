@@ -206,8 +206,8 @@ while has_more_data:
                     method=records_upsert)
             for mm in media_rule_list:
                 update_media_rule(media_rule=mm,rights_holder=rights_holder)
-            # 成功之後 更新update_update_version
-            update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
+    # 成功之後 更新update_update_version
+    update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
 
 
 # 刪除is_deleted的records & match_log

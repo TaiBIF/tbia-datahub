@@ -109,7 +109,7 @@ if not dataset_list:
 
 now = datetime.now() + timedelta(hours=8)
 
-
+should_stop = False
 
 for d in dataset_list[d_list_index:]:
     c = current_page
@@ -137,8 +137,13 @@ for d in dataset_list[d_list_index:]:
                 if offset + 1000 >= total_count:
                     has_more_data = False
                     break
-                else:
-                    c+=1
+                c+=1
+            else:
+                print(f"Error: HTTP {response.status_code}")
+                should_stop = True
+                break  # 跳出內層 while
+        if should_stop:
+            break # 跳出外層 while
         if len(data):
             print('data', len(data))
             df = pd.DataFrame(data)
@@ -263,7 +268,7 @@ for d in dataset_list[d_list_index:]:
                         method=records_upsert)
                 for mm in media_rule_list:
                     update_media_rule(media_rule=mm,rights_holder=rights_holder)
-        # 成功之後 更新update_update_version
+        # 成功之後 更新update_update_version (有可能某次的data完全沒有符合的資料 那也要紀錄已經跑過了c)
         update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}))
         print('saved', c)
     d_list_index += 1

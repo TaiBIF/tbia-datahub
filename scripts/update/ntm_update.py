@@ -68,6 +68,7 @@ if not dataset_list:
 
 now = datetime.now() + timedelta(hours=8)
 
+should_stop = False
 
 for d in dataset_list[d_list_index:]:
     c = current_page
@@ -95,8 +96,13 @@ for d in dataset_list[d_list_index:]:
                 if offset + 1000 >= total_count:
                     has_more_data = False
                     break
-                else:
-                    c+=1
+                c+=1
+            else:
+                print(f"Error: HTTP {response.status_code}")
+                should_stop = True
+                break  # 跳出內層 while
+        if should_stop:
+            break # 跳出外層 while
         if len(data):
             print('data', len(data))
             df = pd.DataFrame(data)
