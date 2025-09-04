@@ -18,7 +18,7 @@ from scripts.utils import *
 
 
 # 比對學名時使用的欄位
-sci_cols = ['taxonID','sourceVernacularName', 'sourceScientificName','originalVernacularName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily']
+sci_cols = ['taxonID','sourceVernacularName', 'sourceScientificName','originalVernacularName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily','sourceKingdom']
 
 # 若原資料庫原本就有提供taxonID 在這段要拿掉 避免merge時產生衝突
 df_sci_cols = [s for s in sci_cols if s != 'taxonID'] 
@@ -116,6 +116,7 @@ for d in dataset_list[d_list_index:]:
                                     'family': 'sourceFamily',
                                     'class': 'sourceClass',
                                     'order': 'sourceOrder',
+                                    'kingdom': 'sourceKingdom',
                                     'decimalLatitude': 'verbatimLatitude',
                                     'decimalLongitude': 'verbatimLongitude',
                                     'taibifModifiedDate': 'sourceModified',
@@ -136,7 +137,7 @@ for d in dataset_list[d_list_index:]:
                 df = df.replace(to_quote_dict)
                 # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
                 df['id'] = df.apply(lambda x: str(bson.objectid.ObjectId()), axis=1)
-                df = df.drop(columns=['taxonGroup','taxonBackbone','kingdom','phylum','genus','geodeticDatum', 'countryCode', 
+                df = df.drop(columns=['taxonGroup','taxonBackbone','phylum','genus','geodeticDatum', 'countryCode', 
                                       'country', 'county', 'habitatReserve', 'wildlifeReserve', 'occurrenceStatus', 'selfProduced',
                                       'datasetShortName','establishmentMeans', 'issue'])
                 for col in cols_str_ends:

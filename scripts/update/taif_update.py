@@ -18,7 +18,7 @@ from scripts.utils import *
 
 
 # 比對學名時使用的欄位
-sci_cols = ['sourceScientificName','sourceVernacularName']
+sci_cols = ['sourceScientificName','sourceVernacularName','sourceKingdom']
 
 # 若原資料庫原本就有提供taxonID 在這段要拿掉 避免merge時產生衝突
 df_sci_cols = [s for s in sci_cols if s != 'taxonID'] 
@@ -89,6 +89,7 @@ while has_more_data:
             df['id'] = df.apply(lambda x: str(bson.objectid.ObjectId()), axis=1)
             df = df.rename(columns={'modified': 'sourceModified', 'scientificName': 'sourceScientificName',
                                     'isPreferredName': 'sourceVernacularName', 'taxonRank': 'sourceTaxonRank'})
+            df['sourceKingdom'] = 'Plantae'
             for col in cols_str_ends:
                 if col in df.keys():
                     df[col] = df[col].apply(check_id_str_ends)

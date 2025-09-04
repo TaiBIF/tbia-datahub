@@ -31,7 +31,6 @@ rank_map = {
     'Nothosubspecies', 37: 'Variety', 38: 'Subvariety', 39: 'Nothovariety', 40: 'Form', 41: 'Subform', 42: 'Special Form', 43: 'Race', 44: 'Stirp', 45: 'Morph', 46: 'Aberration', 47: 'Hybrid Formula'}
 
 # 測試改成批次比對學名
-# def match_name_new(matching_name, is_parent, match_stage, sci_names, source_family, source_class, source_order, sci_index, specific_rank):
 def match_name_new(matching_df, is_parent, match_stage, sci_names, specific_rank):
     if len(matching_df):
         matching_names = matching_df.now_matching_name.to_list()
@@ -56,7 +55,7 @@ def match_name_new(matching_df, is_parent, match_stage, sci_names, specific_rank
                 filtered_rss = []
                 if filtered_rs:
                     # 排除掉同個taxonID但有不同name的情況
-                    filtered_rs = pd.DataFrame(filtered_rs)[['accepted_namecode','family','order','class','name_status','score','taxon_rank']].drop_duplicates()
+                    filtered_rs = pd.DataFrame(filtered_rs)[['accepted_namecode','family','order','class','kingdom','name_status','score','taxon_rank']].drop_duplicates()
                     if specific_rank: # 這邊的rank都是小寫
                         filtered_rs = filtered_rs[filtered_rs.taxon_rank==specific_rank]
                     # 如果有accepted，僅考慮accepted
@@ -69,24 +68,44 @@ def match_name_new(matching_df, is_parent, match_stage, sci_names, specific_rank
                         filtered_rs = filtered_rs.drop(columns=['name_status','taxon_rank'])
                         filtered_rs = filtered_rs.to_dict(orient='records')
                         # NomenMatch 有比對到有效taxon
-                        # 是否有上階層資訊
+                        # 檢查是否有上階層資訊（優先檢查kingdom，其次檢查其他階層）
                         has_parent = False
-                        if row.get('source_class') or row.get('source_family') or row.get('source_order'):
+                        use_kingdom = False
+                        
+                        if row.get('sourceKingdom'):
                             has_parent = True
+                            use_kingdom = True
+                        elif row.get('sourceClass') or row.get('sourceFamily') or row.get('sourceOrder'):
+                            has_parent = True
+                            use_kingdom = False
+                        
                         # 若有上階層資訊，加上比對上階層 
                         if has_parent:
                             has_nm_parent = False # True代表有比對到
                             for frs in filtered_rs:
-                                if frs.get('family') or frs.get('order') or frs.get('class'):
-                                    if frs.get('family') == row.get('source_family') or frs.get('class') == row.get('source_class') or frs.get('order') == row.get('source_order'):
-                                        filtered_rss.append(frs)
-                                        has_nm_parent = True                            # if t_rank in ['種','種下階層']: # 直接比對family
+                                if use_kingdom:
+                                    # 優先使用kingdom進行比對
+                                    if frs.get('kingdom'):
+                                        has_nm_parent = True # 有nomemmatch上階層
+                                        if frs.get('kingdom') == row.get('sourceKingdom'):
+                                            filtered_rss.append(frs)
+                                else:
+                                    # 使用其他階層進行比對
+                                    if frs.get('family') or frs.get('order') or frs.get('class'):
+                                        has_nm_parent = True # 有nomemmatch上階層
+                                        if frs.get('family') == row.get('sourceFamily') or frs.get('class') == row.get('sourceClass') or frs.get('order') == row.get('sourceOrder'):
+                                            filtered_rss.append(frs)
+                            
                             # 如果有任何有nm上階層 且filtered_rss > 0 就代表有上階層比對成功的結果
                             if has_nm_parent:
                                 if len(filtered_rss) == 1:
                                     # 根據NomenMatch給的score確認名字是不是完全一樣
                                     # 如果是中文有可能是0.95
                                     match_score = filtered_rss[0]['score']
+                                    # 在這邊確認是不是中文
+                                    is_chinese = False
+                                    if re.findall(r'[\u4e00-\u9fff]+', row.get('now_matching_name')):
+                                        is_chinese = True
                                     if is_chinese and match_score == 0.95:
                                         match_score = 1
                                     if is_parent:
@@ -107,6 +126,10 @@ def match_name_new(matching_df, is_parent, match_stage, sci_names, specific_rank
                                 # 如果沒有任何nm上階層的結果，則直接用filtered_rs
                                 if len(filtered_rs) == 1:
                                     match_score = filtered_rs[0]['score']
+                                    # 在這邊確認是不是中文
+                                    is_chinese = False
+                                    if re.findall(r'[\u4e00-\u9fff]+', row.get('now_matching_name')):
+                                        is_chinese = True
                                     if is_chinese and match_score == 0.95:
                                         match_score = 1
                                     if is_parent:
@@ -199,7 +222,7 @@ def matching_flow_new(sci_names):
     if 'sourceScientificName' in sci_names.keys():
         no_taxon = no_taxon.rename(columns={'sourceScientificName': 'now_matching_name'})
         no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
-        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','source_family', 'source_class', 'source_order', 'sci_index']]]
+        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
         matching_df = matching_df.reset_index(drop=True)
         for l in range(0, len(matching_df), 20):
             match_name_new(matching_df=matching_df[l:l+20],
@@ -224,7 +247,7 @@ def matching_flow_new(sci_names):
         no_taxon = sci_names[(sci_names.taxonID=='')&(sci_names.sourceVernacularName!='')]
         no_taxon = no_taxon.rename(columns={'sourceVernacularName': 'now_matching_name'})
         no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
-        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','source_family', 'source_class', 'source_order', 'sci_index']]]
+        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
         matching_df = matching_df.assign(now_matching_name=matching_df['now_matching_name'].str.split(';')).explode('now_matching_name')
         matching_df = matching_df.reset_index(drop=True)
         for l in range(0, len(matching_df), 20):
@@ -242,7 +265,7 @@ def matching_flow_new(sci_names):
         no_taxon = no_taxon.rename(columns={'sourceScientificName': 'now_matching_name'})
         no_taxon['now_matching_name'] = no_taxon['now_matching_name'].apply(lambda x: x.split(' ') [0] if len(x.split(' '))> 1 else '')
         no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
-        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','source_family', 'source_class', 'source_order', 'sci_index']]]
+        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
         matching_df = matching_df.assign(now_matching_name=matching_df['now_matching_name'].str.split(';')).explode('now_matching_name')
         matching_df = matching_df.reset_index(drop=True)
         for l in range(0, len(matching_df), 20):
@@ -257,7 +280,7 @@ def matching_flow_new(sci_names):
     if 'originalVernacularName' in sci_names.keys():
         no_taxon = no_taxon.rename(columns={'originalVernacularName': 'now_matching_name'})
         no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
-        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','source_family', 'source_class', 'source_order', 'sci_index']]]
+        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
         matching_df = matching_df.assign(now_matching_name=matching_df['now_matching_name'].str.split(';')).explode('now_matching_name')
         matching_df = matching_df.reset_index(drop=True)
         for l in range(0, len(matching_df), 20):
@@ -272,7 +295,7 @@ def matching_flow_new(sci_names):
     if 'sourceFamily' in sci_names.keys():
         no_taxon = no_taxon.rename(columns={'sourceFamily': 'now_matching_name'})
         no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
-        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','source_family', 'source_class', 'source_order', 'sci_index']]]
+        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
         matching_df = matching_df.assign(now_matching_name=matching_df['now_matching_name'].str.split(';')).explode('now_matching_name')
         matching_df = matching_df.reset_index(drop=True)
         for l in range(0, len(matching_df), 20):
@@ -287,7 +310,7 @@ def matching_flow_new(sci_names):
     if 'sourceOrder' in sci_names.keys():
         no_taxon = no_taxon.rename(columns={'sourceOrder': 'now_matching_name'})
         no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
-        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','source_family', 'source_class', 'source_order', 'sci_index']]]
+        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
         matching_df = matching_df.assign(now_matching_name=matching_df['now_matching_name'].str.split(';')).explode('now_matching_name')
         matching_df = matching_df.reset_index(drop=True)
         for l in range(0, len(matching_df), 20):
@@ -302,7 +325,7 @@ def matching_flow_new(sci_names):
     if 'sourceClass' in sci_names.keys():
         no_taxon = no_taxon.rename(columns={'sourceClass': 'now_matching_name'})
         no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
-        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','source_family', 'source_class', 'source_order', 'sci_index']]]
+        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
         matching_df = matching_df.assign(now_matching_name=matching_df['now_matching_name'].str.split(';')).explode('now_matching_name')
         matching_df = matching_df.reset_index(drop=True)
         for l in range(0, len(matching_df), 20):
@@ -319,175 +342,15 @@ def matching_flow_new(sci_names):
     # 代表比對到最後還是沒有對到
     sci_names.loc[(sci_names.match_stage==8)&(sci_names.taxonID==''),'match_stage'] = None
     return sci_names
-
-
-
-
-
-
-# def match_name(matching_name, is_parent, match_stage, sci_names, source_family, source_class, source_order, sci_index, specific_rank):
-#     if matching_name:
-#         # 先確定是不是中文
-#         is_chinese = False
-#         if re.findall(r'[\u4e00-\u9fff]+', matching_name):
-#             is_chinese = True
-#         request_url = f"http://host.docker.internal:8080/api.php?names={urllib.parse.quote(matching_name)}&format=json&source=taicol"
-#         response = requests.get(request_url)
-#         if response.status_code == 200:
-#             result = response.json()
-#             if result['data'][0][0]: # 因為一次只比對到一個，所以只要取第一個search term
-#                 # 排除地位為誤用的taxon，因為代表該名字不該指涉到此taxon
-#                 # match_score = result['data'][0][0].get('score')
-#                 # if match_score == 'N/A': #有對到但無法計算分數
-#                 #     match_score = 0 
-#                 filtered_rs = result['data'][0][0]['results'] # 不用排除誤用，但優先序為 有效 -> 無效 -> 誤用
-#                 filtered_rss = []
-#                 if len(filtered_rs):
-#                     # 排除掉同個taxonID但有不同name的情況
-#                     filtered_rs = pd.DataFrame(filtered_rs)[['accepted_namecode','family','order','class','name_status','score','taxon_rank']].drop_duplicates()
-#                     if specific_rank: # 這邊的rank都是小寫
-#                         filtered_rs = filtered_rs[filtered_rs.taxon_rank==specific_rank]
-#                     # 如果有accepted，僅考慮accepted
-#                     if len(filtered_rs[filtered_rs.name_status=='accepted']):
-#                         filtered_rs = filtered_rs[filtered_rs.name_status=='accepted']
-#                     # 如果沒有accepted，但有not-accepted，僅考慮not-accepted
-#                     elif len(filtered_rs[filtered_rs.name_status=='not-accepted']):
-#                         filtered_rs = filtered_rs[filtered_rs.name_status=='not-accepted']
-#                     if len(filtered_rs):
-#                         filtered_rs = filtered_rs.drop(columns=['name_status','taxon_rank'])
-#                         filtered_rs = filtered_rs.to_dict(orient='records')
-#                         # NomenMatch 有比對到有效taxon
-#                         # 是否有上階層資訊
-#                         has_parent = False
-#                         if source_class or source_family or source_order:
-#                             has_parent = True
-#                         # 若有上階層資訊，加上比對上階層 
-#                         if has_parent:
-#                             has_nm_parent = False # True代表有比對到
-#                             for frs in filtered_rs:
-#                                 if frs.get('family') or frs.get('order') or frs.get('class'):
-#                                     if frs.get('family') == source_family or frs.get('class') == source_class or frs.get('order') == source_order:
-#                                         filtered_rss.append(frs)
-#                                         has_nm_parent = True                            # if t_rank in ['種','種下階層']: # 直接比對family
-#                             # 如果有任何有nm上階層 且filtered_rss > 0 就代表有上階層比對成功的結果
-#                             if has_nm_parent:
-#                                 if len(filtered_rss) == 1:
-#                                     # 根據NomenMatch給的score確認名字是不是完全一樣
-#                                     # 如果是中文有可能是0.95
-#                                     match_score = filtered_rss[0]['score']
-#                                     if is_chinese and match_score == 0.95:
-#                                         match_score = 1
-#                                     if is_parent:
-#                                         sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 1
-#                                         # sci_names.loc[sci_names.sci_index==sci_index,'parentTaxonID'] = filtered_rss[0]['accepted_namecode']
-#                                         sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rss[0]['accepted_namecode']
-#                                         sci_names.loc[sci_names.sci_index==sci_index,'match_higher_taxon'] = True
-#                                     else:
-#                                         if match_score < 1:
-#                                             sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 3
-#                                         else:
-#                                             sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = None
-#                                         sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rss[0]['accepted_namecode']
-#                                 else:
-#                                     sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 4
-#                                     # sci_names.loc[((sci_names.scientificName==sci_name)&(sci_names.sourceVernacularName==original_name)),'more_than_one'] = True
-#                             else:
-#                                 # 如果沒有任何nm上階層的結果，則直接用filtered_rs
-#                                 if len(filtered_rs) == 1:
-#                                     match_score = filtered_rs[0]['score']
-#                                     if is_chinese and match_score == 0.95:
-#                                         match_score = 1
-#                                     if is_parent:
-#                                         sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 1
-#                                         # sci_names.loc[sci_names.sci_index==sci_index,'parentTaxonID'] = filtered_rs[0]['accepted_namecode']
-#                                         sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rs[0]['accepted_namecode']
-#                                         sci_names.loc[sci_names.sci_index==sci_index,'match_higher_taxon'] = True
-#                                     else:
-#                                         if match_score < 1:
-#                                             sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 3
-#                                         else:
-#                                             sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = None
-#                                         sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rs[0]['accepted_namecode']
-#                                 else:
-#                                     sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 4
-#                         # 若沒有上階層資訊，就直接取比對結果
-#                         else:
-#                             if len(filtered_rs) == 1:
-#                                 match_score = filtered_rs[0]['score']
-#                                 if is_chinese and match_score == 0.95:
-#                                     match_score = 1
-#                                 if is_parent:
-#                                     sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 1
-#                                     sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rs[0]['accepted_namecode']
-#                                     sci_names.loc[sci_names.sci_index==sci_index,'match_higher_taxon'] = True
-#                                 else:
-#                                     if match_score < 1:
-#                                         sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 3
-#                                     else:
-#                                         sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = None
-#                                     sci_names.loc[sci_names.sci_index==sci_index,'taxonID'] = filtered_rs[0]['accepted_namecode']
-#                             else:
-#                                 sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 4
-
-
-
-# def matching_flow(sci_names):
-#     sci_names['sci_index'] = sci_names.index
-#     if 'taxonID' not in sci_names.keys():
-#         sci_names['taxonID'] = ''
-#     sci_names['match_stage'] = 0
-#     sci_names['match_higher_taxon'] = False
-#     # 各階段的issue default是沒有對到
-#     sci_names['stage_1'] = None # 比對sourceScientificName
-#     sci_names['stage_2'] = None # 比對TaiCOL namecode
-#     sci_names['stage_3'] = None # 比對 sourceVernacularName (中文)
-#     sci_names['stage_4'] = None # 比對 sourceScientificName 第一個單詞
-#     sci_names['stage_5'] = None # 比對 originalVernacularName (中文 / 英文)
-#     sci_names['stage_6'] = None # 比對 sourceFamily
-#     sci_names['stage_7'] = None # 比對 sourceOrder
-#     sci_names['stage_8'] = None # 比對 sourceClass
-#     # 優先採用TaiCOL taxonID (若原資料庫有提供)
-#     ## 第一階段比對 - scientificName
-#     no_taxon = sci_names[(sci_names.taxonID=='')]
-#     sci_names.loc[sci_names.taxonID=='','match_stage'] = 1
-#     for s in no_taxon.index:
-#         s_row = sci_names.loc[s]
-#         if s_row.sourceScientificName:
-#             match_name(matching_name=s_row.sourceScientificName,
-#                        is_parent=False,
-#                        match_stage=1,
-#                        sci_names=sci_names,
-#                        source_family=s_row.get('sourceFamily'), 
-#                        source_class=s_row.get('sourceClass'), 
-#                        source_order=s_row.get('sourceOrder'),
-#                        sci_index=s_row.sci_index,
-#                        specific_rank=None)
-#     ## 第二階段比對 沒有taxonID的 試抓TaiCOL namecode
-#     sci_names.loc[sci_names.taxonID=='','match_stage'] = 2
-#     no_taxon = sci_names[sci_names.taxonID=='']
-#     for s in no_taxon.index:
-#         s_row = sci_names.loc[s]
-#         if s_row.get('scientificNameID'):
-#             match_namecode(matching_namecode=s_row.get('scientificNameID'),
-#                            match_stage=2,
-#                            sci_names=sci_names,
-#                            sci_index=s_row.sci_index)
-#     ## 第三階段比對 - sourceVernacularName 中文比對
-#     sci_names.loc[sci_names.taxonID=='','match_stage'] = 3
-#     no_taxon = sci_names[(sci_names.taxonID=='')&(sci_names.sourceVernacularName!='')]
-#     for nti in no_taxon.sci_index.unique():
-#         # 可能有多個sourceVernacularName
-#         s_row = sci_names.loc[sci_names.sci_index==nti].to_dict('records')[0]
-#         if names := s_row.get('sourceVernacularName'):
 #             for nn in names.split(';'):
 #                 if not sci_names.loc[nti,'taxonID']:
 #                     match_name(matching_name=nn,
 #                                is_parent=False,
 #                                match_stage=3,
 #                                sci_names=sci_names,
-#                                source_family=s_row.get('sourceFamily'), 
-#                                source_class=s_row.get('sourceClass'), 
-#                                source_order=s_row.get('sourceOrder'),
+#                                sourceFamily=s_row.get('sourceFamily'), 
+#                                sourceClass=s_row.get('sourceClass'), 
+#                                sourceOrder=s_row.get('sourceOrder'),
 #                                sci_index=s_row.get('sci_index'),
 #                                specific_rank=None)
 #     ## 第四階段比對 - scientificName第一個英文單詞 (為了至少可以補階層)
@@ -503,9 +366,9 @@ def matching_flow_new(sci_names):
 #                            is_parent=True,
 #                            match_stage=4,
 #                            sci_names=sci_names,
-#                            source_family=s_row.get('sourceFamily'), 
-#                            source_class=s_row.get('sourceClass'), 
-#                            source_order=s_row.get('sourceOrder'),
+#                            sourceFamily=s_row.get('sourceFamily'), 
+#                            sourceClass=s_row.get('sourceClass'), 
+#                            sourceOrder=s_row.get('sourceOrder'),
 #                            sci_index=s_row.get('sci_index'),
 #                            specific_rank='genus')
 #     # 第五階段比對 - originalVernacularName (中文 / 英文)
@@ -518,9 +381,9 @@ def matching_flow_new(sci_names):
 #                         is_parent=False,
 #                         match_stage=5,
 #                         sci_names=sci_names,
-#                         source_family=s_row.get('sourceFamily'), 
-#                         source_class=s_row.get('sourceClass'), 
-#                         source_order=s_row.get('sourceOrder'),
+#                         sourceFamily=s_row.get('sourceFamily'), 
+#                         sourceClass=s_row.get('sourceClass'), 
+#                         sourceOrder=s_row.get('sourceOrder'),
 #                         sci_index=s_row.get('sci_index'),
 #                         specific_rank=None)
 #     # 第六階段比對 - sourceFamily
@@ -533,9 +396,9 @@ def matching_flow_new(sci_names):
 #                         is_parent=True,
 #                         match_stage=6,
 #                         sci_names=sci_names,
-#                         source_family=s_row.get('sourceFamily'), 
-#                         source_class=s_row.get('sourceClass'), 
-#                         source_order=s_row.get('sourceOrder'),
+#                         sourceFamily=s_row.get('sourceFamily'), 
+#                         sourceClass=s_row.get('sourceClass'), 
+#                         sourceOrder=s_row.get('sourceOrder'),
 #                         sci_index=s_row.get('sci_index'),
 #                         specific_rank='family')
 #     # 第七階段比對 - sourceOrder
@@ -548,9 +411,9 @@ def matching_flow_new(sci_names):
 #                         is_parent=True,
 #                         match_stage=7,
 #                         sci_names=sci_names,
-#                         source_family=s_row.get('sourceFamily'), 
-#                         source_class=s_row.get('sourceClass'), 
-#                         source_order=s_row.get('sourceOrder'),
+#                         sourceFamily=s_row.get('sourceFamily'), 
+#                         sourceClass=s_row.get('sourceClass'), 
+#                         sourceOrder=s_row.get('sourceOrder'),
 #                         sci_index=s_row.get('sci_index'),
 #                         specific_rank='order')
 #     # 第八階段比對 - sourceClass
@@ -563,9 +426,9 @@ def matching_flow_new(sci_names):
 #                         is_parent=True,
 #                         match_stage=8,
 #                         sci_names=sci_names,
-#                         source_family=s_row.get('sourceFamily'), 
-#                         source_class=s_row.get('sourceClass'), 
-#                         source_order=s_row.get('sourceOrder'),
+#                         sourceFamily=s_row.get('sourceFamily'), 
+#                         sourceClass=s_row.get('sourceClass'), 
+#                         sourceOrder=s_row.get('sourceOrder'),
 #                         sci_index=s_row.get('sci_index'),
 #                         specific_rank='class')
 #     # 確定match_stage

@@ -18,7 +18,7 @@ from scripts.utils import *
 import json
 
 # 比對學名時使用的欄位
-sci_cols = ['sourceScientificName','sourceVernacularName','sourceClass','sourceOrder','sourceFamily']
+sci_cols = ['sourceScientificName','sourceVernacularName','sourceClass','sourceOrder','sourceFamily','sourceKingdom']
 
 # 若原資料庫原本就有提供taxonID 在這段要拿掉 避免merge時產生衝突
 df_sci_cols = [s for s in sci_cols if s != 'taxonID'] 
@@ -62,7 +62,7 @@ for r in resp.json():
 
 df = pd.DataFrame(data)
 df = df.drop(columns=['ScientificNameAuthorship','ChineseCommonName','EnglishCommonName','OriginalRecord','OrganismType',
-                        'KingdomName','KingdomChineseName','PhylumName','PhylumChineseName','ClassChineseName','OrderChineseName','FamilyChineseName',
+                        'KingdomChineseName','PhylumName','PhylumChineseName','ClassChineseName','OrderChineseName','FamilyChineseName',
                         'GenusName','GenusChineseName','IdentifiedBy','IdentifiedByChinese','RecordedBy','SamplingProtocol','Duration','Area','AreaUnit',
                         'OrganismDensity','SampleSizeValue','SampleSizeUnit','CoralReefCoverage','CoverageUnit','MeasurementRemarks','OrganismRemarks','RecordType'], errors='ignore')
 
@@ -75,6 +75,7 @@ df = df.rename(columns={'Id': 'occurrenceID',
                         'ClassName': 'sourceClass',
                         'OrderName': 'sourceOrder',
                         'FamilyName': 'sourceFamily',
+                        'KingdomName': 'sourceKingdom',
                         'RecordedByChinese': 'recordedBy',
                         'IndividualCount': 'individualCount',
                         'FillingDate': 'eventDate',

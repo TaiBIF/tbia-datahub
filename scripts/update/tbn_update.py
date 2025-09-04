@@ -180,11 +180,6 @@ for url in url_list[url_index:]:
                     df = df.merge(match_taxon_id[['taxonID','sci_index',
                         'match_stage', 'match_higher_taxon', 'stage_1', 'stage_2', 'stage_3',
                         'stage_4', 'stage_5', 'stage_6', 'stage_7', 'stage_8']], on='sci_index', how='left')
-                    # match_taxon_id = match_taxon_id.replace({nan: ''})
-                    # match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
-                    # df[df_sci_cols] = df[df_sci_cols].replace({'': '-999999',None:'-999999'})
-                    # df = df.merge(match_taxon_id, on=df_sci_cols, how='left')
-                    # df[sci_cols] = df[sci_cols].replace({'-999999': ''})
                 df['references'] = df.apply(lambda x: f"https://www.tbn.org.tw/occurrence/{x.occurrenceID}" if x.occurrenceID else None, axis=1)
                 df['sourceModified'] = df['sourceModified'].apply(lambda x: convert_date(x))
                 df['sourceCreated'] = df['sourceCreated'].apply(lambda x: convert_date(x))

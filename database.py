@@ -205,7 +205,7 @@ class SpeciesImages(Base):
     taxon_name_id: Mapped[Optional[str]] = mapped_column(String(1000))
     namecode: Mapped[Optional[str]] = mapped_column(String(1000))
     taieol_id: Mapped[Optional[str]] = mapped_column(String(1000))
-    taieol_url: Mapped[Optional[str]] = mapped_column(String(10000)) # 連接至taieol 物種頁
+    taieol_url: Mapped[Optional[str]] = mapped_column(String(10000)) # 連接至taieol 物種頁 -> 現在應該沒有在用了
     taxon_id: Mapped[Optional[str]] = mapped_column(String(20))
     images: Mapped[Optional[str]] = mapped_column(JSON)
     modified: Mapped[datetime] = mapped_column(DateTime(timezone=True))
