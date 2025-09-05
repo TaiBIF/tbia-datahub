@@ -13,6 +13,10 @@ import sqlalchemy as sa
 from scripts.utils import get_namecode
 
 
+match_cols = ['taxonID','sci_index',
+                'match_stage', 'match_higher_taxon', 'stage_1', 'stage_2', 'stage_3',
+                'stage_4', 'stage_5', 'stage_6', 'stage_7', 'stage_8']
+
 deleted_taxon_ids = pd.read_csv('/bucket/deleted_taxon.csv')
 deleted_taxon_ids = deleted_taxon_ids.taxon_id.to_list()
 
@@ -199,7 +203,7 @@ def match_namecode(matching_namecode, match_stage, sci_names, sci_index):
 
 
 def matching_flow_new(sci_names):
-    sci_names['sci_index'] = sci_names.index
+    # sci_names['sci_index'] = sci_names.index
     if 'taxonID' not in sci_names.keys():
         sci_names['taxonID'] = ''
     sci_names['match_stage'] = 0
@@ -342,100 +346,3 @@ def matching_flow_new(sci_names):
     # 代表比對到最後還是沒有對到
     sci_names.loc[(sci_names.match_stage==8)&(sci_names.taxonID==''),'match_stage'] = None
     return sci_names
-#             for nn in names.split(';'):
-#                 if not sci_names.loc[nti,'taxonID']:
-#                     match_name(matching_name=nn,
-#                                is_parent=False,
-#                                match_stage=3,
-#                                sci_names=sci_names,
-#                                sourceFamily=s_row.get('sourceFamily'), 
-#                                sourceClass=s_row.get('sourceClass'), 
-#                                sourceOrder=s_row.get('sourceOrder'),
-#                                sci_index=s_row.get('sci_index'),
-#                                specific_rank=None)
-#     ## 第四階段比對 - scientificName第一個英文單詞 (為了至少可以補階層)
-#     ## 這邊要限定只能比對屬
-#     ## 這個情況要給的是parentTaxonID
-#     sci_names.loc[sci_names.taxonID=='','match_stage'] = 4
-#     no_taxon = sci_names[sci_names.taxonID=='']
-#     for nti in no_taxon.sci_index.unique():
-#         s_row = sci_names.loc[sci_names.sci_index==nti].to_dict('records')[0]
-#         if nt_str := s_row.get('sourceScientificName'):
-#             if len(nt_str.split(' ')) > 1: # 等於0的話代表上面已經對過了
-#                 match_name(matching_name=nt_str.split(' ')[0], 
-#                            is_parent=True,
-#                            match_stage=4,
-#                            sci_names=sci_names,
-#                            sourceFamily=s_row.get('sourceFamily'), 
-#                            sourceClass=s_row.get('sourceClass'), 
-#                            sourceOrder=s_row.get('sourceOrder'),
-#                            sci_index=s_row.get('sci_index'),
-#                            specific_rank='genus')
-#     # 第五階段比對 - originalVernacularName (中文 / 英文)
-#     sci_names.loc[sci_names.taxonID=='','match_stage'] = 5
-#     no_taxon = sci_names[(sci_names.taxonID=='')]
-#     for nti in no_taxon.sci_index.unique():
-#         s_row = sci_names.loc[sci_names.sci_index==nti].to_dict('records')[0]
-#         if s_row.get('originalVernacularName'):
-#             match_name(matching_name=s_row.get('originalVernacularName'), 
-#                         is_parent=False,
-#                         match_stage=5,
-#                         sci_names=sci_names,
-#                         sourceFamily=s_row.get('sourceFamily'), 
-#                         sourceClass=s_row.get('sourceClass'), 
-#                         sourceOrder=s_row.get('sourceOrder'),
-#                         sci_index=s_row.get('sci_index'),
-#                         specific_rank=None)
-#     # 第六階段比對 - sourceFamily
-#     sci_names.loc[sci_names.taxonID=='','match_stage'] = 6
-#     no_taxon = sci_names[(sci_names.taxonID=='')]
-#     for nti in no_taxon.sci_index.unique():
-#         s_row = sci_names.loc[sci_names.sci_index==nti].to_dict('records')[0]
-#         if s_row.get('sourceFamily'):
-#             match_name(matching_name=s_row.get('sourceFamily'), 
-#                         is_parent=True,
-#                         match_stage=6,
-#                         sci_names=sci_names,
-#                         sourceFamily=s_row.get('sourceFamily'), 
-#                         sourceClass=s_row.get('sourceClass'), 
-#                         sourceOrder=s_row.get('sourceOrder'),
-#                         sci_index=s_row.get('sci_index'),
-#                         specific_rank='family')
-#     # 第七階段比對 - sourceOrder
-#     sci_names.loc[sci_names.taxonID=='','match_stage'] = 7
-#     no_taxon = sci_names[(sci_names.taxonID=='')]
-#     for nti in no_taxon.sci_index.unique():
-#         s_row = sci_names.loc[sci_names.sci_index==nti].to_dict('records')[0]
-#         if s_row.get('sourceOrder'):
-#             match_name(matching_name=s_row.get('sourceOrder'), 
-#                         is_parent=True,
-#                         match_stage=7,
-#                         sci_names=sci_names,
-#                         sourceFamily=s_row.get('sourceFamily'), 
-#                         sourceClass=s_row.get('sourceClass'), 
-#                         sourceOrder=s_row.get('sourceOrder'),
-#                         sci_index=s_row.get('sci_index'),
-#                         specific_rank='order')
-#     # 第八階段比對 - sourceClass
-#     sci_names.loc[sci_names.taxonID=='','match_stage'] = 8
-#     no_taxon = sci_names[(sci_names.taxonID=='')]
-#     for nti in no_taxon.sci_index.unique():
-#         s_row = sci_names.loc[sci_names.sci_index==nti].to_dict('records')[0]
-#         if s_row.get('sourceClass'):
-#             match_name(matching_name=s_row.get('sourceClass'), 
-#                         is_parent=True,
-#                         match_stage=8,
-#                         sci_names=sci_names,
-#                         sourceFamily=s_row.get('sourceFamily'), 
-#                         sourceClass=s_row.get('sourceClass'), 
-#                         sourceOrder=s_row.get('sourceOrder'),
-#                         sci_index=s_row.get('sci_index'),
-#                         specific_rank='class')
-#     # 確定match_stage
-#     stage_list = [1,2,3,4,5,6,7,8]
-#     for i in stage_list[:7]:
-#         for stg in stage_list[stage_list.index(i)+1:]:
-#             sci_names.loc[sci_names.match_stage==i,f'stage_{stg}'] = None
-#     # 代表比對到最後還是沒有對到
-#     sci_names.loc[(sci_names.match_stage==8)&(sci_names.taxonID==''),'match_stage'] = None
-#     return sci_names

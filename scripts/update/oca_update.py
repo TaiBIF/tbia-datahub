@@ -11,7 +11,7 @@ import glob
 import csv
 import json
 
-from scripts.taxon.match_utils import matching_flow_new
+from scripts.taxon.match_utils import matching_flow_new, match_cols
 from scripts.utils import *
 
 
@@ -226,15 +226,12 @@ df = df.reset_index(drop=True)
 df = df.replace(to_quote_dict)
 
 sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
-sci_names = matching_flow_new(sci_names)
+sci_names['sci_index'] = sci_names.index
+df = df.merge(sci_names)
+match_results = matching_flow_new(sci_names)
 df = df.drop(columns=['taxonID'], errors='ignore')
-match_taxon_id = sci_names
-if len(match_taxon_id):
-    match_taxon_id = match_taxon_id.replace({nan: ''})
-    match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
-    df[df_sci_cols] = df[df_sci_cols].replace({'': '-999999',None:'-999999'})
-    df = df.merge(match_taxon_id, on=df_sci_cols, how='left')
-    df[sci_cols] = df[sci_cols].replace({'-999999': ''})
+if len(match_results):
+    df = df.merge(match_results[match_cols], on='sci_index', how='left')
 
 
 df['recordType'] = 'occ'

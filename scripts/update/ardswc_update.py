@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 import os
 load_dotenv(override=True)
 
-from scripts.taxon.match_utils import matching_flow_new
+from scripts.taxon.match_utils import matching_flow_new, match_cols
 from scripts.utils import *
 
 
