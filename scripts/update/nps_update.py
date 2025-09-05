@@ -77,7 +77,7 @@ while has_more_data:
     data = []
     p = c + 10
     while c < p: # 每次處理10頁 還沒到十頁的時候不中斷
-        url = f"https://npgis.cpami.gov.tw//TBiAOpenApi/api/Data/Get?Token={os.getenv('CPAMI_KEY')}&Page={c}"
+        url = f"https://npgis.nps.gov.tw/TBiAOpenApi/api/Data/Get?Token={os.getenv('CPAMI_KEY')}&Page={c}"
         response = requests.get(url)
         if response.status_code == 200:
             result = response.json()
