@@ -18,7 +18,7 @@ from scripts.utils import *
 
 
 # 比對學名時使用的欄位
-sci_cols = ['taxonID','sourceScientificName','sourceVernacularName','sourceFamily','sourceOrder','sourceClass']
+sci_cols = ['taxonID','sourceScientificName','sourceVernacularName','sourceFamily','sourceOrder','sourceClass','sourceKingdom']
 
 # 若原資料庫原本就有提供taxonID 在這段要拿掉 避免merge時產生衝突
 df_sci_cols = [s for s in sci_cols if s != 'taxonID'] 
@@ -83,23 +83,21 @@ while has_more_data:
             df = df.rename(columns={'modified': 'sourceModified', 'created': 'sourceCreated', 
                                     'scientificName': 'sourceScientificName',
                                     'isPreferredName': 'sourceVernacularName', 'taxonRank': 'sourceTaxonRank',
-                                    'class': 'sourceClass', 'order': 'sourceOrder', 'family': 'sourceFamily'})
-            df = df.drop(columns=[ 'kingdom', 'kingdom_c', 'phylum', 'phylum_c',
+                                    'class': 'sourceClass', 'order': 'sourceOrder', 'family': 'sourceFamily',
+                                    'kingdom': 'sourceKingdom'})
+            df = df.drop(columns=[ 'kingdom_c', 'phylum', 'phylum_c',
                                     'class_c', 'order_c',
-                                    'family_c', 'genus', 'genus_c', ])
+                                    'family_c', 'genus', 'genus_c', ]) 
             for col in cols_str_ends:
                 if col in df.keys():
                     df[col] = df[col].apply(check_id_str_ends)
             sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
-            sci_names = matching_flow_new(sci_names)
+            sci_names['sci_index'] = sci_names.index
+            df = df.merge(sci_names)
+            match_results = matching_flow_new(sci_names)
             df = df.drop(columns=['taxonID'], errors='ignore')
-            match_taxon_id = sci_names
-            if len(match_taxon_id):
-                match_taxon_id = match_taxon_id.replace({nan: ''})
-                match_taxon_id[sci_cols] = match_taxon_id[sci_cols].replace({'': '-999999'})
-                df[df_sci_cols] = df[df_sci_cols].replace({'': '-999999',None:'-999999'})
-                df = df.merge(match_taxon_id, on=df_sci_cols, how='left')
-                df[sci_cols] = df[sci_cols].replace({'-999999': ''})
+            if len(match_results):
+                df = df.merge(match_results[match_cols], on='sci_index', how='left')
             df['sourceModified'] = df['sourceModified'].apply(lambda x: convert_date(x))
             df['group'] = group
             df['rightsHolder'] = rights_holder
@@ -122,12 +120,14 @@ while has_more_data:
                 df['media_rule_list'] = df[df.associatedMedia.notnull()]['associatedMedia'].apply(lambda x: get_media_rule(x))
                 media_rule_list += list(df[df.media_rule_list.notnull()].media_rule_list.unique())
             # 地理資訊
-            # TODO 這邊應該是TWD97的格式
-            # df['dataGeneralizations'] = df.apply(lambda x:  True if x.verbatimLongitude or x.verbatimLatitude else None, axis=1)
-            for g in geo_wo_raw_keys:
-                    if g not in df.keys():
-                        df[g] = ''
-            df[geo_wo_raw_keys]  = df.apply(lambda x: pd.Series(create_grid_data_new(x.verbatimLongitude, x.verbatimLatitude)),  axis=1)
+            df['coordinatePrecision'] = df.apply(lambda x: coor_precision(x), axis=1)
+            df['coordinatePrecision'] = df['coordinatePrecision'].replace({np.nan: None})
+            df['dataGeneralizations'] = df['coordinatePrecision'].apply(lambda x: True if x else False)
+            df['is_hidden'] = df.apply(lambda x: True if x.sensitiveCategory in ['縣市','座標不開放'] else False, axis=1)
+            for g in geo_keys:
+                if g not in df.keys():
+                    df[g] = ''
+            df[geo_keys] = df.apply(lambda x: pd.Series(create_blurred_grid_data_new(x.verbatimLongitude, x.verbatimLatitude, x.coordinatePrecision, x.dataGeneralizations, is_full_hidden=x.is_hidden)),  axis=1)
             # 年月日
             df[date_keys] = df.apply(lambda x: pd.Series(convert_year_month_day_new(x.to_dict())), axis=1)
             for d_col in ['year','month','day']:
