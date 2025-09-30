@@ -60,6 +60,7 @@ rights_holder_map = {
     '科博典藏 (NMNS Collection)': 'nmns',
     '臺灣魚類資料庫': 'ascdc',
     '國家海洋資料庫及共享平台': 'namr',
+    '農業部農村發展及水土保持署': 'ardswc',
 }
 
 
@@ -335,28 +336,6 @@ def convert_date(date):
                     formatted_date = None
     return formatted_date
 
-
-# def convert_year_month_day(row):
-#     eventDate = row.eventDate
-#     standardDate, year, month, day = None, None, None, None
-#     if standardDate := convert_date(eventDate):
-#         year = standardDate.year
-#         month = standardDate.month
-#         day = standardDate.day
-#     elif row.get('year') and row.get('month') and row.get('day'):
-#         try:
-#             year = int(row.get('year'))
-#             month = int(row.get('month'))
-#             day = int(row.get('day'))
-#             if try_eventDate := convert_date('{}-{}-{}'.format(row.get('year'),row.get('month'),row.get('day'))):
-#                 year = try_eventDate.year
-#                 month = try_eventDate.month
-#                 day = try_eventDate.day
-#                 eventDate = '{}-{}-{}'.format(year,month,day)
-#                 standardDate = try_eventDate
-#         except:
-#             pass
-#     return eventDate, standardDate, year, month, day
 
 
 
@@ -730,81 +709,6 @@ def insert_new_update_version(update_version, rights_holder):
         conn.commit()
         conn.close()
         return 0, None
-
-
-
-# # 如果是需要幫忙做模糊化的 進來的 orignal_lon & orignal_lat 一定是未模糊化資料
-# def create_blurred_grid_data(verbatimLongitude, verbatimLatitude, coordinatePrecision, is_full_hidden=False):
-#     # TODO 先暫時不處理科學記號的問題
-#     # 判斷coordinatePrecision 是否為合理數值 小於0 or =1 or 完全屏蔽
-#     # from DwC quick guide
-#     # 0.00001 (normal GPS limit for decimal degrees)
-#     # 0.000278 (nearest second) # TODO 尚未處理 還沒有需要處理的資料
-#     # 0.01667 (nearest minute) # TODO 尚未處理 還沒有需要處理的資料
-#     # 1.0 (nearest degree)
-#     standardRawLon, standardRawLat, raw_location_rpt = standardize_coor(verbatimLongitude, verbatimLatitude)
-#     grid_data = {}
-#     grid_data['grid_1'] = '-1_-1'
-#     grid_data['grid_5'] = '-1_-1'
-#     grid_data['grid_10'] = '-1_-1'
-#     grid_data['grid_100'] = '-1_-1'
-#     grid_data['grid_1_blurred'] = '-1_-1'
-#     grid_data['grid_5_blurred'] = '-1_-1'
-#     grid_data['grid_10_blurred'] = '-1_-1'
-#     grid_data['grid_100_blurred'] = '-1_-1'
-#     grid_data['standardRawLon'] = standardRawLon
-#     grid_data['standardRawLat'] = standardRawLat
-#     grid_data['raw_location_rpt'] = raw_location_rpt
-#     grid_data['standardLon'] = None
-#     grid_data['standardLat'] = None
-#     grid_data['location_rpt'] = None
-#     if standardRawLon and standardRawLat:
-#         if is_full_hidden:
-#             fuzzy_lon = None
-#             fuzzy_lat = None
-#         else:
-#             if not coordinatePrecision:
-#                 fuzzy_lon = standardRawLon
-#                 fuzzy_lat = standardRawLat
-#             elif float(coordinatePrecision) < 1 and float(coordinatePrecision) > 0:
-#                 ten_times = math.pow(10, len(str(coordinatePrecision).split('.')[-1]))
-#                 fuzzy_lon = math.floor(float(standardRawLon)*ten_times)/ten_times
-#                 fuzzy_lat = math.floor(float(standardRawLat)*ten_times)/ten_times
-#             elif float(coordinatePrecision) == 1:
-#                 # 直接去除掉小數點以後的數字
-#                 fuzzy_lon = str(standardRawLon).split('.')[0]
-#                 fuzzy_lat = str(standardRawLat).split('.')[0]
-#             # elif is_full_hidden: # 完全屏蔽 
-#             #     fuzzy_lon = None
-#             #     fuzzy_lat = None
-#             else: # 空值 / 不合理 / 無法判斷
-#                 # 直接把 grid_* 跟 grid_*_blurred填入一樣的值
-#                 fuzzy_lon = standardRawLon
-#                 fuzzy_lat = standardRawLat
-#         # 就算沒有給到那麼細的點位 還是一樣畫上去 例如 原始座標只給到121, 21 一樣給一公里網格的資料
-#         grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 0.01)
-#         grid_data['grid_1'] = str(int(grid_x)) + '_' + str(int(grid_y))
-#         grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 0.05)
-#         grid_data['grid_5'] = str(int(grid_x)) + '_' + str(int(grid_y))
-#         grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 0.1)
-#         grid_data['grid_10'] = str(int(grid_x)) + '_' + str(int(grid_y))
-#         grid_x, grid_y = convert_coor_to_grid(standardRawLon, standardRawLat, 1)
-#         grid_data['grid_100'] = str(int(grid_x)) + '_' + str(int(grid_y))
-#         # if fuzzy_lon and fuzzy_lat:
-#         standardLon, standardLat, location_rpt = standardize_coor(fuzzy_lon, fuzzy_lat)
-#         grid_data['standardLon'] = standardLon
-#         grid_data['standardLat'] = standardLat
-#         grid_data['location_rpt'] = location_rpt
-#         if standardLon and standardLat:
-#             grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.01)
-#             grid_data['grid_1_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
-#             grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.05)
-#             grid_data['grid_5_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
-#             grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 0.1)
-#             grid_data['grid_10_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
-#             grid_x, grid_y = convert_coor_to_grid(standardLon, standardLat, 1)
-#             grid_data['grid_100_blurred'] = str(int(grid_x)) + '_' + str(int(grid_y))
-#     return grid_data
 
 
 # 如果是需要幫忙做模糊化的 進來的 orignal_lon & orignal_lat 一定是未模糊化資料

@@ -7,7 +7,6 @@ from numpy import nan
 from app import db
 import pandas as pd
 
-# from app import portal_db_settings
 # 取得taxon資料
 # import psycopg2
 # import requests
