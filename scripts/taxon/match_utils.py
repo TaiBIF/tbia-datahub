@@ -344,7 +344,6 @@ def matching_flow_new(sci_names):
     sci_names.loc[(sci_names.match_stage==8)&(sci_names.taxonID==''),'match_stage'] = None
     return sci_names
 
-
 import numpy as np
 import pandas as pd
 import requests
@@ -423,9 +422,14 @@ def matching_flow_new_optimized(sci_names, batch_size=100, max_workers=4):
         # 選擇需要處理的記錄
         no_taxon = sci_names[sci_names.taxonID == ''].copy()
         
-        if column_name not in no_taxon.columns or no_taxon[column_name].isna().all():
-            # 如果沒有資料可處理，保持與原版一致，不設置任何stage值
-            print(f"  Stage {stage_num}: No data to process")
+        if column_name not in no_taxon.columns:
+            # 如果欄位不存在，跳過此階段
+            print(f"  Stage {stage_num}: Column '{column_name}' not found - skipping")
+            return sci_names
+            
+        if no_taxon[column_name].isna().all():
+            # 如果欄位存在但全部為空，跳過此階段
+            print(f"  Stage {stage_num}: No data in column '{column_name}'")
             return sci_names
         
         # 向量化清理數據
@@ -662,27 +666,32 @@ def matching_flow_new_optimized(sci_names, batch_size=100, max_workers=4):
     sci_names.loc[sci_names.taxonID == '', 'match_stage'] = 2
     no_taxon = sci_names[sci_names.taxonID == '']
     
-    # 向量化處理 scientificNameID
-    namecode_mask = (no_taxon['scientificNameID'].notna() & 
-                     (no_taxon['scientificNameID'] != ''))
-    
-    if namecode_mask.any():
-        namecode_df = no_taxon[namecode_mask].copy()
-        print(f"    Processing {len(namecode_df)} namecode matches...")
+    # 檢查是否存在 scientificNameID 欄位
+    if 'scientificNameID' in no_taxon.columns:
+        # 向量化處理 scientificNameID
+        namecode_mask = (no_taxon['scientificNameID'].notna() & 
+                         (no_taxon['scientificNameID'] != ''))
         
-        for idx, row in namecode_df.iterrows():
-            try:
-                # 需要依賴原版的 match_namecode 函數
-                match_namecode(
-                    matching_namecode=row['scientificNameID'],
-                    match_stage=2,
-                    sci_names=sci_names,
-                    sci_index=row['sci_index']
-                )
-            except:
-                pass  # 忽略namecode匹配錯誤
+        if namecode_mask.any():
+            namecode_df = no_taxon[namecode_mask].copy()
+            print(f"    Processing {len(namecode_df)} namecode matches...")
+            
+            for idx, row in namecode_df.iterrows():
+                try:
+                    # 需要依賴原版的 match_namecode 函數
+                    from scripts.match_utils import match_namecode
+                    match_namecode(
+                        matching_namecode=row['scientificNameID'],
+                        match_stage=2,
+                        sci_names=sci_names,
+                        sci_index=row['sci_index']
+                    )
+                except:
+                    pass  # 忽略namecode匹配錯誤
+        else:
+            print("    No valid scientificNameID to process")
     else:
-        print("    No scientificNameID to process")
+        print("    No scientificNameID column found - skipping Stage 2")
     
     print(f"Stage 2 (namecode): {time.time() - stage2_start:.2f}s")
     
