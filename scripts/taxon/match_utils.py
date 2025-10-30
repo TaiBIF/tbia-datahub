@@ -345,7 +345,6 @@ def matching_flow_new(sci_names):
     return sci_names
 
 
-
 import numpy as np
 import pandas as pd
 import requests
@@ -381,13 +380,27 @@ def matching_flow_new_optimized(sci_names, batch_size=100, max_workers=4):
                 result = response.json()
                 processed_results = []
                 
-                for r in result['data']:
-                    if r:  # 確保不是空結果
-                        best_match = r[0]  # 選擇最佳匹配
-                        processed_results.append({
-                            'search_term': best_match.get('search_term'),
-                            'results': best_match.get('results', [])
-                        })
+                # 確保 result['data'] 存在且是 list
+                if 'data' not in result or not isinstance(result['data'], list):
+                    return []
+                
+                # 處理每個名稱的結果
+                for i, r in enumerate(result['data']):
+                    # r 應該是一個 list，包含該名稱的匹配結果
+                    if r and isinstance(r, list) and len(r) > 0:
+                        # 取第一個（最佳）匹配結果
+                        best_match = r[0]
+                        
+                        if isinstance(best_match, dict):
+                            search_term = best_match.get('search_term', names_list[i] if i < len(names_list) else '')
+                            api_results = best_match.get('results', [])
+                            
+                            # 確保 results 是 list
+                            if isinstance(api_results, list):
+                                processed_results.append({
+                                    'search_term': search_term,
+                                    'results': api_results
+                                })
                 
                 return processed_results
                 
@@ -425,10 +438,12 @@ def matching_flow_new_optimized(sci_names, batch_size=100, max_workers=4):
         # 過濾空值
         matching_df = no_taxon[no_taxon.now_matching_name != ''].copy()
         
+        # 如果沒有有效的匹配名稱，保持與原版一致，不設置stage值
         if matching_df.empty:
-            # 如果沒有有效的匹配名稱，保持與原版一致，不設置stage值
             print(f"  Stage {stage_num}: No valid names to match")
             return sci_names
+        
+        print(f"  Stage {stage_num}: Processing {len(matching_df)} names")
         
         # 選擇需要的欄位
         keep_columns = ['now_matching_name', 'sci_index'] + [
@@ -443,13 +458,6 @@ def matching_flow_new_optimized(sci_names, batch_size=100, max_workers=4):
                 now_matching_name=matching_df['now_matching_name'].str.split(';')
             ).explode('now_matching_name').reset_index(drop=True)
             matching_df = matching_df[matching_df.now_matching_name.str.strip() != '']
-        
-        # 如果處理後沒有資料，保持與原版一致，不設置stage值
-        if matching_df.empty:
-            print(f"  Stage {stage_num}: No names after processing")
-            return sci_names
-        
-        print(f"  Stage {stage_num}: Processing {len(matching_df)} names")
         
         # 批次處理API請求
         results = []
@@ -505,15 +513,26 @@ def matching_flow_new_optimized(sci_names, batch_size=100, max_workers=4):
                 continue
             
             filtered_rs = row.get('results', [])
+            
+            # 確保 filtered_rs 是 list 類型
+            if not isinstance(filtered_rs, list):
+                print(f"Warning: filtered_rs is not a list, got {type(filtered_rs)}: {filtered_rs}")
+                continue
+                
             if not filtered_rs:
-                # 沒有API結果，稍後會在外層設置為 2 (none)
+                # 沒有API結果
                 continue
             
-            # 向量化過濾高分結果
-            filtered_rs = [fr for fr in filtered_rs if fr.get('score', 0) > 0.7]
+            # 向量化過濾高分結果，確保每個元素都是 dict
+            try:
+                filtered_rs = [fr for fr in filtered_rs if isinstance(fr, dict) and fr.get('score', 0) > 0.7]
+            except Exception as e:
+                print(f"Error filtering results for sci_index {sci_idx}: {e}")
+                print(f"filtered_rs content: {filtered_rs}")
+                continue
             
             if not filtered_rs:
-                # 沒有高分結果，稍後會在外層設置為 2 (none)
+                # 沒有高分結果
                 continue
             
             # 轉換為DataFrame進行向量化操作
@@ -530,7 +549,7 @@ def matching_flow_new_optimized(sci_names, batch_size=100, max_workers=4):
                 results_df = results_df[results_df.taxon_rank == specific_rank]
             
             if results_df.empty:
-                # 沒有符合rank要求的結果，稍後會在外層設置為 2 (none)
+                # 沒有符合rank要求的結果
                 continue
             
             # 向量化狀態過濾
@@ -540,7 +559,7 @@ def matching_flow_new_optimized(sci_names, batch_size=100, max_workers=4):
                 results_df = results_df[results_df.name_status == 'not-accepted']
             
             if results_df.empty:
-                # 沒有有效狀態的結果，稍後會在外層設置為 2 (none)
+                # 沒有有效狀態的結果
                 continue
             
             # 處理階層匹配
@@ -576,100 +595,58 @@ def matching_flow_new_optimized(sci_names, batch_size=100, max_workers=4):
             elif len(results_dict) > 1:
                 # 有多個結果但階層不匹配
                 sci_names.loc[sci_names.sci_index == sci_idx, f'stage_{stage_num}'] = 4  # multiple
-            # else: 會在外層設置為 2 (none)
+            # else: 保持與原版一致，不設置stage值
         
         return successful_matches
     
     def _check_hierarchy_match_vectorized(results_dict, row):
-        """向量化階層匹配檢查 - 完整實現原版邏輯"""
+        """向量化階層檢查"""
         if not results_dict:
             return []
         
-        # 檢查是否有上階層資訊（優先檢查kingdom，其次檢查其他階層）
-        has_parent = False
-        use_kingdom = False
+        # 獲取上階層資訊
+        source_family = row.get('sourceFamily')
+        source_class = row.get('sourceClass') 
+        source_order = row.get('sourceOrder')
+        source_kingdom = row.get('sourceKingdom')
         
-        if row.get('sourceKingdom'):
-            has_parent = True
-            use_kingdom = True
-        elif row.get('sourceClass') or row.get('sourceFamily') or row.get('sourceOrder'):
-            has_parent = True
-            use_kingdom = False
-        
-        # 若沒有上階層資訊，直接返回所有結果
-        if not has_parent:
+        # 如果沒有上階層資訊，直接返回所有結果
+        if not any([source_family, source_class, source_order, source_kingdom]):
             return results_dict
         
-        # 若有上階層資訊，進行階層比對
-        filtered_rss = []
-        has_nm_parent = False  # True代表有比對到
+        # 過濾匹配的階層
+        matched = []
+        for result in results_dict:
+            if (not source_family or result.get('family') == source_family) and \
+               (not source_class or result.get('class') == source_class) and \
+               (not source_order or result.get('order') == source_order) and \
+               (not source_kingdom or result.get('kingdom') == source_kingdom):
+                matched.append(result)
         
-        for frs in results_dict:
-            if use_kingdom:
-                # 優先使用kingdom進行比對
-                if frs.get('kingdom'):
-                    has_nm_parent = True  # 有nomemmatch上階層
-                    if frs.get('kingdom') == row.get('sourceKingdom'):
-                        filtered_rss.append(frs)
-            else:
-                # 使用其他階層進行比對 (family, order, class)
-                if frs.get('family') or frs.get('order') or frs.get('class'):
-                    has_nm_parent = True  # 有nomemmatch上階層
-                    # 檢查任一階層是否匹配
-                    if (frs.get('family') == row.get('sourceFamily') or 
-                        frs.get('class') == row.get('sourceClass') or 
-                        frs.get('order') == row.get('sourceOrder')):
-                        filtered_rss.append(frs)
-        
-        # 如果有任何有nm上階層 且filtered_rss > 0 就代表有上階層比對成功的結果
-        if has_nm_parent and filtered_rss:
-            return filtered_rss
-        elif has_nm_parent and not filtered_rss:
-            # 有上階層資訊但沒有匹配成功，返回空列表
-            return []
-        else:
-            # 沒有上階層資訊可比對，返回原結果
-            return results_dict
+        return matched if matched else results_dict
     
     # 主要處理流程
-    start_time = time.time()
+    print("=== Optimized Matching Flow ===")
     
-    # 初始化欄位
-    sci_names = sci_names.copy()
+    # 初始化必要欄位
     if 'taxonID' not in sci_names.columns:
         sci_names['taxonID'] = ''
+    if 'sci_index' not in sci_names.columns:
+        sci_names['sci_index'] = sci_names.index
     
-    # 向量化初始化
-    init_columns = {
-        'match_stage': 0,
-        'match_higher_taxon': False,
-        **{f'stage_{i}': None for i in range(1, 9)}
-    }
+    sci_names['match_stage'] = 0
+    sci_names['match_higher_taxon'] = False
     
-    for col, default_val in init_columns.items():
-        sci_names[col] = default_val
+    # 初始化所有 stage 欄位
+    for i in range(1, 9):
+        sci_names[f'stage_{i}'] = None
     
-    # 向量化處理deleted taxonID
-    if hasattr('deleted_taxon_ids', '__iter__'):
-        sci_names['taxonID'] = sci_names['taxonID'].where(
-            ~sci_names['taxonID'].isin(deleted_taxon_ids), ''
-        )
-    
-    print(f"Initial setup: {time.time() - start_time:.2f}s")
-    
-    # 定義轉換函數
-    def extract_first_word(series):
-        """提取第一個單詞（只處理多單詞的學名）"""
-        # 只有當學名包含空格時才提取第一個單詞，否則返回空字符串
-        return series.apply(lambda x: x.split(' ')[0] if isinstance(x, str) and len(x.split(' ')) > 1 else '')
-    
-    # 各階段處理（使用向量化版本）
+    # 定義處理階段
     stages = [
-        (1, 'sourceScientificName', False, None, None),
-        # 注意：stage_2 (namecode) 會在後面單獨處理
+        (1, 'scientificName', False, None, None),
         (3, 'sourceVernacularName', False, None, None),
-        (4, 'sourceScientificName', True, 'genus', extract_first_word),
-        (5, 'originalVernacularName', False, None, None),
+        (4, 'scientificName', True, 'genus', lambda x: x.str.split(' ').str[0]),
+        (5, 'sourceVernacularName', False, None, None),
         (6, 'sourceFamily', True, 'family', None),
         (7, 'sourceOrder', True, 'order', None),
         (8, 'sourceClass', True, 'class', None),
@@ -677,95 +654,52 @@ def matching_flow_new_optimized(sci_names, batch_size=100, max_workers=4):
     
     # 處理 Stage 1
     stage_start = time.time()
-    sci_names = process_stage_vectorized(
-        sci_names, 1, 'sourceScientificName', False, None, None
-    )
+    sci_names = process_stage_vectorized(sci_names, 1, 'scientificName', False, None, None)
     print(f"Stage 1: {time.time() - stage_start:.2f}s")
     
-    # 處理 Stage 2 (namecode matching) - 必須在 Stage 1 之後
+    # 處理 Stage 2 (namecode matching) - 保持原有邏輯
     stage2_start = time.time()
     sci_names.loc[sci_names.taxonID == '', 'match_stage'] = 2
     no_taxon = sci_names[sci_names.taxonID == '']
     
-    for idx in no_taxon.index:
-        s_row = sci_names.loc[idx]
-        if s_row.get('scientificNameID'):
-            # 這裡保持原有的match_namecode調用
+    # 向量化處理 scientificNameID
+    namecode_mask = (no_taxon['scientificNameID'].notna() & 
+                     (no_taxon['scientificNameID'] != ''))
+    
+    if namecode_mask.any():
+        namecode_df = no_taxon[namecode_mask].copy()
+        print(f"    Processing {len(namecode_df)} namecode matches...")
+        
+        for idx, row in namecode_df.iterrows():
             try:
+                # 需要依賴原版的 match_namecode 函數
                 match_namecode(
-                    matching_namecode=s_row.get('scientificNameID'),
+                    matching_namecode=row['scientificNameID'],
                     match_stage=2,
                     sci_names=sci_names,
-                    sci_index=s_row.sci_index
+                    sci_index=row['sci_index']
                 )
             except:
                 pass  # 忽略namecode匹配錯誤
+    else:
+        print("    No scientificNameID to process")
     
     print(f"Stage 2 (namecode): {time.time() - stage2_start:.2f}s")
     
     # 處理 Stage 3-8
     for stage_num, column, is_parent, rank, transform_func in stages[1:]:  # 跳過已處理的stage_1
         stage_start = time.time()
-        sci_names = process_stage_vectorized(
-            sci_names, stage_num, column, is_parent, rank, transform_func
-        )
+        sci_names = process_stage_vectorized(sci_names, stage_num, column, is_parent, rank, transform_func)
         print(f"Stage {stage_num}: {time.time() - stage_start:.2f}s")
-        
-        # 早期退出：如果所有記錄都已匹配
-        if (sci_names['taxonID'] != '').all():
-            print(f"All records matched at stage {stage_num}")
-            break
     
-    
-    # 向量化處理最終的match_stage清理
-    stage_list = list(range(1, 9))
+    # 最終清理階段（與原版一致）
+    stage_list = [1,2,3,4,5,6,7,8]
     for i in stage_list[:7]:
         for stg in stage_list[stage_list.index(i)+1:]:
-            sci_names.loc[sci_names.match_stage == i, f'stage_{stg}'] = None
+            sci_names.loc[sci_names.match_stage==i,f'stage_{stg}'] = None
     
-    # 處理最終未匹配的記錄
-    sci_names.loc[
-        (sci_names.match_stage == 8) & (sci_names.taxonID == ''), 
-        'match_stage'
-    ] = None
+    # 代表比對到最後還是沒有對到
+    sci_names.loc[(sci_names.match_stage==8)&(sci_names.taxonID==''),'match_stage'] = None
     
-    total_time = time.time() - start_time
-    print(f"Total matching time: {total_time:.2f}s")
-    
+    print("=== Matching Flow Completed ===")
     return sci_names
-# ============================================
-# 額外的優化工具函數
-# ============================================
-def preprocess_sci_names_for_matching(sci_names):
-    """
-    預處理sci_names以提高匹配效率
-    """
-    # 向量化清理空值和標準化格式
-    string_columns = ['sourceScientificName', 'sourceVernacularName', 'originalVernacularName', 
-                     'sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom']
-    
-    for col in string_columns:
-        if col in sci_names.columns:
-            sci_names[col] = (sci_names[col]
-                             .fillna('')
-                             .astype(str)
-                             .str.strip()
-                             .replace({'nan': '', 'None': '', 'null': ''}))
-    
-    return sci_names
-def get_matching_statistics(sci_names):
-    """
-    獲取匹配統計信息
-    """
-    total_records = len(sci_names)
-    matched_records = (sci_names['taxonID'] != '').sum()
-    match_rate = matched_records / total_records * 100 if total_records > 0 else 0
-    
-    stage_stats = sci_names['match_stage'].value_counts().sort_index()
-    
-    return {
-        'total_records': total_records,
-        'matched_records': matched_records,
-        'match_rate': match_rate,
-        'stage_distribution': stage_stats.to_dict()
-    }
