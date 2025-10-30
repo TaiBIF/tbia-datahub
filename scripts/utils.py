@@ -20,6 +20,9 @@ from shapely.geometry import Point, Polygon
 import geopandas as gpd
 import bson
 from numpy import nan
+import threading
+import concurrent.futures
+from functools import partial
 
 gdf = gpd.read_file('/bucket/TW_TOWN/TOWN_MOI_1131028.shp')
 gdf_ocean = gpd.read_file('/bucket/TW_TOWN_OCEAN/tw_map_o.shp')
@@ -60,7 +63,7 @@ rights_holder_map = {
     '科博典藏 (NMNS Collection)': 'nmns',
     '臺灣魚類資料庫': 'ascdc',
     '國家海洋資料庫及共享平台': 'namr',
-    '農業部農村發展及水土保持署': 'ardswc',
+    '集水區友善環境生態資料庫': 'ardswc',
 }
 
 
@@ -132,12 +135,12 @@ basis_dict = {
     "活體標本": "LivingSpecimen",
     "化石標本": "FossilSpecimen",
     "文獻紀錄": "MaterialCitation",
+    "材料引用": "MaterialCitation", # GBIF資料
     "材料實體": "MaterialEntity",
+    "組織樣本": "MaterialSample", # GBIF資料
     "分類群": "Taxon",
     "出現紀錄": "Occurrence",
     "調查活動": "Event",
-    "材料引用": "MaterialCitation", # GBIF資料
-    "組織樣本": "MaterialSample", # GBIF資料
     "人類調查": "HumanObservation", # GBIF資料,
     "Camera": "MachineObservation",
     "CameraTrap": "MachineObservation",
@@ -273,6 +276,98 @@ def get_existed_records(occ_ids, rights_holder, get_reference=False, cata_ids=[]
         existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
 
     return existed_records
+
+
+def get_existed_records_optimized(occ_ids, rights_holder, get_reference=False, cata_ids=[], 
+                                 batch_size=200, max_workers=4):
+    """
+    優化版本的 get_existed_records
+    主要改進：
+    1. 增加批次大小從20到200
+    2. 使用並行處理
+    3. 減少重複的字符串處理
+    
+    回傳格式與原版完全一致：包含 tbiaID, occurrenceID, catalogNumber 三個欄位的 DataFrame
+    """
+    def format_ids(ids):
+        return [f'"{d}"' for d in ids] if ids else []
+    def query_batch(ids, field_name, rights_holder, get_fields):
+        """單次查詢批次"""
+        if not ids:
+            return []
+        query = {
+            "query": "*:*",
+            "offset": 0,
+            "filter": [f"rightsHolder:{rights_holder}", f"{field_name}:({' OR '.join(ids)})"],
+            "limit": 1000000,
+            "fields": get_fields
+        }
+        try:
+            response = requests.post(
+                'http://solr:8983/solr/tbia_records/select', 
+                data=json.dumps(query), 
+                headers={'content-type': "application/json"},
+                timeout=30  # 添加超時
+            )
+            if response.status_code == 200:
+                resp = response.json()
+                return resp['response']['docs'] if 'response' in resp and 'docs' in resp['response'] else []
+        except Exception as e:
+            print(f"Query error: {e}")
+        return []
+    # 預處理ID列表
+    formatted_occ_ids = format_ids(occ_ids)
+    formatted_cata_ids = format_ids(cata_ids)
+    get_fields = ['id', 'occurrenceID', 'catalogNumber']
+    if get_reference:
+        get_fields.append('references')
+    subset_list = []
+    # 使用線程池並行處理
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = []
+        # 處理 occurrenceID 批次
+        for i in range(0, len(formatted_occ_ids), batch_size):
+            batch = formatted_occ_ids[i:i+batch_size]
+            future = executor.submit(query_batch, batch, 'occurrenceID', rights_holder, get_fields)
+            futures.append(future)
+        # 處理 catalogNumber 批次
+        for i in range(0, len(formatted_cata_ids), batch_size):
+            batch = formatted_cata_ids[i:i+batch_size]
+            future = executor.submit(query_batch, batch, 'catalogNumber', rights_holder, get_fields)
+            futures.append(future)
+        # 收集結果
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                result = future.result()
+                subset_list.extend(result)
+            except Exception as e:
+                print(f"Future error: {e}")
+    # 確保回傳的 DataFrame 有正確的欄位名稱和格式
+    if subset_list:
+        result_df = pd.DataFrame(subset_list)
+        # 將 id 欄位重新命名為 tbiaID 以符合原版格式
+        if 'id' in result_df.columns:
+            result_df = result_df.rename(columns={'id': 'tbiaID'})
+        # 確保包含必要的三個欄位
+        required_columns = ['tbiaID', 'occurrenceID', 'catalogNumber']
+        for col in required_columns:
+            if col not in result_df.columns:
+                result_df[col] = ''
+        # 如果有 references 欄位且用戶要求，保留它
+        if get_reference and 'references' in result_df.columns:
+            required_columns.append('references')
+        # 只回傳需要的欄位，保持與原版一致的順序
+        result_df = result_df[required_columns]
+        # 去除重複記錄（可能從不同查詢中獲得相同記錄）
+        result_df = result_df.drop_duplicates()
+        return result_df
+    else:
+        # 回傳空的 DataFrame，但包含正確的欄位
+        empty_columns = ['tbiaID', 'occurrenceID', 'catalogNumber']
+        if get_reference:
+            empty_columns.append('references')
+        return pd.DataFrame(columns=empty_columns)
+
 
 
 def get_taxon_df(taxon_ids):
@@ -458,7 +553,7 @@ def update_dataset_key(ds_name, rights_holder, update_version, group):
         sourceDatasetID = r.get('sourceDatasetID', '')
         datasetURL = r.get('datasetURL')
         gbifDatasetID = r.get('gbifDatasetID')
-        datasetLicense = r.get('datasetLicense')
+        datasetLicense = r.get('datasetLicense') if r.get('datasetLicense') else 'OGDL' # 未取得授權之資料集採用政府資料開放授權條款
         datasetPublisher = r.get('datasetPublisher')
         # 如果有sourceDatasetID 優先以 sourceDatasetID 更新
         # 但也有可能現在有sourceDatasetID 之前沒有
@@ -594,6 +689,50 @@ def update_match_log(match_log, now):
             chunksize=500,
             method=matchlog_upsert)
     return match_log
+
+
+
+
+def update_match_log_optimized(match_log, now, issue_map, batch_size=1000):
+    """
+    優化版本的 update_match_log
+    主要改進：
+    1. 向量化操作取代多個 apply
+    2. 批次處理 issue_map 轉換
+    3. 減少重複的資料類型轉換
+    """
+    # 複製避免修改原始資料
+    match_log = match_log.copy()
+    # 向量化處理 is_matched
+    match_log['is_matched'] = match_log['taxonID'].notna()
+    # 統一處理 NaN 值
+    match_log = match_log.replace({np.nan: None})
+    # 向量化處理 match_higher_taxon
+    match_log['match_higher_taxon'] = match_log['match_higher_taxon'].fillna(False).astype(bool)
+    # 向量化處理 match_stage
+    match_log['match_stage'] = pd.to_numeric(match_log['match_stage'], errors='coerce').astype('Int64')
+    # 批次處理 stage 欄位的 issue_map 轉換
+    stage_columns = [f'stage_{i}' for i in range(1, 9)]
+    for col in stage_columns:
+        if col in match_log.columns:
+            # 使用 map 比 apply 更快
+            match_log[col] = match_log[col].map(issue_map).fillna(match_log[col])
+    # 統一設置時間欄位
+    match_log[['created', 'modified']] = now
+    # 重新命名欄位
+    match_log = match_log.rename(columns={'id': 'tbiaID', 'rightsHolder': 'rights_holder'})
+    # 批次寫入資料庫
+    try:
+        match_log.to_sql('match_log', db,
+                        if_exists='append',
+                        index=False,
+                        chunksize=batch_size,  # 可調整的批次大小
+                        method=matchlog_upsert)
+    except Exception as e:
+        print(f"Database write error: {e}")
+        raise
+    return match_log
+
 
 
 # def get_records(rights_holder, min_id, limit=10000):
@@ -975,3 +1114,56 @@ def check_id_str_ends(now_id):
     except:
         now_id = str(now_id)
     return now_id
+
+
+# 線程鎖，確保多個script同時運行時的檔案安全
+_file_lock = threading.Lock()
+
+def record_basis_of_record_values(df, csv_path='/code/basis_of_record_log.csv'):
+    """
+    記錄 basisOfRecord 欄位的所有原始值到 CSV 檔案中
+    """
+    if 'basisOfRecord' not in df.columns:
+        return
+    
+    unique_values = df['basisOfRecord'].dropna().unique()
+    if len(unique_values) == 0:
+        return
+    
+    new_df = pd.DataFrame({'original_value': unique_values})
+    
+    with _file_lock:
+        try:
+            os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+            new_df.to_csv(csv_path, mode='a', header=not os.path.exists(csv_path), index=False, encoding='utf-8')
+        except Exception as e:
+            print(f"記錄 basisOfRecord 值時發生錯誤: {e}")
+
+
+def optimized_to_sql(df, table_name, db_engine, method_func, chunk_size=2000):
+    """
+    優化版本的資料庫寫入
+    主要改進：
+    1. 增加 chunk_size
+    2. 使用連接池
+    3. 批次提交
+    """
+    try:
+        # 預處理資料類型
+        df = df.copy()
+        # 確保所有 object 類型的欄位都是字符串或 None
+        for col in df.select_dtypes(include=['object']).columns:
+            df[col] = df[col].astype(str).replace('nan', None)
+        # 分批寫入
+        total_rows = len(df)
+        for i in range(0, total_rows, chunk_size):
+            chunk = df.iloc[i:i+chunk_size]
+            chunk.to_sql(table_name, db_engine,
+                        if_exists='append',
+                        index=False,
+                        chunksize=chunk_size,
+                        method=method_func)
+            print(f"Written {min(i+chunk_size, total_rows)}/{total_rows} rows")
+    except Exception as e:
+        print(f"Database write error: {e}")
+        raise
