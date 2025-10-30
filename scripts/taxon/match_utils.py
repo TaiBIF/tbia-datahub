@@ -645,20 +645,20 @@ def matching_flow_new_optimized(sci_names, batch_size=100, max_workers=4):
     for i in range(1, 9):
         sci_names[f'stage_{i}'] = None
     
-    # 定義處理階段
+    # 定義處理階段 - 使用正確的欄位名稱
     stages = [
-        (1, 'scientificName', False, None, None),
+        (1, 'sourceScientificName', False, None, None),
         (3, 'sourceVernacularName', False, None, None),
-        (4, 'scientificName', True, 'genus', lambda x: x.str.split(' ').str[0]),
-        (5, 'sourceVernacularName', False, None, None),
+        (4, 'sourceScientificName', True, 'genus', lambda x: x.str.split(' ').str[0]),
+        (5, 'originalVernacularName', False, None, None),
         (6, 'sourceFamily', True, 'family', None),
         (7, 'sourceOrder', True, 'order', None),
         (8, 'sourceClass', True, 'class', None),
     ]
     
-    # 處理 Stage 1
+    # 處理 Stage 1 - sourceScientificName
     stage_start = time.time()
-    sci_names = process_stage_vectorized(sci_names, 1, 'scientificName', False, None, None)
+    sci_names = process_stage_vectorized(sci_names, 1, 'sourceScientificName', False, None, None)
     print(f"Stage 1: {time.time() - stage_start:.2f}s")
     
     # 處理 Stage 2 (namecode matching) - 保持原有邏輯
@@ -679,7 +679,6 @@ def matching_flow_new_optimized(sci_names, batch_size=100, max_workers=4):
             for idx, row in namecode_df.iterrows():
                 try:
                     # 需要依賴原版的 match_namecode 函數
-                    from scripts.match_utils import match_namecode
                     match_namecode(
                         matching_namecode=row['scientificNameID'],
                         match_stage=2,
