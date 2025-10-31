@@ -35,6 +35,7 @@ services:
       - ../tbia-volumes/bucket:/portal/bucket
       - ../tbia-volumes/solr:/solr
       - ../tbia-volumes/media:/portal/media
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf  # 新增此行
     environment:
       - POSTGRES_HOST=postgres-datahub
       - POSTGRES_USER=${POSTGRES_USER}
@@ -42,11 +43,10 @@ services:
       - POSTGRES_PORT=5432
       - POSTGRES_DB=${POSTGRES_DB}
       - PGDATA=/var/lib/postgresql/data/pgdata
-    shm_size: 1g
+    shm_size: 4g  # 從 1g 改為 4g (重要!)
     command: |
             postgres
-              -c work_mem=256MB
-              -c maintenance_work_mem=1GB
+              -c config_file=/etc/postgresql/postgresql.conf
     networks:
       - datahub
   solr:
