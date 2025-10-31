@@ -1481,7 +1481,7 @@ class OptimizedMatchLogProcessor:
             return
             
         # 更新所有欄位（除了主鍵）
-        exclude_cols = ['id', 'tbiaID']
+        exclude_cols = ['created', 'tbiaID']
         update_cols = [col for col in update_df.columns if col not in exclude_cols]
         
         if not update_cols:
