@@ -16,6 +16,8 @@ load_dotenv(override=True)
 from scripts.taxon.match_utils import matching_flow_new_optimized, match_cols
 from scripts.utils import *
 
+records_processor = OptimizedRecordsProcessor(db, batch_size=200)
+matchlog_processor = OptimizedMatchLogProcessor(db, batch_size=300)
 
 # 比對學名時使用的欄位
 sci_cols = ['taxonID','sourceScientificName','sourceVernacularName','originalVernacularName','sourceTaxonID','sourceFamily']
@@ -246,13 +248,15 @@ for url in url_list[url_index:]:
                 now_s = time.time()
                 match_log = df[match_log_cols]
                 match_log = match_log.reset_index(drop=True)
+                match_log = create_match_log_df(match_log,now)
+                matchlog_processor.smart_upsert_match_log(match_log, existed_records=existed_records)
                 # match_log = update_match_log(match_log=match_log, now=now)
-                match_log = update_match_log_optimized(
-                    match_log=match_log, 
-                    now=now, 
-                    issue_map=issue_map,
-                    batch_size=1500  # 增加批次大小
-                )
+                # match_log = update_match_log_optimized(
+                #     match_log=match_log, 
+                #     now=now, 
+                #     issue_map=issue_map,
+                #     batch_size=1500  # 增加批次大小
+                # )
                 match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{url_index}_{c}.csv',index=None)
                 print('matchlog', time.time()-now_s)
                 # 用tbiaID更新records
@@ -261,11 +265,12 @@ for url in url_list[url_index:]:
                 df = df.rename(columns=({'id': 'tbiaID'}))
                 df = df.drop(columns=[ck for ck in df.keys() if ck not in records_cols],errors='ignore')
                 now_s = time.time()
-                df.to_sql('records', db,
-                        if_exists='append',
-                        index=False,
-                        chunksize=500,
-                        method=records_upsert)
+                records_processor.smart_upsert_records(df, existed_records=existed_records)
+                # df.to_sql('records', db,
+                #         if_exists='append',
+                #         index=False,
+                #         chunksize=500,
+                #         method=records_upsert)
                 print('tosql', time.time()-now_s)
                 # 更新 media rule
                 for mm in media_rule_list:

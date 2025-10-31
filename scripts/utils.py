@@ -693,6 +693,28 @@ def update_match_log(match_log, now):
 
 
 
+def create_match_log_df(match_log, now):
+    match_log['is_matched'] = False
+    match_log.loc[match_log.taxonID.notnull(),'is_matched'] = True
+    match_log = match_log.replace({np.nan: None})
+    match_log['match_higher_taxon'] = match_log['match_higher_taxon'].replace({None: False, np.nan: False, '': False})
+    match_log['match_stage'] = match_log['match_stage'].apply(lambda x: int(x) if x or x == 0 else None)
+    match_log['stage_1'] = match_log['stage_1'].apply(lambda x: issue_map[x] if x else x)
+    match_log['stage_2'] = match_log['stage_2'].apply(lambda x: issue_map[x] if x else x)
+    match_log['stage_3'] = match_log['stage_3'].apply(lambda x: issue_map[x] if x else x)
+    match_log['stage_4'] = match_log['stage_4'].apply(lambda x: issue_map[x] if x else x)
+    match_log['stage_5'] = match_log['stage_5'].apply(lambda x: issue_map[x] if x else x)
+    match_log['stage_6'] = match_log['stage_6'].apply(lambda x: issue_map[x] if x else x)
+    match_log['stage_7'] = match_log['stage_7'].apply(lambda x: issue_map[x] if x else x)
+    match_log['stage_8'] = match_log['stage_8'].apply(lambda x: issue_map[x] if x else x)
+    match_log['created'] = now
+    match_log['modified'] = now
+    match_log = match_log.rename(columns={'id': 'tbiaID','rightsHolder':'rights_holder'})
+    return match_log
+
+
+
+
 def update_match_log_optimized(match_log, now, issue_map, batch_size=1000):
     """
     優化版本的 update_match_log
@@ -1140,30 +1162,197 @@ def record_basis_of_record_values(df, csv_path='/code/basis_of_record_log.csv'):
             print(f"記錄 basisOfRecord 值時發生錯誤: {e}")
 
 
-def optimized_to_sql(df, table_name, db_engine, method_func, chunk_size=2000):
-    """
-    優化版本的資料庫寫入
-    主要改進：
-    1. 增加 chunk_size
-    2. 使用連接池
-    3. 批次提交
-    """
-    try:
-        # 預處理資料類型
-        df = df.copy()
-        # 確保所有 object 類型的欄位都是字符串或 None
-        for col in df.select_dtypes(include=['object']).columns:
-            df[col] = df[col].astype(str).replace('nan', None)
-        # 分批寫入
-        total_rows = len(df)
-        for i in range(0, total_rows, chunk_size):
-            chunk = df.iloc[i:i+chunk_size]
-            chunk.to_sql(table_name, db_engine,
-                        if_exists='append',
-                        index=False,
-                        chunksize=chunk_size,
-                        method=method_func)
-            print(f"Written {min(i+chunk_size, total_rows)}/{total_rows} rows")
-    except Exception as e:
-        print(f"Database write error: {e}")
-        raise
+"""
+TBIA 批次處理最佳化方案
+解決重複更新問題，大幅提升效能
+
+主要改進：
+1. 避免重複 UPSERT 操作
+2. 批次處理減少資料庫交互
+3. 智能判斷新增 vs 更新
+4. 減少索引掃描次數
+"""
+import pandas as pd
+import numpy as np
+from sqlalchemy import text
+import time
+from datetime import datetime
+
+class OptimizedRecordsProcessor:
+    """最佳化的 Records 處理器"""
+    
+    def __init__(self, db_engine, batch_size=200):
+        self.db = db_engine
+        self.batch_size = batch_size
+        
+    def smart_upsert_records(self, df, existed_records=None, table_name='records'):
+        """
+        智能 UPSERT：使用已取得的existed_records，避免重複查詢
+        
+        Args:
+            df: 要處理的資料
+            existed_records: 已存在的記錄(從get_existed_records_optimized取得)
+            table_name: 目標表名
+        """
+        if df.empty:
+            return
+            
+        print(f"🔄 Processing {len(df)} records with smart upsert...")
+        start_time = time.time()
+        
+        # 1. 使用已取得的existed_records（避免重複查詢）
+        if existed_records is not None and not existed_records.empty:
+            existing_ids = set(existed_records['tbiaID'].tolist())
+            print(f"   📋 Using existing records info: {len(existing_ids)} existed")
+        else:
+            existing_ids = set()
+            print(f"   📋 No existing records provided - treating all as new")
+        
+        # 2. 分離新增和更新資料
+        new_records = df[~df['tbiaID'].isin(existing_ids)].copy()
+        update_records = df[df['tbiaID'].isin(existing_ids)].copy()
+        
+        print(f"   📝 New records: {len(new_records)}")
+        print(f"   🔄 Update records: {len(update_records)}")
+        
+        # 3. 批次新增（使用標準 INSERT）
+        if not new_records.empty:
+            insert_start = time.time()
+            new_records.to_sql(
+                table_name, 
+                self.db, 
+                if_exists='append',
+                index=False,
+                chunksize=self.batch_size,
+                method='multi'  # 使用標準 INSERT，不是 UPSERT
+            )
+            print(f"   ✅ Inserted {len(new_records)} records in {time.time() - insert_start:.2f}s")
+        
+        # 4. 批次更新（只更新需要的欄位）
+        if not update_records.empty:
+            update_start = time.time()
+            self._batch_update_records(update_records, table_name)
+            print(f"   ✅ Updated {len(update_records)} records in {time.time() - update_start:.2f}s")
+        
+        total_time = time.time() - start_time
+        rate = len(df) / total_time if total_time > 0 else 0
+        print(f"🎯 Smart upsert completed: {len(df)} records in {total_time:.2f}s ({rate:.0f} records/sec)")
+        
+
+    
+    def _batch_update_records(self, update_df, table_name):
+        """批次更新記錄，更新所有欄位（使用參數化查詢）"""
+        # 更新所有欄位（除了主鍵）
+        exclude_cols = ['created', 'tbiaID']  # 不更新的欄位
+        update_cols = [col for col in update_df.columns if col not in exclude_cols]
+        
+        for i in range(0, len(update_df), self.batch_size):
+            batch = update_df.iloc[i:i+self.batch_size]
+            
+            # 使用參數化查詢避免 SQL 注入和語法錯誤
+            for _, row in batch.iterrows():
+                if update_cols:
+                    # 建立 SET 子句
+                    set_clause = ', '.join([f'"{col}" = :{col}' for col in update_cols])
+                    
+                    # 建立參數字典
+                    params = {col: row[col] for col in update_cols}
+                    params['tbiaID'] = row['tbiaID']
+                    
+                    # 執行參數化更新
+                    update_sql = f"""
+                    UPDATE {table_name} 
+                    SET {set_clause}
+                    WHERE "tbiaID" = :tbiaID
+                    """
+                    
+                    with self.db.connect() as conn:
+                        conn.execute(text(update_sql), params)
+                        conn.commit()
+
+class OptimizedMatchLogProcessor:
+    """最佳化的 MatchLog 處理器"""
+    
+    def __init__(self, db_engine, batch_size=300):
+        self.db = db_engine
+        self.batch_size = batch_size
+    
+    def smart_upsert_match_log(self, match_log_df, existed_records=None):
+        """
+        最佳化的 MatchLog 處理
+        使用已取得的existed_records判斷，避免重複查詢
+        
+        Args:
+            match_log_df: 要處理的 match_log 資料
+            existed_records: 已存在的記錄(從get_existed_records_optimized取得)
+        """
+        if match_log_df.empty:
+            return
+            
+        print(f"🎯 Processing {len(match_log_df)} match_log records...")
+        start_time = time.time()
+        
+        # 1. 使用已取得的existed_records判斷（避免重複查詢）
+        if existed_records is not None and not existed_records.empty:
+            existing_ids = set(existed_records['tbiaID'].tolist())
+            print(f"   📋 Using existing records info for match_log: {len(existing_ids)} existed")
+        else:
+            existing_ids = set()
+            print(f"   📋 No existing records provided - treating all match_log as new")
+        
+        # 2. 分離新增和更新
+        new_match_log = match_log_df[~match_log_df['tbiaID'].isin(existing_ids)].copy()
+        update_match_log = match_log_df[match_log_df['tbiaID'].isin(existing_ids)].copy()
+        
+        print(f"   📝 New match_log: {len(new_match_log)}")
+        print(f"   🔄 Update match_log: {len(update_match_log)}")
+        
+        # 3. 批次新增
+        if not new_match_log.empty:
+            new_match_log.to_sql(
+                'match_log',
+                self.db,
+                if_exists='append',
+                index=False,
+                chunksize=self.batch_size,
+                method='multi'
+            )
+        
+        # 4. 批次更新
+        if not update_match_log.empty:
+            self._batch_update_match_log(update_match_log)
+        
+        total_time = time.time() - start_time
+        rate = len(match_log_df) / total_time if total_time > 0 else 0
+        print(f"✅ Match_log processing completed: {rate:.0f} records/sec")
+    
+
+    
+    def _batch_update_match_log(self, update_df):
+        """批次更新 match_log，更新所有欄位（使用參數化查詢）"""
+        update_cols = ['sourceScientificName','is_matched','taxonID','match_higher_taxon','match_stage',
+                'stage_1','stage_2','stage_3','stage_4','stage_5','modified']
+        
+        for i in range(0, len(update_df), self.batch_size):
+            batch = update_df.iloc[i:i+self.batch_size]
+            
+            # 使用參數化查詢避免 SQL 注入和語法錯誤
+            for _, row in batch.iterrows():
+                if update_cols:
+                    # 建立 SET 子句
+                    set_clause = ', '.join([f'"{col}" = :{col}' for col in update_cols])
+                    
+                    # 建立參數字典
+                    params = {col: row[col] for col in update_cols}
+                    params['tbiaID'] = row['tbiaID']
+                    
+                    # 執行參數化更新
+                    update_sql = f"""
+                    UPDATE match_log 
+                    SET {set_clause}
+                    WHERE "tbiaID" = :tbiaID
+                    """
+                    
+                    with self.db.connect() as conn:
+                        conn.execute(text(update_sql), params)
+                        conn.commit()
