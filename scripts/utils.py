@@ -1161,6 +1161,8 @@ def record_basis_of_record_values(df, csv_path='/code/basis_of_record_log.csv'):
         except Exception as e:
             print(f"記錄 basisOfRecord 值時發生錯誤: {e}")
 
+import time
+from sqlalchemy import text
 
 """
 TBIA 批次處理最佳化方案
@@ -1172,11 +1174,8 @@ TBIA 批次處理最佳化方案
 3. 智能判斷新增 vs 更新
 4. 減少索引掃描次數
 """
-import pandas as pd
-import numpy as np
-from sqlalchemy import text
-import time
-from datetime import datetime
+
+
 
 class OptimizedRecordsProcessor:
     """最佳化的 Records 處理器"""
@@ -1228,7 +1227,7 @@ class OptimizedRecordsProcessor:
             )
             print(f"   ✅ Inserted {len(new_records)} records in {time.time() - insert_start:.2f}s")
         
-        # 4. 批次更新（只更新需要的欄位）
+        # 4. 批次更新
         if not update_records.empty:
             update_start = time.time()
             self._batch_update_records(update_records, table_name)
@@ -1237,38 +1236,188 @@ class OptimizedRecordsProcessor:
         total_time = time.time() - start_time
         rate = len(df) / total_time if total_time > 0 else 0
         print(f"🎯 Smart upsert completed: {len(df)} records in {total_time:.2f}s ({rate:.0f} records/sec)")
-        
-
     
+    def _get_column_types(self, table_name):
+        """從資料庫schema獲取欄位的實際資料類型"""
+        try:
+            query = f"""
+            SELECT column_name, data_type, udt_name
+            FROM information_schema.columns 
+            WHERE table_name = '{table_name}'
+            AND table_schema = 'public'
+            ORDER BY column_name;
+            """
+            
+            with self.db.connect() as conn:
+                result = conn.execute(text(query))
+                columns_info = result.fetchall()
+            
+            # 建立欄位類型對應
+            column_types = {}
+            for col_name, data_type, udt_name in columns_info:
+                if data_type in ['timestamp', 'timestamp with time zone', 'timestamp without time zone']:
+                    column_types[col_name] = 'timestamp'
+                elif data_type in ['integer', 'bigint', 'smallint', 'numeric', 'decimal', 'real', 'double precision']:
+                    column_types[col_name] = 'numeric'
+                elif data_type == 'boolean':
+                    column_types[col_name] = 'boolean'
+                elif data_type in ['text', 'character varying', 'varchar', 'char']:
+                    column_types[col_name] = 'text'
+                elif udt_name == 'geometry':
+                    column_types[col_name] = 'geometry'
+                else:
+                    column_types[col_name] = 'text'  # 預設為文字
+            
+            return column_types
+            
+        except Exception as e:
+            print(f"     ⚠️ 無法取得欄位類型資訊: {e}")
+            return {}
+
     def _batch_update_records(self, update_df, table_name):
-        """批次更新記錄，更新所有欄位（使用參數化查詢）"""
+        """真正的批次更新，使用動態類型檢查"""
+        if update_df.empty:
+            return
+            
         # 更新所有欄位（除了主鍵）
-        exclude_cols = ['created', 'tbiaID']  # 不更新的欄位
+        exclude_cols = ['created', 'tbiaID']
         update_cols = [col for col in update_df.columns if col not in exclude_cols]
         
-        for i in range(0, len(update_df), self.batch_size):
-            batch = update_df.iloc[i:i+self.batch_size]
+        if not update_cols:
+            return
+        
+        print(f"   🔄 批次更新 {len(update_df)} 筆記錄...")
+        
+        # 動態獲取欄位類型
+        column_types = self._get_column_types(table_name)
+        if not column_types:
+            print(f"     ⚠️ 無法取得 {table_name} 的欄位類型，回退到逐筆更新")
+            self._fallback_single_updates(update_df, table_name, update_cols)
+            return
+        
+        # 使用大批次處理
+        large_batch_size = min(1000, len(update_df))
+        
+        for i in range(0, len(update_df), large_batch_size):
+            batch = update_df.iloc[i:i+large_batch_size]
             
-            # 使用參數化查詢避免 SQL 注入和語法錯誤
+            # 建立 VALUES 子句
+            values_list = []
             for _, row in batch.iterrows():
-                if update_cols:
-                    # 建立 SET 子句
-                    set_clause = ', '.join([f'"{col}" = :{col}' for col in update_cols])
+                values = [f"'{row['tbiaID']}'"]  # tbiaID 作為鍵值
+                
+                for col in update_cols:
+                    value = row[col]
+                    col_type = column_types.get(col, 'text')
                     
-                    # 建立參數字典
-                    params = {col: row[col] for col in update_cols}
-                    params['tbiaID'] = row['tbiaID']
+                    if pd.isna(value) or value is None:
+                        values.append('NULL')
+                    elif col_type == 'timestamp':
+                        # 時間戳記類型
+                        if isinstance(value, str):
+                            values.append(f"$${value}$$::timestamp")
+                        else:
+                            values.append(f"$${str(value)}$$::timestamp")
+                    elif col_type == 'numeric':
+                        # 數值類型
+                        if isinstance(value, (int, float)) and not pd.isna(value):
+                            values.append(str(value))
+                        else:
+                            values.append('NULL')
+                    elif col_type == 'boolean':
+                        # 布林類型
+                        if isinstance(value, bool):
+                            values.append('TRUE' if value else 'FALSE')
+                        elif str(value).lower() in ['true', '1', 'yes', 't']:
+                            values.append('TRUE')
+                        elif str(value).lower() in ['false', '0', 'no', 'f']:
+                            values.append('FALSE')
+                        else:
+                            values.append('NULL')
+                    elif col_type == 'geometry':
+                        # PostGIS 幾何類型
+                        if isinstance(value, str) and value.startswith('POINT'):
+                            values.append(f"$${value}$$::geometry")
+                        else:
+                            values.append(f"ST_GeomFromText($${str(value)}$$)")
+                    else:
+                        # 文字類型
+                        if isinstance(value, str):
+                            escaped_value = value.replace('$$', '$dollar$')
+                            values.append(f"$${escaped_value}$$")
+                        else:
+                            values.append(f"$${str(value)}$$")
+                
+                values_list.append(f"({', '.join(values)})")
+            
+            # 建立批次更新 SQL
+            values_clause = ',\n    '.join(values_list)
+            
+            # 建立 SET 子句，使用動態類型轉換
+            set_clauses = []
+            for j, col in enumerate(update_cols, 1):
+                col_type = column_types.get(col, 'text')
+                
+                if col_type == 'timestamp':
+                    set_clauses.append(f'"{col}" = v.col_{j}::timestamp')
+                elif col_type == 'numeric':
+                    set_clauses.append(f'"{col}" = v.col_{j}::numeric')
+                elif col_type == 'boolean':
+                    set_clauses.append(f'"{col}" = v.col_{j}::boolean')
+                elif col_type == 'geometry':
+                    set_clauses.append(f'"{col}" = v.col_{j}::geometry')
+                else:
+                    set_clauses.append(f'"{col}" = v.col_{j}')
+            
+            # 建立欄位別名
+            col_aliases = ['tbia_id'] + [f'col_{j}' for j in range(1, len(update_cols) + 1)]
+            
+            batch_sql = f"""
+            UPDATE {table_name} 
+            SET {', '.join(set_clauses)}
+            FROM (VALUES 
+                {values_clause}
+            ) AS v({', '.join(col_aliases)})
+            WHERE {table_name}."tbiaID" = v.tbia_id;
+            """
+            
+            try:
+                with self.db.connect() as conn:
+                    result = conn.execute(text(batch_sql))
+                    conn.commit()
+                    print(f"     ✅ 批次 {i//large_batch_size + 1}: 更新了 {result.rowcount} 筆")
                     
-                    # 執行參數化更新
-                    update_sql = f"""
-                    UPDATE {table_name} 
-                    SET {set_clause}
-                    WHERE "tbiaID" = :tbiaID
-                    """
+            except Exception as e:
+                print(f"     ❌ 批次更新失敗: {e}")
+                # 如果批次失敗，回退到逐筆更新
+                self._fallback_single_updates(batch, table_name, update_cols)
+    
+    def _fallback_single_updates(self, batch_df, table_name, update_cols):
+        """回退到逐筆更新（當批次更新失敗時）"""
+        print(f"     🔄 回退到逐筆更新 {len(batch_df)} 筆...")
+        
+        for _, row in batch_df.iterrows():
+            try:
+                # 建立 SET 子句
+                set_clause = ', '.join([f'"{col}" = :{col}' for col in update_cols])
+                
+                # 建立參數字典
+                params = {col: row[col] for col in update_cols}
+                params['tbiaID'] = row['tbiaID']
+                
+                # 執行參數化更新
+                update_sql = f"""
+                UPDATE {table_name} 
+                SET {set_clause}
+                WHERE "tbiaID" = :tbiaID
+                """
+                
+                with self.db.connect() as conn:
+                    conn.execute(text(update_sql), params)
+                    conn.commit()
                     
-                    with self.db.connect() as conn:
-                        conn.execute(text(update_sql), params)
-                        conn.commit()
+            except Exception as e:
+                print(f"     ❌ 單筆更新失敗 {row['tbiaID']}: {e}")
 
 class OptimizedMatchLogProcessor:
     """最佳化的 MatchLog 處理器"""
@@ -1326,33 +1475,131 @@ class OptimizedMatchLogProcessor:
         rate = len(match_log_df) / total_time if total_time > 0 else 0
         print(f"✅ Match_log processing completed: {rate:.0f} records/sec")
     
-
-    
     def _batch_update_match_log(self, update_df):
-        """批次更新 match_log，更新所有欄位（使用參數化查詢）"""
-        update_cols = ['sourceScientificName','is_matched','taxonID','match_higher_taxon','match_stage',
-                'stage_1','stage_2','stage_3','stage_4','stage_5','modified']
-        
-        for i in range(0, len(update_df), self.batch_size):
-            batch = update_df.iloc[i:i+self.batch_size]
+        """match_log 批次更新，使用固定的欄位類型（相對單純）"""
+        if update_df.empty:
+            return
             
-            # 使用參數化查詢避免 SQL 注入和語法錯誤
+        # 更新所有欄位（除了主鍵）
+        exclude_cols = ['id', 'tbiaID']
+        update_cols = [col for col in update_df.columns if col not in exclude_cols]
+        
+        if not update_cols:
+            return
+        
+        print(f"   🎯 批次更新 match_log {len(update_df)} 筆記錄...")
+        
+        # match_log 的固定欄位類型（相對單純）
+        timestamp_cols = ['modified', 'created']
+        numeric_cols = ['match_stage', 'stage_1', 'stage_2', 'stage_3', 'stage_4', 
+                       'stage_5', 'stage_6', 'stage_7', 'stage_8']
+        boolean_cols = ['match_higher_taxon', 'is_matched']
+        
+        # 使用大批次處理
+        large_batch_size = min(1000, len(update_df))
+        
+        for i in range(0, len(update_df), large_batch_size):
+            batch = update_df.iloc[i:i+large_batch_size]
+            
+            # 建立 VALUES 子句
+            values_list = []
             for _, row in batch.iterrows():
-                if update_cols:
-                    # 建立 SET 子句
-                    set_clause = ', '.join([f'"{col}" = :{col}' for col in update_cols])
+                values = [f"'{row['tbiaID']}'"]  # tbiaID 作為鍵值
+                
+                for col in update_cols:
+                    value = row[col]
                     
-                    # 建立參數字典
-                    params = {col: row[col] for col in update_cols}
-                    params['tbiaID'] = row['tbiaID']
+                    if pd.isna(value) or value is None:
+                        values.append('NULL')
+                    elif col in timestamp_cols:
+                        # 時間戳記類型
+                        if isinstance(value, str):
+                            values.append(f"$${value}$$::timestamp")
+                        else:
+                            values.append(f"$${str(value)}$$::timestamp")
+                    elif col in numeric_cols:
+                        # 數值類型
+                        if isinstance(value, (int, float)) and not pd.isna(value):
+                            values.append(str(value))
+                        else:
+                            values.append('NULL')
+                    elif col in boolean_cols:
+                        # 布林類型
+                        if isinstance(value, bool):
+                            values.append('TRUE' if value else 'FALSE')
+                        elif str(value).lower() in ['true', '1', 'yes', 't']:
+                            values.append('TRUE')
+                        elif str(value).lower() in ['false', '0', 'no', 'f']:
+                            values.append('FALSE')
+                        else:
+                            values.append('NULL')
+                    else:
+                        # 文字類型
+                        if isinstance(value, str):
+                            escaped_value = value.replace('$$', '$dollar$')
+                            values.append(f"$${escaped_value}$$")
+                        else:
+                            values.append(f"$${str(value)}$$")
+                
+                values_list.append(f"({', '.join(values)})")
+            
+            # 建立批次更新 SQL
+            values_clause = ',\n    '.join(values_list)
+            
+            # 建立 SET 子句
+            set_clauses = []
+            for j, col in enumerate(update_cols, 1):
+                if col in timestamp_cols:
+                    set_clauses.append(f'"{col}" = v.col_{j}::timestamp')
+                elif col in numeric_cols:
+                    set_clauses.append(f'"{col}" = v.col_{j}::numeric')
+                elif col in boolean_cols:
+                    set_clauses.append(f'"{col}" = v.col_{j}::boolean')
+                else:
+                    set_clauses.append(f'"{col}" = v.col_{j}')
+            
+            # 建立欄位別名
+            col_aliases = ['tbia_id'] + [f'col_{j}' for j in range(1, len(update_cols) + 1)]
+            
+            batch_sql = f"""
+            UPDATE match_log 
+            SET {', '.join(set_clauses)}
+            FROM (VALUES 
+                {values_clause}
+            ) AS v({', '.join(col_aliases)})
+            WHERE match_log."tbiaID" = v.tbia_id;
+            """
+            
+            try:
+                with self.db.connect() as conn:
+                    result = conn.execute(text(batch_sql))
+                    conn.commit()
+                    print(f"     ✅ match_log 批次 {i//large_batch_size + 1}: 更新了 {result.rowcount} 筆")
                     
-                    # 執行參數化更新
-                    update_sql = f"""
-                    UPDATE match_log 
-                    SET {set_clause}
-                    WHERE "tbiaID" = :tbiaID
-                    """
+            except Exception as e:
+                print(f"     ❌ match_log 批次更新失敗: {e}")
+                # 回退到逐筆更新
+                self._fallback_single_match_log_updates(batch, update_cols)
+    
+    def _fallback_single_match_log_updates(self, batch_df, update_cols):
+        """match_log 回退到逐筆更新"""
+        print(f"     🔄 match_log 回退到逐筆更新 {len(batch_df)} 筆...")
+        
+        for _, row in batch_df.iterrows():
+            try:
+                set_clause = ', '.join([f'"{col}" = :{col}' for col in update_cols])
+                params = {col: row[col] for col in update_cols}
+                params['tbiaID'] = row['tbiaID']
+                
+                update_sql = f"""
+                UPDATE match_log 
+                SET {set_clause}
+                WHERE "tbiaID" = :tbiaID
+                """
+                
+                with self.db.connect() as conn:
+                    conn.execute(text(update_sql), params)
+                    conn.commit()
                     
-                    with self.db.connect() as conn:
-                        conn.execute(text(update_sql), params)
-                        conn.commit()
+            except Exception as e:
+                print(f"     ❌ match_log 單筆更新失敗 {row['tbiaID']}: {e}")
