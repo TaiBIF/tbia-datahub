@@ -3,16 +3,37 @@ from app import db, db_settings
 import psycopg2
 import pandas as pd
 
-df = pd.read_csv("/bucket/updated_dataset_20250106.csv")
 
-df = df.replace({np.nan: None})
+# updating_csv = ("/bucket/tbia_updated_dataset_20250930.csv")
+updating_csv = ("/bucket/tbia_dataset_corrected_202509.csv")
+
+df = pd.read_csv(updating_csv)
+
+df = df.replace({np.nan: None, 'nan': None})
 
 # id, occurrenceCount, update_version
 df[['id','occurrenceCount','update_version']] = df[['id','occurrenceCount','update_version']].astype(int)
+df[['id','occurrenceCount','update_version']] = df[['id','occurrenceCount','update_version']].astype(str)
 df['deprecated'] = df['deprecated'].replace({True: 't', False: 'f'})
 df['datasetTaxonStat'] = df['datasetTaxonStat'].apply(lambda x: str(x) if x else '')
 df['datasetTaxonStat'] = df['datasetTaxonStat'].apply(lambda x: x.replace("'",'"'))
 df['datasetTaxonStat'] = df['datasetTaxonStat'].replace({'': None})
+
+# 把刪除 & 重新匯入也寫進這段程式碼
+
+import subprocess
+
+commands = f''' curl http://solr:8983/solr/dataset/update/?commit=true -H "Content-Type: text/xml" --data-binary '<delete><query>*:*</query></delete>'; ''' 
+process = subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+a = process.communicate()
+
+
+commands = f''' curl http://solr:8983/solr/dataset/update/?commit=true -H "Content-Type: text/csv" --data-binary @{updating_csv}; ''' 
+process = subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+a = process.communicate()
+
+
+df = df.drop(columns=['is_duplicated_name'])
 
 for i in df.index:
     if i % 100 == 0:
