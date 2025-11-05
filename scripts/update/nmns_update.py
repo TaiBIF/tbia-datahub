@@ -71,6 +71,7 @@ category_list = ['昆蟲學門', '兩棲爬蟲學門', '非維管束學門', '�
 
 
 field_map = {
+    '中文名 Chinese Common Name': 'sourceVernacularName',
     '藏品名稱':	'sourceVernacularName',
     '目名':	'sourceOrder',
     '科名':	'sourceFamily',
@@ -81,11 +82,14 @@ field_map = {
     '採集者':	'recordedBy',
     '屬名':	'genus',
     '種名':	'specificEpithet',
-    '鑑定者':	'recordedBy',
+    # '鑑定者':	'recordedBy',
     '國名':	'locality_1',
     '省/縣名':	'locality_2',
     '採集地名':	'locality_3',
     '採集日期':	'eventDate',
+    '採集號':	'recordNumber',
+    "採集號 Collector's No.":	'recordNumber',
+    '館號/編目號 Catalog No.':	'catalogNumber',
     '館號 TNM No.':	'catalogNumber',
     '學名 Scientific Name':	'sourceScientificName',
     '採集地 Locality':	'locality',
