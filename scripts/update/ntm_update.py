@@ -13,9 +13,11 @@ from dotenv import load_dotenv
 import os
 load_dotenv(override=True)
 
-from scripts.taxon.match_utils import matching_flow_new, match_cols
+from scripts.taxon.match_utils import matching_flow_new_optimized, match_cols
 from scripts.utils import *
 
+records_processor = OptimizedRecordsProcessor(db, batch_size=200)
+matchlog_processor = OptimizedMatchLogProcessor(db, batch_size=300)
 
 # 比對學名時使用的欄位
 sci_cols = ['taxonID','sourceVernacularName', 'sourceScientificName','originalVernacularName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily','sourceKingdom']
@@ -146,7 +148,7 @@ for d in dataset_list[d_list_index:]:
                 sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
                 sci_names['sci_index'] = sci_names.index
                 df = df.merge(sci_names)
-                match_results = matching_flow_new(sci_names)
+                match_results = matching_flow_new_optimized(sci_names)
                 df = df.drop(columns=['taxonID'], errors='ignore')
                 if len(match_results):
                     df = df.merge(match_results[match_cols], on='sci_index', how='left')
@@ -162,9 +164,10 @@ for d in dataset_list[d_list_index:]:
                 df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
                 # dataGeneralizations
                 df['dataGeneralizations'] = df['dataGeneralizations'].apply(lambda x: True if x else None)
-                 # basisOfRecord
+                # basisOfRecord
+                df['recordType'] = np.where(df['basisOfRecord'].str.contains('specimen|標本', case=False, na=False),'col','occ')
+                record_basis_of_record_values(df)
                 df['basisOfRecord'] = df['basisOfRecord'].apply(lambda x: control_basis_of_record(x))
-                df['recordType'] = df.apply(lambda x: 'col' if 'Specimen' in x.basisOfRecord else 'occ', axis=1)
                 #  如果有mediaLicense才放associatedMedia
                 if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
                     df['associatedMedia'] = df['associatedMedia'].replace({None: '', np.nan: ''})
@@ -198,7 +201,7 @@ for d in dataset_list[d_list_index:]:
                 else:
                     df['catalogNumber'] = df['catalogNumber'].astype('str')
                 existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
-                existed_records = get_existed_records(occ_ids=df[df.occurrenceID!='']['occurrenceID'].to_list(), rights_holder=rights_holder, cata_ids=df[df.catalogNumber!='']['catalogNumber'].to_list(), get_reference=True)
+                existed_records = get_existed_records_optimized(occ_ids=df[df.occurrenceID!='']['occurrenceID'].to_list(), rights_holder=rights_holder, cata_ids=df[df.catalogNumber!='']['catalogNumber'].to_list())
                 existed_records = existed_records.replace({nan:''})
                 if len(existed_records):
                     df = df.merge(existed_records, how='left')
@@ -224,18 +227,15 @@ for d in dataset_list[d_list_index:]:
                 # 更新match_log
                 match_log = df[match_log_cols]
                 match_log = match_log.reset_index(drop=True)
-                match_log = update_match_log(match_log=match_log, now=now)
+                match_log = create_match_log_df(match_log,now)
+                matchlog_processor.smart_upsert_match_log(match_log, existed_records=existed_records)
                 match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{d_list_index}_{c}.csv',index=None)
                 # 用tbiaID更新records
                 df['is_deleted'] = False
                 df['update_version'] = int(update_version)
                 df = df.rename(columns=({'id': 'tbiaID'}))
                 df = df.drop(columns=[ck for ck in df.keys() if ck not in records_cols],errors='ignore')
-                df.to_sql('records', db,
-                        if_exists='append',
-                        index=False,
-                        chunksize=500,
-                        method=records_upsert)
+                records_processor.smart_upsert_records(df, existed_records=existed_records)
                 for mm in media_rule_list:
                     update_media_rule(media_rule=mm,rights_holder=rights_holder)
         # 成功之後 更新update_update_version
