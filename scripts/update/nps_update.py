@@ -113,7 +113,7 @@ while has_more_data:
         # 排除重複資料集
         df = df[~df.datasetName.isin(duplicated_dataset_list)]
         if 'license' in df.keys():
-            df = df[(df.license!='')&(~df.license.str.contains('ND|nd',regex=True))]
+            df = df[(df.license!='無法辨識授權')&(df.license!='')&(~df.license.str.contains('ND|nd',regex=True))]
         else:
             df = []
         media_rule_list = []

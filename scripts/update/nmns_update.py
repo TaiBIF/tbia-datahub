@@ -138,6 +138,8 @@ for now_category in category_list[category_index:]:
             df = pd.DataFrame(data)
             data = [] # 重新下一個loop
             df = df.replace(to_quote_dict)
+            if 'license' in df.keys():
+                df = df[(df.license!='無法辨識授權')&(df.license!='')&(~df.license.str.contains('ND|nd',regex=True))]
             # 如果有資料沒有這些欄位 要先幫忙補上去
             for sci_key in ['sourceScientificName', 'sourceVernacularName', 'sourceOrder', 'sourceFamily']:
                 if sci_key not in df.keys():

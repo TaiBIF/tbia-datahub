@@ -90,7 +90,7 @@ while has_more_data:
         if 'sensitiveCategory' in df.keys():
             df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
         if 'license' in df.keys():
-            df = df[(df.license!='')&(~df.license.str.contains('ND|nd',regex=True))]
+            df = df[(df.license!='無法辨識授權')&(df.license!='')&(~df.license.str.contains('ND|nd',regex=True))]
         else:
             df = []
         media_rule_list = []

@@ -1,20 +1,3 @@
-
-
-
-# for dataset in dataset_list:
-# │
-# ├─ while not is_reaching_end:   ← 一次處理 10 頁的單位
-# │   │
-# │   ├─ while c < p:              ← 一頁一頁抓，最多抓 10 頁
-# │   │   ├─ 抓 API（offset = 1000 * c）
-# │   │   ├─ 加入 data[]
-# │   │   ├─ 判斷是否為最後一頁（offset + 1000 >= total_count）
-# │   │   └─ 若不是最後一頁，c += 1
-# │   │
-# │   └─ 把這 10 頁資料做後處理（例如轉成 df）
-# │
-# └─ 換下一個 dataset（d_list_index += 1）
-
 import numpy as np
 from numpy import nan
 import requests
@@ -23,6 +6,7 @@ import bson
 import time
 import os
 from datetime import datetime, timedelta
+
 import math 
 
 from dotenv import load_dotenv
@@ -36,15 +20,15 @@ records_processor = OptimizedRecordsProcessor(db, batch_size=200)
 matchlog_processor = OptimizedMatchLogProcessor(db, batch_size=300)
 
 # 比對學名時使用的欄位
-sci_cols = ['taxonID','sourceVernacularName', 'sourceScientificName','originalVernacularName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily', 'sourceKingdom']
+sci_cols = ['taxonID','sourceVernacularName', 'sourceScientificName','originalVernacularName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily','sourceKingdom']
 
 # 若原資料庫原本就有提供taxonID 在這段要拿掉 避免merge時產生衝突
 df_sci_cols = [s for s in sci_cols if s != 'taxonID'] 
 
 
 # 單位資訊
-group = 'gbif'
-rights_holder = 'GBIF'
+group = 'cpc'
+rights_holder = '中油生態地圖'
 
 # 在portal.Partner.info裡面的id
 info_id = 0
@@ -70,52 +54,18 @@ else:
     dataset_list = note.get('dataset_list')
 
 
-# 排除夥伴單位
-partners = ['6ddd1cf5-0655-44ac-a572-cb581a054992', # 林保署
-            '898ba450-1627-11df-bd84-b8a03c50a862', # 林試所
-            '7f2ff82e-193e-48eb-8fb5-bad64c84782a', # 國家公園
-            'f40c7fe5-e64a-450c-b229-21d674ef3c28', # 國家公園
-            'c57cd401-ff9e-43bd-9403-089b88a97dea', # 台博館
-            'b6b89e2d-e881-41f3-bc57-213815cb9742', # 水利署
-            '3eff04f7-c90b-4aae-ad2e-9bbdb225ba69', # 科博館
-            '617995df-635d-49cb-8ce0-2ab8bc0cfe7a', # 中油
-            ]
+# 取得中油發布資料集
+publisher_id = '617995df-635d-49cb-8ce0-2ab8bc0cfe7a'
 
-# 排除重複資料集
-# 單位間
-# GBIF 需要排除的生多所資料
-duplicated_dataset_list = [
-    '4fa7b334-ce0d-4e88-aaae-2e0c138d049e',
-    'af97275b-4603-4b87-9054-c83c71c45143',
-    '471511f5-beca-425f-9a8a-e802b3960906',
-    'bc76c690-60a3-11de-a447-b8a03c50a862',
-    'a0998d3b-4a7f-4add-8044-299092d9c63f',
-    'a9d518d1-f0f3-477b-a7a3-aa9f61eb1e54',
-    'ea9608d2-7101-4d46-a7d0-9add260cd28c',
-    'e34125ac-b4fd-4ad4-9647-3423cdd9b8a2',
-    'b6fccb11-dc9a-4cf6-9994-b46fbac5759f',
-    '19c3400b-b7bb-425f-b8c5-f222648b86b2',
-    '2de58bfe-1bf1-4318-97a3-d97efc269a4f',
-    '9e6bf53c-8dba-470a-9142-3607dfe21c41',
-    'd4919a44-090f-4cc6-8643-4c5f7906117f',
-    '6bd0551c-f4e9-4e85-9cec-6cefae343234'
-]
-# 取得所有資料集
-url = "https://portal.taibif.tw/api/v3/dataset"
+url = f"https://portal.taibif.tw/api/v3/dataset?publisherID={publisher_id}"
 response = requests.get(url)
 if response.status_code == 200:
     data = response.json()['data']
     dataset = pd.DataFrame(data)
-    dataset = dataset[dataset.source=='GBIF']
-    dataset = dataset[dataset.core.isin(['OCCURRENCE','SAMPLINGEVENT'])]
-    dataset = dataset[~dataset.publisherID.isin(partners)]
-    dataset = dataset[~dataset.gbifDatasetID.isin(duplicated_dataset_list)]
     dataset = dataset.rename(columns={'publisherName': 'datasetPublisher', 'license': 'datasetLicense'})
 
-    
 if not dataset_list:
-    dataset_list = []
-    dataset_list = dataset[['taibifDatasetID','numberOccurrence']].to_dict('tight')['data']
+    dataset_list = [[d['taibifDatasetID'],d['numberOccurrence']] for d in data if d['core'] in (['OCCURRENCE','SAMPLINGEVENT'])]
 
 
 now = datetime.now() + timedelta(hours=8)
@@ -159,9 +109,8 @@ for d in dataset_list[d_list_index:]:
             print('data', len(data))
             df = pd.DataFrame(data)
             df = df.replace(to_quote_dict)
-            df = df.rename(columns= {
-                                    'originalOccurrenceID': 'sourceOccurrenceID',
-                                    'taibifOccurrenceID': 'occurrenceID', # 使用TaiBIF給的id, 避免空值
+            df = df.rename(columns= {'originalOccurrenceID': 'occurrenceID',
+                                    'taibifOccurrenceID': 'sourceOccurrenceID',
                                     'taibifScientificName': 'sourceScientificName',
                                     'originalScientificName': 'originalVernacularName',
                                     'taxonRank': 'sourceTaxonRank',
@@ -173,12 +122,11 @@ for d in dataset_list[d_list_index:]:
                                     'decimalLatitude': 'verbatimLatitude',
                                     'decimalLongitude': 'verbatimLongitude',
                                     'taibifModifiedDate': 'sourceModified',
-                                    'taibifDatasetID': 'sourceDatasetID'
-                                    })
+                                    'taibifDatasetID': 'sourceDatasetID'})
             # 如果 'taxonBackbone' == 'TaiCOL' 給予taxonID
             df['taxonID'] = df.apply(lambda x: x.scientificNameID if x.taxonBackbone == 'TaiCOL' else None ,axis=1)
             # 如果學名相關的欄位都是空值才排除
-            df = df[~((df.sourceScientificName=='')&(df.sourceVernacularName=='')&(df.originalVernacularName=='')&(df.scientificNameID=='')&(df.sourceClass=='')&(df.sourceOrder=='')&(df.sourceFamily==''))]
+            df = df[~((df.sourceScientificName=='')&(df.sourceVernacularName=='')&(df.originalVernacularName=='')&(df.sourceClass=='')&(df.sourceOrder=='')&(df.sourceFamily==''))]
             if 'sensitiveCategory' in df.keys():
                 df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
             if 'license' in df.keys():
@@ -186,16 +134,14 @@ for d in dataset_list[d_list_index:]:
             else:
                 df = []
             media_rule_list = []
-            # df = df.drop_duplicates()
             if len(df):
                 df = df.reset_index(drop=True)
                 df = df.replace(to_quote_dict)
                 # 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
                 df['id'] = df.apply(lambda x: str(bson.objectid.ObjectId()), axis=1)
-                df = df.drop(columns=['taxonGroup','taxonBackbone','phylum','genus','geodeticDatum',
-                    'countryCode', 'country', 'county',
-                    'habitatReserve', 'wildlifeReserve', 'occurrenceStatus', 'selfProduced',
-                    'datasetShortName','establishmentMeans', 'issue'])
+                df = df.drop(columns=['taxonGroup','taxonBackbone','phylum','genus','geodeticDatum', 'countryCode', 
+                                      'country', 'county', 'habitatReserve', 'wildlifeReserve', 'occurrenceStatus', 'selfProduced',
+                                      'datasetShortName','establishmentMeans', 'issue'])
                 for col in cols_str_ends:
                     if col in df.keys():
                         df[col] = df[col].apply(check_id_str_ends)
@@ -218,6 +164,7 @@ for d in dataset_list[d_list_index:]:
                 df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
                 # dataGeneralizations
                 df['dataGeneralizations'] = df['dataGeneralizations'].apply(lambda x: True if x else None)
+                # basisOfRecord
                 df['recordType'] = np.where(df['basisOfRecord'].str.contains('specimen|標本', case=False, na=False),'col','occ')
                 record_basis_of_record_values(df)
                 df['basisOfRecord'] = df['basisOfRecord'].apply(lambda x: control_basis_of_record(x))
@@ -227,7 +174,6 @@ for d in dataset_list[d_list_index:]:
                     df['associatedMedia'] = df.apply(lambda x: x.associatedMedia if x.mediaLicense else '', axis=1)
                     df['media_rule_list'] = df[df.associatedMedia.notnull()]['associatedMedia'].apply(lambda x: get_media_rule(x))
                     media_rule_list += list(df[df.media_rule_list.notnull()].media_rule_list.unique())
-                df['references'] = df.apply(lambda x: f"https://www.gbif.org/occurrence/{x.gbifID}" if x.gbifID else None, axis=1)
                 # 地理資訊
                 for g in geo_wo_raw_keys:
                     if g not in df.keys():
@@ -242,7 +188,7 @@ for d in dataset_list[d_list_index:]:
                 df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
                 # 資料集
                 df['datasetURL'] = df['gbifDatasetID'].apply(lambda x: 'https://www.gbif.org/dataset/' + x if x else '')
-                ds_name = df[['datasetName','recordType','gbifDatasetID','sourceDatasetID', 'datasetURL']]
+                ds_name = df[['datasetName','gbifDatasetID','sourceDatasetID','datasetURL']]
                 ds_name = ds_name.merge(dataset[['taibifDatasetID','datasetPublisher','datasetLicense']], left_on='sourceDatasetID', right_on='taibifDatasetID')
                 ds_name = ds_name.drop_duplicates().to_dict(orient='records')
                 # return tbiaDatasetID 並加上去
@@ -262,7 +208,21 @@ for d in dataset_list[d_list_index:]:
                     df = df.replace(to_none_dict)
                     df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
                     df = df.drop(columns=['tbiaID'])
-                df = df.drop_duplicates()
+                # 如果是新的records 再更新GBIF ID
+                for i in df.index:
+                    row = df.loc[i]
+                    if row.gbifID:
+                        df.loc[i, 'references'] = f"https://www.gbif.org/occurrence/{row.gbifID}" 
+                    # 確認原本有沒有references
+                    elif 'references' in existed_records.keys():
+                        if not len(existed_records[(existed_records.tbiaID==row.id)&(existed_records.references!='')]):
+                            gbif_id = get_gbif_id(row.gbifDatasetID, row.occurrenceID)
+                            if gbif_id:
+                                df.loc[i, 'references'] = f"https://www.gbif.org/occurrence/{gbif_id}"
+                    else:
+                        gbif_id = get_gbif_id(row.gbifDatasetID, row.occurrenceID)
+                        if gbif_id:
+                            df.loc[i, 'references'] = f"https://www.gbif.org/occurrence/{gbif_id}"
                 df = df.replace(to_none_dict)
                 # 更新match_log
                 match_log = df[match_log_cols]
@@ -280,14 +240,13 @@ for d in dataset_list[d_list_index:]:
                     update_media_rule(media_rule=mm,rights_holder=rights_holder)
         # 成功之後 更新update_update_version
         update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}))
-        print('saved', c)
     d_list_index += 1
     current_page = 0 # 換成新的url時要重新開始
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=0, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}))
 
 
 # 刪除is_deleted的records & match_log
-delete_records(rights_holder=rights_holder,group=group, update_version=int(update_version))
+delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version))
 
 # 打包match_log
 zip_match_log(group=group,info_id=info_id)
