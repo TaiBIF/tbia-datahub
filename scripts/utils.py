@@ -1196,7 +1196,7 @@ class OptimizedRecordsProcessor:
         if df.empty:
             return
             
-        print(f"🔄 Processing {len(df)} records with smart upsert...")
+        # print(f"🔄 Processing {len(df)} records with smart upsert...")
         start_time = time.time()
         
         # 1. 使用已取得的existed_records（避免重複查詢）
@@ -1225,13 +1225,13 @@ class OptimizedRecordsProcessor:
                 chunksize=self.batch_size,
                 method='multi'  # 使用標準 INSERT，不是 UPSERT
             )
-            print(f"   ✅ Inserted {len(new_records)} records in {time.time() - insert_start:.2f}s")
+            # print(f"   ✅ Inserted {len(new_records)} records in {time.time() - insert_start:.2f}s")
         
         # 4. 批次更新
         if not update_records.empty:
             update_start = time.time()
             self._batch_update_records(update_records, table_name)
-            print(f"   ✅ Updated {len(update_records)} records in {time.time() - update_start:.2f}s")
+            # print(f"   ✅ Updated {len(update_records)} records in {time.time() - update_start:.2f}s")
         
         total_time = time.time() - start_time
         rate = len(df) / total_time if total_time > 0 else 0
