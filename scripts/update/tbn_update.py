@@ -173,7 +173,6 @@ for url in url_list[url_index:]:
                 sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
                 sci_names['sci_index'] = sci_names.index
                 df = df.merge(sci_names)
-                # match_results = matching_flow_new(sci_names)
                 match_results = matching_flow_new_optimized(sci_names)
                 df = df.drop(columns=['taxonID'], errors='ignore')
                 if len(match_results):
@@ -188,8 +187,6 @@ for url in url_list[url_index:]:
                 # 數量
                 df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
                 # basisOfRecord
-                # df['basisOfRecord'] = df['basisOfRecord'].apply(lambda x: control_basis_of_record(x))
-                # df['recordType'] = df.apply(lambda x: 'col' if 'Specimen' in x.basisOfRecord else 'occ', axis=1)
                 df['recordType'] = np.where(df['basisOfRecord'].str.contains('specimen|標本', case=False, na=False),'col','occ')
                 record_basis_of_record_values(df)
                 df['basisOfRecord'] = df['basisOfRecord'].apply(lambda x: control_basis_of_record(x))
@@ -250,13 +247,6 @@ for url in url_list[url_index:]:
                 match_log = match_log.reset_index(drop=True)
                 match_log = create_match_log_df(match_log,now)
                 matchlog_processor.smart_upsert_match_log(match_log, existed_records=existed_records)
-                # match_log = update_match_log(match_log=match_log, now=now)
-                # match_log = update_match_log_optimized(
-                #     match_log=match_log, 
-                #     now=now, 
-                #     issue_map=issue_map,
-                #     batch_size=1500  # 增加批次大小
-                # )
                 match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}_{url_index}_{c}.csv',index=None)
                 print('matchlog', time.time()-now_s)
                 # 用tbiaID更新records
@@ -266,11 +256,6 @@ for url in url_list[url_index:]:
                 df = df.drop(columns=[ck for ck in df.keys() if ck not in records_cols],errors='ignore')
                 now_s = time.time()
                 records_processor.smart_upsert_records(df, existed_records=existed_records)
-                # df.to_sql('records', db,
-                #         if_exists='append',
-                #         index=False,
-                #         chunksize=500,
-                #         method=records_upsert)
                 print('tosql', time.time()-now_s)
                 # 更新 media rule
                 for mm in media_rule_list:
