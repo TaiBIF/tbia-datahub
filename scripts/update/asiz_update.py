@@ -65,6 +65,7 @@ while has_more_data:
         print('page:',c)
         time.sleep(5)
         url = f"https://brmas.openmuseum.tw/api/v2/specimen_brmas/list?token={os.getenv('ASIZ_KEY')}&page={c}&per_page=1000"
+        url = f"https://brmas.openmuseum.tw/api/v2/specimen_brmas/list?token=4afeba6ded686884ab57851b18120043&page=31&per_page=1000"
         response = requests.get(url, verify=False, headers={'user-agent':"TBIA"})
         if response.status_code == 200:
             result = response.json()
@@ -90,6 +91,8 @@ while has_more_data:
         df = pd.DataFrame(data)
         # 如果學名相關的欄位都是空值才排除
         df = df.replace(to_quote_dict)
+        if 'familyName' not in df.keys(): # 有些資料沒有 補上
+            df['familyName'] = ''
         if 'isPreferredName' not in df.keys():
             df['isPreferredName'] = ''
         df = df[~((df.isPreferredName=='')&(df.scientificName=='')&(df.familyName==''))]
