@@ -129,10 +129,12 @@ for d in dataset_list[d_list_index:]:
             df = df[~((df.sourceScientificName=='')&(df.sourceVernacularName=='')&(df.originalVernacularName=='')&(df.sourceClass=='')&(df.sourceOrder=='')&(df.sourceFamily==''))]
             if 'sensitiveCategory' in df.keys():
                 df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
-            if 'license' in df.keys():
-                df = df[(df.license!='無法辨識授權')&(df.license!='')&(~df.license.str.contains('ND|nd',regex=True))]
-            else:
-                df = []
+            # 先幫忙補
+            df['license'] = "Creative Commons Attribution Non Commercial (CC-BY-NC 4.0) License"
+            # if 'license' in df.keys():
+            #     df = df[(df.license!='無法辨識授權')&(df.license!='')&(~df.license.str.contains('ND|nd',regex=True))]
+            # else:
+            #     df = []
             media_rule_list = []
             if len(df):
                 df = df.reset_index(drop=True)

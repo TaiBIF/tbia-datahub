@@ -139,6 +139,8 @@ while has_more_data:
             df = df.replace(to_quote_dict)
             df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
             # 資料集
+            # 先把沒有資料集名稱的補上
+            df['datasetName'] = df['datasetName'].apply(lambda x: x if x else '集水區友善環境生態資料庫')
             ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
             # return tbiaDatasetID 並加上去
             return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version, group=group)
