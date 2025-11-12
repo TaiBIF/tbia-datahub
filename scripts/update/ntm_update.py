@@ -201,7 +201,7 @@ for d in dataset_list[d_list_index:]:
                 else:
                     df['catalogNumber'] = df['catalogNumber'].astype('str')
                 existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
-                existed_records = get_existed_records_optimized(occ_ids=df[df.occurrenceID!='']['occurrenceID'].to_list(), rights_holder=rights_holder, cata_ids=df[df.catalogNumber!='']['catalogNumber'].to_list())
+                existed_records = get_existed_records_optimized(occ_ids=df[df.occurrenceID!='']['occurrenceID'].to_list(), rights_holder=rights_holder, cata_ids=df[df.catalogNumber!='']['catalogNumber'].to_list(), get_reference=True)
                 existed_records = existed_records.replace({nan:''})
                 if len(existed_records):
                     df = df.merge(existed_records, how='left')
