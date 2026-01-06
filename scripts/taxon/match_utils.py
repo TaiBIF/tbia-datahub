@@ -206,8 +206,8 @@ def matching_flow_new(sci_names):
     sci_names['match_stage'] = 0
     sci_names['match_higher_taxon'] = False
     # 各階段的issue default是沒有對到
-    sci_names['stage_1'] = None # 比對sourceScientificName
-    sci_names['stage_2'] = None # 比對TaiCOL namecode
+    sci_names['stage_1'] = None # 比對 sourceScientificName
+    sci_names['stage_2'] = None # 比對 TaiCOL namecode
     sci_names['stage_3'] = None # 比對 sourceVernacularName (中文)
     sci_names['stage_4'] = None # 比對 sourceScientificName 第一個單詞
     sci_names['stage_5'] = None # 比對 originalVernacularName (中文 / 英文)
