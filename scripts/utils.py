@@ -957,7 +957,7 @@ def create_blurred_grid_data_new(verbatimLongitude, verbatimLatitude, coordinate
     for field in ['grid_1','grid_5','grid_10','grid_100','grid_1_blurred','grid_5_blurred','grid_10_blurred','grid_100_blurred']:
         grid_data[field] = '-1_-1'
     # 先取得未模糊化座標
-    # 海保署座標轉換 -> 但現在好像沒有了 (?)
+    # 度分秒座標轉換
     if any(ext in str(verbatimLongitude) for ext in ['N', 'S', 'W', 'E']) or any(ext in str(verbatimLatitude) for ext in ['N', 'S', 'W', 'E']):
         lon, lat = convert_to_decimal(verbatimLongitude, verbatimLatitude)
     else:
@@ -1046,7 +1046,12 @@ def create_grid_data_new(verbatimLongitude, verbatimLatitude):
     grid_data = {}
     for field in ['grid_1','grid_5','grid_10','grid_100','grid_1_blurred','grid_5_blurred','grid_10_blurred','grid_100_blurred']:
         grid_data[field] = '-1_-1'
-    standardLon, standardLat, location_rpt = standardize_coor(verbatimLongitude, verbatimLatitude)
+    # 度分秒座標轉換
+    if any(ext in str(verbatimLongitude) for ext in ['N', 'S', 'W', 'E']) or any(ext in str(verbatimLatitude) for ext in ['N', 'S', 'W', 'E']):
+        lon, lat = convert_to_decimal(verbatimLongitude, verbatimLatitude)
+    else:
+        lon, lat = verbatimLongitude, verbatimLatitude
+    standardLon, standardLat, location_rpt = standardize_coor(lon, lat)
     grid_data['standardLongitude'] = standardLon
     grid_data['standardLatitude'] = standardLat
     grid_data['location_rpt'] = location_rpt
