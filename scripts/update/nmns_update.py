@@ -20,7 +20,7 @@ records_processor = OptimizedRecordsProcessor(db, batch_size=200)
 matchlog_processor = OptimizedMatchLogProcessor(db, batch_size=300)
 
 # 比對學名時使用的欄位
-sci_cols = ['sourceScientificName', 'sourceVernacularName', 'sourceOrder', 'sourceFamily']
+sci_cols = ['sourceScientificName', 'sourceVernacularName', 'sourceOrder', 'sourceFamily', 'sourceClass', 'sourceKingdom']
 
 
 # 若原資料庫原本就有提供taxonID 在這段要拿掉 避免merge時產生衝突
@@ -58,52 +58,113 @@ else:
 # 鳥獸學門 - 沒有資料
 # 鳥獸學門(哺乳類蒐藏) - 沒有資料
 # 鳥獸學門(鳥類蒐藏) - 沒有資料
-# 非維管束學門
-# 昆蟲學門
-# 無脊椎動物學門
-# 維管束學門
-# 真菌學門
+# 非維管束學門 - 階層: 「分類資訊 Taxonomy」門 (Phylum) ， 綱 (Class) ， 目 (Order) ， 科 (Family) 逗號分隔 但有可能有前後多於空格
+# 昆蟲學門 - 階層有分開欄位
+# 無脊椎動物學門 - 階層有分開欄位
+# 維管束學門 - 階層有分開欄位
+# 真菌學門 - 階層: 「分類資訊 Taxonomy」門 (Phylum) ， 綱 (Class) ， 目 (Order) ， 科 (Family) 逗號分隔 但有可能有前後多於空格
+# 兩棲爬蟲學門 - 階層有分開欄位
 # 古生物學門 - 沒有資料
-# 兩棲爬蟲學門 - 沒有資料
 # 兩爬學門(魚類蒐藏) - 沒有資料
+
+
+
+# 依據學門給kingdom
+
+kingdom_map = {
+    '昆蟲學門': 'Animalia',
+    '兩棲爬蟲學門': 'Animalia',
+    '無脊椎動物學門': 'Animalia',
+    '維管束學門': 'Plantae',
+    '真菌學門': 'Fungi',
+    # '非維管束學門': None,  <-- 這裡留空，等到迴圈內依據「類別」動態處理
+}
 
 category_list = ['昆蟲學門', '兩棲爬蟲學門', '非維管束學門', '維管束學門', '真菌學門', '無脊椎動物學門']
 
 
+# field_map = {
+#     '中文名 Chinese Common Name': 'sourceVernacularName',
+#     '藏品名稱':	'sourceVernacularName',
+#     '目名':	'sourceOrder',
+#     '科名':	'sourceFamily',
+#     '學名':	'sourceScientificName',
+#     '館號/編目號':	'catalogNumber',
+#     # '採集地':	'locality', # 為了後面的locality_2 這邊先關起來
+#     '採集日':	'eventDate',
+#     '採集者':	'recordedBy',
+#     '屬名':	'genus',
+#     '種名':	'specificEpithet',
+#     # '鑑定者':	'recordedBy',
+#     '國名':	'locality_1',
+#     '省/縣名':	'locality_2',
+#     '採集地名':	'locality_3',
+#     '採集日期':	'eventDate',
+#     '採集號':	'recordNumber',
+#     "採集號 Collector's No.":	'recordNumber',
+#     '館號/編目號 Catalog No.':	'catalogNumber',
+#     '館號 TNM No.':	'catalogNumber',
+#     '學名 Scientific Name':	'sourceScientificName',
+#     '採集地 Locality':	'locality',
+#     '採集者 Collector':	'recordedBy',
+#     '採集日期 Collection Date':	'eventDate',
+#     '行政區域':	'locality_1',
+#     '採集地':	'locality_2',
+#     '館號 (TNM No.)':	'catalogNumber',
+#     '採集地 (Locality)':	'locality',
+#     '採集日期 (Collection Date)':	'eventDate',
+#     '採集者 (Collector)':	'recordedBy',
+#     '保存方式':	'preservation',
+#     '數量':	'organismQuantity'
+# }
+
+
 field_map = {
-    '中文名 Chinese Common Name': 'sourceVernacularName',
-    '藏品名稱':	'sourceVernacularName',
-    '目名':	'sourceOrder',
-    '科名':	'sourceFamily',
-    '學名':	'sourceScientificName',
-    '館號/編目號':	'catalogNumber',
-    # '採集地':	'locality', # 為了後面的locality_2 這邊先關起來
-    '採集日':	'eventDate',
-    '採集者':	'recordedBy',
-    '屬名':	'genus',
-    '種名':	'specificEpithet',
-    # '鑑定者':	'recordedBy',
-    '國名':	'locality_1',
-    '省/縣名':	'locality_2',
-    '採集地名':	'locality_3',
-    '採集日期':	'eventDate',
-    '採集號':	'recordNumber',
-    "採集號 Collector's No.":	'recordNumber',
-    '館號/編目號 Catalog No.':	'catalogNumber',
-    '館號 TNM No.':	'catalogNumber',
-    '學名 Scientific Name':	'sourceScientificName',
-    '採集地 Locality':	'locality',
-    '採集者 Collector':	'recordedBy',
-    '採集日期 Collection Date':	'eventDate',
-    '行政區域':	'locality_1',
-    '採集地':	'locality_2',
-    '館號 (TNM No.)':	'catalogNumber',
-    '採集地 (Locality)':	'locality',
-    '採集日期 (Collection Date)':	'eventDate',
-    '採集者 (Collector)':	'recordedBy',
-    '保存方式':	'preservation',
-    '數量':	'organismQuantity'
+    # --- 學名 ---
+    '中文名 Chinese Common Name': 'sourceVernacularName', # 裡面可能有學名 但暫時不處理
+    '學名': 'sourceScientificName',
+    '學名 Scientific Name': 'sourceScientificName',
+    '屬名': 'genus',
+    '種名': 'specificEpithet',
+    # --- 分類階層 (Kingdom/Phylum/Class 另外邏輯處理) ---
+    '目名': 'sourceOrder',
+    '科名': 'sourceFamily',
+    # '中文科名': '', 統一用英文科名
+    # --- 館藏編號 ---
+    '館號/編目號 Catalog No.':  'catalogNumber',
+    '館號 TNM No.': 'catalogNumber',
+    '採集號':   'recordNumber',
+    "採集號 Collector's No.":   'recordNumber',
+    # --- 人員與時間 ---
+    '採集日':   'eventDate',
+    '採集日期': 'eventDate',
+    '採集日期 Collection Date': 'eventDate',
+    '採集者':   'recordedBy',
+    '採集者 Collector': 'recordedBy',
+    # '鑑定者': ,
+    # '鑑定者': ,
+    # '鑑定日期': ,
+    # --- 地點與環境 ---
+    '國名': 'locality_1',
+    '行政區域': 'locality_1',
+    '省/縣名':  'locality_2',
+    '採集地':   'locality_3',
+    '採集地名': 'locality_3',
+    '採集地 Locality':  'locality_3',
+    '經緯度 Coordinates': 'Coordinates',
+    # '海拔': ,
+    # '海拔 Altitude': ,
+    # '海拔高度(m)': ,
+    # '基質 Substrate': ,
+    # --- 標本屬性 ---
+    '保存方式': 'preservation',
+    '數量': 'organismQuantity',
+    '保存液': 'preservation',
+    '固定方式': 'preservation',
+    # '菌株 Culture':
+    # 'DNA': 
 }
+
 
 field_list = list(set(field_map.values()))
 
@@ -116,6 +177,7 @@ for now_category in category_list[category_index:]:
     data = []
     all_count = 0
     while has_more_data:
+        # 須在server上執行
         url = 'https://collections.culture.tw/getMetadataList.aspx?FORMAT=NMNS&DEPARTMENT={}&LIMIT=100&OFFSET={}'.format(now_category, offset)
         resp = requests.get(url)
         try:
@@ -133,10 +195,43 @@ for now_category in category_list[category_index:]:
                         'references': r.get('CollectionUrl'),
                         'associatedMedia': r.get('ImageFocus'),
                         'license': r.get('GalCC')}
+            # Step A: 先依據學門給予預設的 Kingdom
+            if now_category in kingdom_map:
+                now_dict['sourceKingdom'] = kingdom_map[now_category]
+            # --- 處理 MetaData_NMNS ---
             for rr in r.get('MetaData_NMNS'):
-                if rr.get('Caption') in field_map.keys():
-                    now_dict[field_map[rr.get('Caption')]] = rr.get('Value')
+                caption = rr.get('Caption')
+                value = rr.get('Value')
+                # 1. 一般欄位處理
+                if caption in field_map.keys():
+                    now_dict[field_map[caption]] = value
+                # 2. 特殊欄位：類別 (處理非維管束學門的 Kingdom)
+                elif caption == '類別' and now_category == '非維管束學門' and value:
+                    if '苔蘚' in value:
+                        now_dict['sourceKingdom'] = 'Plantae'
+                    elif '地衣' in value:
+                        now_dict['sourceKingdom'] = 'Fungi'
+                    # 若是藻類，這裡不做動作，保持沒有 sourceKingdom 的狀態
+                # 3. 特殊欄位：分類資訊 Taxonomy
+                elif caption == '分類資訊 Taxonomy' and value:
+                    # 統一處理：全形逗號切割、去除空白、轉首字大寫
+                    tax_parts = [x.strip().title() for x in value.split('，')]
+                    if now_category == '真菌學門':
+                        # 真菌邏輯 (4層)：門, 綱, 目, 科
+                        # if len(tax_parts) > 0: now_dict['sourcePhylum'] = tax_parts[0] # 不取門
+                        if len(tax_parts) > 1: now_dict['sourceClass'] = tax_parts[1]
+                        if len(tax_parts) > 2: now_dict['sourceOrder'] = tax_parts[2]
+                        if len(tax_parts) > 3: now_dict['sourceFamily'] = tax_parts[3]
+                    elif now_category == '非維管束學門': 
+                        # 藻類邏輯 (3層)：門, 目, 科 (跳過綱)
+                        # if len(tax_parts) > 0: now_dict['sourcePhylum'] = tax_parts[0] # 不取門
+                        if len(tax_parts) > 1: now_dict['sourceOrder'] = tax_parts[1]
+                        if len(tax_parts) > 2: now_dict['sourceFamily'] = tax_parts[2]
             data.append(now_dict)
+            # for rr in r.get('MetaData_NMNS'):
+            #     if rr.get('Caption') in field_map.keys():
+            #         now_dict[field_map[rr.get('Caption')]] = rr.get('Value')
+            # data.append(now_dict)
         if len(data) > 9999 or not has_more_data:
             print(now_category, len(data), all_count)
             df = pd.DataFrame(data)
@@ -145,7 +240,7 @@ for now_category in category_list[category_index:]:
             if 'license' in df.keys():
                 df = df[(df.license!='無法辨識授權')&(df.license!='')&(~df.license.str.contains('ND|nd',regex=True))]
             # 如果有資料沒有這些欄位 要先幫忙補上去
-            for sci_key in ['sourceScientificName', 'sourceVernacularName', 'sourceOrder', 'sourceFamily']:
+            for sci_key in ['sourceScientificName', 'sourceVernacularName', 'sourceOrder', 'sourceFamily', 'sourceClass', 'sourceKingdom']:
                 if sci_key not in df.keys():
                     df[sci_key] = ''
             # if now_category == '真菌學門':
@@ -206,7 +301,14 @@ for now_category in category_list[category_index:]:
                         df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
                 df = df.replace(to_quote_dict)
                 df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
-                # 目前沒有經緯度資料
+                # 地理資訊 - 
+                # 目前僅有非維管束學門有經緯度 沒有敏感資料
+                if 'Coordinates' in df.keys():
+                    df[['verbatimLatitude', 'verbatimLongitude']] = df['Coordinates'].apply(lambda x: pd.Series(parse_verbatim_coords(x)))
+                    for g in geo_wo_raw_keys:
+                        if g not in df.keys():
+                            df[g] = ''
+                    df[geo_wo_raw_keys] = df.apply(lambda x: pd.Series(create_grid_data_new(x.verbatimLongitude, x.verbatimLatitude)),  axis=1)
                 # 資料集
                 ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
                 # return tbiaDatasetID 並加上去

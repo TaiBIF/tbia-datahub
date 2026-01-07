@@ -467,27 +467,97 @@ def convert_coor_to_grid(x, y, grid):
     grid_y = bisect.bisect(list_y, y)-1
     return grid_x, grid_y
 
+def parse_verbatim_coords(coord_str):
+    # 如果是空值或非字串，回傳 None
+    if pd.isna(coord_str) or str(coord_str).strip() == '':
+        return None, None
+    text = str(coord_str).strip()
+    # 使用正規表示式切割，支援「全形逗號」與「半形逗號」
+    # 這裡假設分隔符號是逗號
+    parts = re.split(r'[，,]', text)
+    # 去除每個部分的空白
+    parts = [p.strip() for p in parts if p.strip()]
+    v_lat = None
+    v_lon = None
+    for part in parts:
+        upper_part = part.upper()
+        # 判斷緯度 (N 或 S)
+        if 'N' in upper_part or 'S' in upper_part:
+            v_lat = part
+        # 判斷經度 (E 或 W)
+        elif 'E' in upper_part or 'W' in upper_part:
+            v_lon = part
+    # 特殊補救：如果有兩段，且其中一段沒找到方向，依照常見順序補齊 (通常是 經度, 緯度)
+    # 例如資料中的 '0244748， 121431N' (只有後面有 N)
+    if len(parts) == 2:
+        if v_lat and not v_lon:
+            # 已經找到緯度，剩下那個大概是經度
+            v_lon = parts[0] if parts[0] != v_lat else parts[1]
+        elif v_lon and not v_lat:
+            # 已經找到經度，剩下那個大概是緯度
+            v_lat = parts[0] if parts[0] != v_lon else parts[1]
+    return v_lat, v_lon
 
 
 # N, S, W, E
 # E 121° 35.405 - 
 # 119°36'62.8\"E
+# def convert_to_decimal(lon, lat):
+#     try:
+#         deg, minutes, seconds, direction =  re.split('[°\'\"]', lat)
+#         # seconds = seconds[:-1]
+#         # direction = seconds[-1]
+#         lat = (float(deg) + float(minutes)/60 + float(seconds)/(60*60)) * (-1 if direction in ['W', 'S'] else 1)
+#     except:
+#         lat = None
+#     try:
+#         deg, minutes, seconds, direction =  re.split('[°\'\"]', lon)
+#         # seconds = seconds[:-1]
+#         # direction = seconds[-1]
+#         lon = (float(deg) + float(minutes)/60 + float(seconds)/(60*60)) * (-1 if direction in ['W', 'S'] else 1)
+#     except:
+#         lon = None
+#     return lon, lat
+
 def convert_to_decimal(lon, lat):
-    try:
-        deg, minutes, seconds, direction =  re.split('[°\'\"]', lat)
-        # seconds = seconds[:-1]
-        # direction = seconds[-1]
-        lat = (float(deg) + float(minutes)/60 + float(seconds)/(60*60)) * (-1 if direction in ['W', 'S'] else 1)
-    except:
-        lat = None
-    try:
-        deg, minutes, seconds, direction =  re.split('[°\'\"]', lon)
-        # seconds = seconds[:-1]
-        # direction = seconds[-1]
-        lon = (float(deg) + float(minutes)/60 + float(seconds)/(60*60)) * (-1 if direction in ['W', 'S'] else 1)
-    except:
-        lon = None
-    return lon, lat
+    # 定義一個內部函式來處理單一字串，避免寫兩次一樣的邏輯
+    def _parse_one(value):
+        if not value or str(value).strip() == '':
+            return None
+        text = str(value).strip().upper() # 轉大寫方便判斷
+        # --- [新增邏輯] 如果沒有 '°' (視為 Decimal Degrees) ---
+        if '°' not in text:
+            try:
+                # 1. 雖然是直接轉數字，但還是要判斷方向 (南緯/西經 為負數)
+                sign = -1 if ('S' in text or 'W' in text) else 1
+                # 2. 將 N, S, E, W 以及全形逗號等雜訊取代為空字串
+                # 這裡使用 re.sub 只保留「數字」和「小數點」
+                clean_num = re.sub(r'[NSEWnsew，,\s]', '', text)
+                # 3. 回傳 float
+                return float(clean_num) * sign
+            except:
+                return None
+        # --- [原有邏輯] 如果有 '°' (視為 DMS 度分秒) ---
+        try:
+            # 使用 re.split 切割，並過濾掉空字串 (避免 unpacking error)
+            parts = re.split(r'[°\'"]', text)
+            parts = [p.strip() for p in parts if p.strip()]
+            # 您的原始邏輯需要剛好 4 個部分 (度, 分, 秒, 方向)
+            if len(parts) >= 4:
+                deg = float(parts[0])
+                minutes = float(parts[1])
+                seconds = float(parts[2])
+                direction = parts[3] # 假設最後一個是方向
+                return (deg + minutes/60 + seconds/3600) * (-1 if direction in ['W', 'S'] else 1)
+            else:
+                # 如果格式有缺 (例如只有度分)，這裡可以視情況加邏輯，目前先回傳 None
+                return None
+        except:
+            return None
+    # 分別執行轉換
+    new_lon = _parse_one(lon)
+    new_lat = _parse_one(lat)
+    return new_lon, new_lat
 
 
 def standardize_coor(lon,lat):
