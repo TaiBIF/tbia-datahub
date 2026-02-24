@@ -136,7 +136,7 @@ if r.status_code == 200:
 
 # 結構化檔案
 
-ocas = pd.read_csv('海保署資料集清單_202505.csv')
+ocas = pd.read_csv('海保署資料集清單.csv')
 
 # 校定物種學名編碼 -> 裡面有可能是taxonID也有可能是namecode 如果不是t開頭的七位數
 
