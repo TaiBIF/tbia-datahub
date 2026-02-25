@@ -354,7 +354,7 @@ import time
 import re
 from typing import List, Dict, Optional
 
-def matching_flow_new_optimized(sci_names, batch_size=100, max_workers=4):
+def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
     """
     優化版本的 matching_flow_new
     

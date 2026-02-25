@@ -65,7 +65,8 @@ rights_holder_map = {
     '國家海洋資料庫及共享平台': 'namr',
     '集水區友善環境生態資料庫': 'ardswc',
     '中油生態地圖': 'cpc',
-    '作物種原資訊系統': 'npgrc'
+    '作物種原資訊系統': 'npgrc',
+    '國立海洋生物博物館生物典藏管理系統': 'nmmba',
 }
 
 
@@ -520,43 +521,53 @@ def parse_verbatim_coords(coord_str):
 #     return lon, lat
 
 def convert_to_decimal(lon, lat):
-    # 定義一個內部函式來處理單一字串，避免寫兩次一樣的邏輯
+    # 定義一個內部增強版解析函式
     def _parse_one(value):
-        if not value or str(value).strip() == '':
+        # 1. 基本檢查
+        if pd.isna(value) or str(value).strip() == '':
             return None
-        text = str(value).strip().upper() # 轉大寫方便判斷
-        # --- [新增邏輯] 如果沒有 '°' (視為 Decimal Degrees) ---
-        if '°' not in text:
-            try:
-                # 1. 雖然是直接轉數字，但還是要判斷方向 (南緯/西經 為負數)
-                sign = -1 if ('S' in text or 'W' in text) else 1
-                # 2. 將 N, S, E, W 以及全形逗號等雜訊取代為空字串
-                # 這裡使用 re.sub 只保留「數字」和「小數點」
-                clean_num = re.sub(r'[NSEWnsew，,\s]', '', text)
-                # 3. 回傳 float
-                return float(clean_num) * sign
-            except:
-                return None
-        # --- [原有邏輯] 如果有 '°' (視為 DMS 度分秒) ---
+        text = str(value).strip().upper()
+        text = text.replace('\\', '').replace('_', '')
+        
+        # 2. 判斷方向 (S/W 為負)
+        # 邏輯：只要字串中有 S 或 W，一律視為負
+        sign = 1
+        if 'S' in text or 'W' in text:
+            sign = -1
+        # [安全防護] 若沒有方向字母，但字串以負號開頭 (如 "-120.5")，也視為負
+        elif text.strip().startswith('-'):
+            sign = -1
+            
+        # 3. 提取數字 (核心改進)
+        # 使用正規表示式抓取所有數字，忽略文字與符號 (N, E, °, ', ", -)
+        numbers = re.findall(r"(\d+(?:\.\d*)?|\.\d+)", text)
+        
         try:
-            # 使用 re.split 切割，並過濾掉空字串 (避免 unpacking error)
-            parts = re.split(r'[°\'"]', text)
-            parts = [p.strip() for p in parts if p.strip()]
-            # 您的原始邏輯需要剛好 4 個部分 (度, 分, 秒, 方向)
-            if len(parts) >= 4:
-                deg = float(parts[0])
-                minutes = float(parts[1])
-                seconds = float(parts[2])
-                direction = parts[3] # 假設最後一個是方向
-                return (deg + minutes/60 + seconds/3600) * (-1 if direction in ['W', 'S'] else 1)
-            else:
-                # 如果格式有缺 (例如只有度分)，這裡可以視情況加邏輯，目前先回傳 None
-                return None
+            nums = [float(n) for n in numbers if n != '.']
         except:
             return None
+
+        if not nums:
+            return None
+        
+        # 4. 自動判斷格式並計算
+        val = 0
+        if len(nums) == 1:
+            # 只有一個數字 -> Decimal Degrees (DD)
+            val = nums[0]
+        elif len(nums) == 2:
+            # 兩個數字 -> 度 + 分 (DM)
+            val = nums[0] + nums[1]/60
+        elif len(nums) >= 3:
+            # 三個以上數字 -> 度 + 分 + 秒 (DMS)
+            val = nums[0] + nums[1]/60 + nums[2]/3600
+            
+        return val * sign
+
     # 分別執行轉換
     new_lon = _parse_one(lon)
     new_lat = _parse_one(lat)
+    
     return new_lon, new_lat
 
 
@@ -1039,7 +1050,13 @@ def create_blurred_grid_data_new(verbatimLongitude, verbatimLatitude, coordinate
     return final_list
 
 
-
+def clean_html_tags(text):
+    # 1. 檢查是否為字串 (處理 NaN 或 float 的情況)
+    if not isinstance(text, str):
+        return text
+    # 2. 移除 <i> 和 </i>
+    # 3. 移除前後多餘空白 (.strip())
+    return text.replace('<i>', '').replace('</i>', '').strip()
 
 # 沒有模糊化的情況
 def create_grid_data_new(verbatimLongitude, verbatimLatitude):
@@ -1419,12 +1436,24 @@ class OptimizedRecordsProcessor:
                             values.append(f"ST_GeomFromText($${str(value)}$$)")
                     else:
                         # 文字類型
+                        # if isinstance(value, str):
+                        #     escaped_value = value.replace('$$', '$dollar$')
+                        #     values.append(f"$${escaped_value}$$")
+                        # else:
+                        #     values.append(f"$${str(value)}$$")
                         if isinstance(value, str):
+                            # 1. 處理 PostgreSQL 的 $$ 符號衝突
                             escaped_value = value.replace('$$', '$dollar$')
+                            # 2. 處理 SQLAlchemy 的參數跳脫
+                            # 將 : 變成 \: 避免被誤認為 bind parameter (例如 :Fr)
+                            # 將 % 變成 %% 避免被 DBAPI 誤認為格式化符號
+                            escaped_value = escaped_value.replace(':', '\\:').replace('%', '%%')
                             values.append(f"$${escaped_value}$$")
                         else:
-                            values.append(f"$${str(value)}$$")
-                
+                            # 即使是非字串轉成字串，保險起見也做一次處理
+                            val_str = str(value).replace(':', '\\:').replace('%', '%%')
+                            values.append(f"$${val_str}$$")
+                               
                 values_list.append(f"({', '.join(values)})")
             
             # 建立批次更新 SQL
@@ -1612,12 +1641,24 @@ class OptimizedMatchLogProcessor:
                             values.append('NULL')
                     else:
                         # 文字類型
+                        # if isinstance(value, str):
+                        #     escaped_value = value.replace('$$', '$dollar$')
+                        #     values.append(f"$${escaped_value}$$")
+                        # else:
+                        #     values.append(f"$${str(value)}$$")
                         if isinstance(value, str):
+                            # 1. 處理 PostgreSQL 的 $$ 符號衝突
                             escaped_value = value.replace('$$', '$dollar$')
+                            # 2. 處理 SQLAlchemy 的參數跳脫
+                            # 將 : 變成 \: 避免被誤認為 bind parameter (例如 :Fr)
+                            # 將 % 變成 %% 避免被 DBAPI 誤認為格式化符號
+                            escaped_value = escaped_value.replace(':', '\\:').replace('%', '%%')
                             values.append(f"$${escaped_value}$$")
                         else:
-                            values.append(f"$${str(value)}$$")
-                
+                            # 即使是非字串轉成字串，保險起見也做一次處理
+                            val_str = str(value).replace(':', '\\:').replace('%', '%%')
+                            values.append(f"$${val_str}$$")
+
                 values_list.append(f"({', '.join(values)})")
             
             # 建立批次更新 SQL

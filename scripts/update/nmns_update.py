@@ -243,6 +243,9 @@ for now_category in category_list[category_index:]:
             for sci_key in ['sourceScientificName', 'sourceVernacularName', 'sourceOrder', 'sourceFamily', 'sourceClass', 'sourceKingdom']:
                 if sci_key not in df.keys():
                     df[sci_key] = ''
+                else:
+                    # 取代有<i></i>的
+                    df[sci_key] = df[sci_key].apply(clean_html_tags)
             # if now_category == '真菌學門':
             #     df['sourceVernacularName'] = ''
             if 'genus' in df.keys() and 'specificEpithet' in df.keys():
