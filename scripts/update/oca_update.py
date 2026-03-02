@@ -106,13 +106,13 @@ if r.status_code == 200:
     for rr in x[2:-1] :
         rows.append([ '{}'.format(x) for x in list(csv.reader([rr], delimiter=',', quotechar='"'))[0] ])
     df = pd.DataFrame(rows, columns=header)
-    df = df.drop(columns=['Status', 'isGroup', 'Length', 'Handle'])
+    df = df.drop(columns=['Status', 'isGroup', 'Body_Length', 'Handle'])
     df = df.rename(columns={'Event_Date': 'eventDate', 'County_Co': 'locality', 
                             'WGS84X': 'verbatimLongitude', 'WGS84Y': 'verbatimLatitude',
-                            'Species_Name': 'sourceVernacularName', 'appName': 'recordedBy'})
+                            'Name_Code': 'sourceVernacularName', 'appName': 'recordedBy'})
     df['datasetName'] = 'MARN鯨豚擱淺資料'
     final_df = pd.concat([df,final_df])
-
+    
 
 # MARN海龜擱淺資料
 url = f"https://iocean.oca.gov.tw/oca_datahub/WebService/GetData.ashx?id=7bd7b385-94d6-4b1e-a16d-08f9bcab031d"
@@ -126,13 +126,12 @@ if r.status_code == 200:
     for rr in x[2:-1] :
         rows.append([ '{}'.format(x) for x in list(csv.reader([rr], delimiter=',', quotechar='"'))[0] ])
     df = pd.DataFrame(rows, columns=header)
-    df = df.drop(columns=['Cause','Status', 'Length', 'Width', 'Handle',])
+    df = df.drop(columns=['catch','Status', 'Length', 'Width', 'Handle'])
     df = df.rename(columns={'Event_Date': 'eventDate', 'County_Co': 'locality', 
                             'WGS84X': 'verbatimLongitude', 'WGS84Y': 'verbatimLatitude', 
-                            'Species_Name': 'sourceVernacularName', 'appName': 'recordedBy'})
+                            'Name_Code': 'sourceVernacularName', 'appAgency': 'recordedBy'})
     df['datasetName'] = 'MARN海龜擱淺資料'
     final_df = pd.concat([df,final_df])
-
 
 # 結構化檔案
 
