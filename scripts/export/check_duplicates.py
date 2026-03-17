@@ -56,6 +56,11 @@ for idx in selected_indices:
     
     print(f"{rh}: {len(dup_occ)} dup occurrenceID, {len(dup_cat)} dup catalogNumber, {time.time()-s:.1f}s")
     
+    if dup_occ:
+        pd.DataFrame(dup_occ, columns=['occurrenceID']).to_csv(f'removed_dup_occ_{rh}.csv', index=None)
+    if dup_cat:
+        pd.DataFrame(dup_cat, columns=['catalogNumber']).to_csv(f'removed_dup_cat_{rh}.csv', index=None)
+
     # 3. 刪除 occurrenceID 重複
     for occ_id in dup_occ:
         with db.begin() as conn:
