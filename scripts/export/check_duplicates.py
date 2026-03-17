@@ -3,7 +3,6 @@ from app import db
 import pandas as pd
 import sqlalchemy as sa
 import time
-import sys
 
 rights_holder_list = {
     0: 'GBIF',
@@ -29,7 +28,8 @@ rights_holder_list = {
 }
 
 # 輸入要處理的編號，例如 "0,3,5" 或 "0"
-selected_indices = [int(x.strip()) for x in sys.argv[1].split(',')]
+import os
+selected_indices = [int(x.strip()) for x in os.environ['SELECTED'].split(',')]
 
 for idx in selected_indices:
     rh = rights_holder_list[idx]
