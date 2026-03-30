@@ -198,151 +198,151 @@ def match_namecode(matching_namecode, match_stage, sci_names, sci_index):
             sci_names.loc[sci_names.sci_index==sci_index,f'stage_{match_stage}'] = 4
 
 
-
-def matching_flow_new(sci_names):
-    # sci_names['sci_index'] = sci_names.index
-    if 'taxonID' not in sci_names.keys():
-        sci_names['taxonID'] = ''
-    sci_names['match_stage'] = 0
-    sci_names['match_higher_taxon'] = False
-    # 各階段的issue default是沒有對到
-    sci_names['stage_1'] = None # 比對 sourceScientificName
-    sci_names['stage_2'] = None # 比對 TaiCOL namecode
-    sci_names['stage_3'] = None # 比對 sourceVernacularName (中文)
-    sci_names['stage_4'] = None # 比對 sourceScientificName 第一個單詞
-    sci_names['stage_5'] = None # 比對 originalVernacularName (中文 / 英文)
-    sci_names['stage_6'] = None # 比對 sourceFamily
-    sci_names['stage_7'] = None # 比對 sourceOrder
-    sci_names['stage_8'] = None # 比對 sourceClass
-    # 2025-02 若資料庫提供的taxonID已經在TaiCOL被刪除，將taxonID改為空值
-    sci_names['taxonID'] = sci_names['taxonID'].apply(lambda x: '' if x in deleted_taxon_ids else x)
-    # 優先採用TaiCOL taxonID (若原資料庫有提供)
-    ## 第一階段比對 - scientificName
-    no_taxon = sci_names[(sci_names.taxonID=='')]
-    sci_names.loc[sci_names.taxonID=='','match_stage'] = 1
-    if 'sourceScientificName' in sci_names.keys():
-        no_taxon = no_taxon.rename(columns={'sourceScientificName': 'now_matching_name'})
-        no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
-        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
-        matching_df = matching_df.reset_index(drop=True)
-        for l in range(0, len(matching_df), 100):
-            match_name_new(matching_df=matching_df[l:l+100],
-                        is_parent=False,
-                        match_stage=1,
-                        sci_names=sci_names,
-                        specific_rank=None)
-    ## 第二階段比對 沒有taxonID的 試抓TaiCOL namecode
-    # 第二階段不調整
-    sci_names.loc[sci_names.taxonID=='','match_stage'] = 2
-    no_taxon = sci_names[sci_names.taxonID=='']
-    for s in no_taxon.index:
-        s_row = sci_names.loc[s]
-        if s_row.get('scientificNameID'):
-            match_namecode(matching_namecode=s_row.get('scientificNameID'),
-                           match_stage=2,
-                           sci_names=sci_names,
-                           sci_index=s_row.sci_index)
-    ## 第三階段比對 - sourceVernacularName 中文比對
-    sci_names.loc[sci_names.taxonID=='','match_stage'] = 3
-    if 'sourceVernacularName' in sci_names.keys():
-        no_taxon = sci_names[(sci_names.taxonID=='')&(sci_names.sourceVernacularName!='')]
-        no_taxon = no_taxon.rename(columns={'sourceVernacularName': 'now_matching_name'})
-        no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
-        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
-        matching_df = matching_df.assign(now_matching_name=matching_df['now_matching_name'].str.split(';')).explode('now_matching_name')
-        matching_df = matching_df.reset_index(drop=True)
-        for l in range(0, len(matching_df), 100):
-            match_name_new(matching_df=matching_df[l:l+100],
-                        is_parent=False,
-                        match_stage=3,
-                        sci_names=sci_names,
-                        specific_rank=None)
-    ## 第四階段比對 - scientificName第一個英文單詞 (為了至少可以補階層)
-    ## 這邊要限定只能比對屬
-    ## 這個情況要給的是parentTaxonID
-    sci_names.loc[sci_names.taxonID=='','match_stage'] = 4
-    no_taxon = sci_names[sci_names.taxonID=='']
-    if 'sourceScientificName' in sci_names.keys():
-        no_taxon = no_taxon.rename(columns={'sourceScientificName': 'now_matching_name'})
-        no_taxon['now_matching_name'] = no_taxon['now_matching_name'].apply(lambda x: x.split(' ') [0] if len(x.split(' '))> 1 else '')
-        no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
-        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
-        matching_df = matching_df.assign(now_matching_name=matching_df['now_matching_name'].str.split(';')).explode('now_matching_name')
-        matching_df = matching_df.reset_index(drop=True)
-        for l in range(0, len(matching_df), 100):
-            match_name_new(matching_df=matching_df[l:l+100],
-                        is_parent=True,
-                        match_stage=4,
-                        sci_names=sci_names,
-                        specific_rank='genus')
-    # 第五階段比對 - originalVernacularName (中文 / 英文)
-    sci_names.loc[sci_names.taxonID=='','match_stage'] = 5
-    no_taxon = sci_names[(sci_names.taxonID=='')]
-    if 'originalVernacularName' in sci_names.keys():
-        no_taxon = no_taxon.rename(columns={'originalVernacularName': 'now_matching_name'})
-        no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
-        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
-        matching_df = matching_df.assign(now_matching_name=matching_df['now_matching_name'].str.split(';')).explode('now_matching_name')
-        matching_df = matching_df.reset_index(drop=True)
-        for l in range(0, len(matching_df), 100):
-            match_name_new(matching_df=matching_df[l:l+100],
-                        is_parent=False,
-                        match_stage=5,
-                        sci_names=sci_names,
-                        specific_rank=None)
-    # 第六階段比對 - sourceFamily
-    sci_names.loc[sci_names.taxonID=='','match_stage'] = 6
-    no_taxon = sci_names[(sci_names.taxonID=='')]
-    if 'sourceFamily' in sci_names.keys():
-        no_taxon = no_taxon.rename(columns={'sourceFamily': 'now_matching_name'})
-        no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
-        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
-        matching_df = matching_df.assign(now_matching_name=matching_df['now_matching_name'].str.split(';')).explode('now_matching_name')
-        matching_df = matching_df.reset_index(drop=True)
-        for l in range(0, len(matching_df), 100):
-            match_name_new(matching_df=matching_df[l:l+100],
-                        is_parent=True,
-                        match_stage=6,
-                        sci_names=sci_names,
-                        specific_rank='family')
-    # 第七階段比對 - sourceOrder
-    sci_names.loc[sci_names.taxonID=='','match_stage'] = 7
-    no_taxon = sci_names[(sci_names.taxonID=='')]
-    if 'sourceOrder' in sci_names.keys():
-        no_taxon = no_taxon.rename(columns={'sourceOrder': 'now_matching_name'})
-        no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
-        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
-        matching_df = matching_df.assign(now_matching_name=matching_df['now_matching_name'].str.split(';')).explode('now_matching_name')
-        matching_df = matching_df.reset_index(drop=True)
-        for l in range(0, len(matching_df), 100):
-            match_name_new(matching_df=matching_df[l:l+100],
-                        is_parent=True,
-                        match_stage=7,
-                        sci_names=sci_names,
-                        specific_rank='order')
-    # 第八階段比對 - sourceClass
-    sci_names.loc[sci_names.taxonID=='','match_stage'] = 8
-    no_taxon = sci_names[(sci_names.taxonID=='')]
-    if 'sourceClass' in sci_names.keys():
-        no_taxon = no_taxon.rename(columns={'sourceClass': 'now_matching_name'})
-        no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
-        matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
-        matching_df = matching_df.assign(now_matching_name=matching_df['now_matching_name'].str.split(';')).explode('now_matching_name')
-        matching_df = matching_df.reset_index(drop=True)
-        for l in range(0, len(matching_df), 100):
-            match_name_new(matching_df=matching_df[l:l+100],
-                        is_parent=True,
-                        match_stage=8,
-                        sci_names=sci_names,
-                        specific_rank='class')
-    # 確定match_stage
-    stage_list = [1,2,3,4,5,6,7,8]
-    for i in stage_list[:7]:
-        for stg in stage_list[stage_list.index(i)+1:]:
-            sci_names.loc[sci_names.match_stage==i,f'stage_{stg}'] = None
-    # 代表比對到最後還是沒有對到
-    sci_names.loc[(sci_names.match_stage==8)&(sci_names.taxonID==''),'match_stage'] = None
-    return sci_names
+# deprecated
+# def matching_flow_new(sci_names):
+#     # sci_names['sci_index'] = sci_names.index
+#     if 'taxonID' not in sci_names.keys():
+#         sci_names['taxonID'] = ''
+#     sci_names['match_stage'] = 0
+#     sci_names['match_higher_taxon'] = False
+#     # 各階段的issue default是沒有對到
+#     sci_names['stage_1'] = None # 比對 sourceScientificName
+#     sci_names['stage_2'] = None # 比對 TaiCOL namecode
+#     sci_names['stage_3'] = None # 比對 sourceVernacularName (中文)
+#     sci_names['stage_4'] = None # 比對 sourceScientificName 第一個單詞
+#     sci_names['stage_5'] = None # 比對 originalVernacularName (中文 / 英文)
+#     sci_names['stage_6'] = None # 比對 sourceFamily
+#     sci_names['stage_7'] = None # 比對 sourceOrder
+#     sci_names['stage_8'] = None # 比對 sourceClass
+#     # 2025-02 若資料庫提供的taxonID已經在TaiCOL被刪除，將taxonID改為空值
+#     sci_names['taxonID'] = sci_names['taxonID'].apply(lambda x: '' if x in deleted_taxon_ids else x)
+#     # 優先採用TaiCOL taxonID (若原資料庫有提供)
+#     ## 第一階段比對 - scientificName
+#     no_taxon = sci_names[(sci_names.taxonID=='')]
+#     sci_names.loc[sci_names.taxonID=='','match_stage'] = 1
+#     if 'sourceScientificName' in sci_names.keys():
+#         no_taxon = no_taxon.rename(columns={'sourceScientificName': 'now_matching_name'})
+#         no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
+#         matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
+#         matching_df = matching_df.reset_index(drop=True)
+#         for l in range(0, len(matching_df), 100):
+#             match_name_new(matching_df=matching_df[l:l+100],
+#                         is_parent=False,
+#                         match_stage=1,
+#                         sci_names=sci_names,
+#                         specific_rank=None)
+#     ## 第二階段比對 沒有taxonID的 試抓TaiCOL namecode
+#     # 第二階段不調整
+#     sci_names.loc[sci_names.taxonID=='','match_stage'] = 2
+#     no_taxon = sci_names[sci_names.taxonID=='']
+#     for s in no_taxon.index:
+#         s_row = sci_names.loc[s]
+#         if s_row.get('scientificNameID'):
+#             match_namecode(matching_namecode=s_row.get('scientificNameID'),
+#                            match_stage=2,
+#                            sci_names=sci_names,
+#                            sci_index=s_row.sci_index)
+#     ## 第三階段比對 - sourceVernacularName 中文比對
+#     sci_names.loc[sci_names.taxonID=='','match_stage'] = 3
+#     if 'sourceVernacularName' in sci_names.keys():
+#         no_taxon = sci_names[(sci_names.taxonID=='')&(sci_names.sourceVernacularName!='')]
+#         no_taxon = no_taxon.rename(columns={'sourceVernacularName': 'now_matching_name'})
+#         no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
+#         matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
+#         matching_df = matching_df.assign(now_matching_name=matching_df['now_matching_name'].str.split(';')).explode('now_matching_name')
+#         matching_df = matching_df.reset_index(drop=True)
+#         for l in range(0, len(matching_df), 100):
+#             match_name_new(matching_df=matching_df[l:l+100],
+#                         is_parent=False,
+#                         match_stage=3,
+#                         sci_names=sci_names,
+#                         specific_rank=None)
+#     ## 第四階段比對 - scientificName第一個英文單詞 (為了至少可以補階層)
+#     ## 這邊要限定只能比對屬
+#     ## 這個情況要給的是parentTaxonID
+#     sci_names.loc[sci_names.taxonID=='','match_stage'] = 4
+#     no_taxon = sci_names[sci_names.taxonID=='']
+#     if 'sourceScientificName' in sci_names.keys():
+#         no_taxon = no_taxon.rename(columns={'sourceScientificName': 'now_matching_name'})
+#         no_taxon['now_matching_name'] = no_taxon['now_matching_name'].apply(lambda x: x.split(' ') [0] if len(x.split(' '))> 1 else '')
+#         no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
+#         matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
+#         matching_df = matching_df.assign(now_matching_name=matching_df['now_matching_name'].str.split(';')).explode('now_matching_name')
+#         matching_df = matching_df.reset_index(drop=True)
+#         for l in range(0, len(matching_df), 100):
+#             match_name_new(matching_df=matching_df[l:l+100],
+#                         is_parent=True,
+#                         match_stage=4,
+#                         sci_names=sci_names,
+#                         specific_rank='genus')
+#     # 第五階段比對 - originalVernacularName (中文 / 英文)
+#     sci_names.loc[sci_names.taxonID=='','match_stage'] = 5
+#     no_taxon = sci_names[(sci_names.taxonID=='')]
+#     if 'originalVernacularName' in sci_names.keys():
+#         no_taxon = no_taxon.rename(columns={'originalVernacularName': 'now_matching_name'})
+#         no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
+#         matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
+#         matching_df = matching_df.assign(now_matching_name=matching_df['now_matching_name'].str.split(';')).explode('now_matching_name')
+#         matching_df = matching_df.reset_index(drop=True)
+#         for l in range(0, len(matching_df), 100):
+#             match_name_new(matching_df=matching_df[l:l+100],
+#                         is_parent=False,
+#                         match_stage=5,
+#                         sci_names=sci_names,
+#                         specific_rank=None)
+#     # 第六階段比對 - sourceFamily
+#     sci_names.loc[sci_names.taxonID=='','match_stage'] = 6
+#     no_taxon = sci_names[(sci_names.taxonID=='')]
+#     if 'sourceFamily' in sci_names.keys():
+#         no_taxon = no_taxon.rename(columns={'sourceFamily': 'now_matching_name'})
+#         no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
+#         matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
+#         matching_df = matching_df.assign(now_matching_name=matching_df['now_matching_name'].str.split(';')).explode('now_matching_name')
+#         matching_df = matching_df.reset_index(drop=True)
+#         for l in range(0, len(matching_df), 100):
+#             match_name_new(matching_df=matching_df[l:l+100],
+#                         is_parent=True,
+#                         match_stage=6,
+#                         sci_names=sci_names,
+#                         specific_rank='family')
+#     # 第七階段比對 - sourceOrder
+#     sci_names.loc[sci_names.taxonID=='','match_stage'] = 7
+#     no_taxon = sci_names[(sci_names.taxonID=='')]
+#     if 'sourceOrder' in sci_names.keys():
+#         no_taxon = no_taxon.rename(columns={'sourceOrder': 'now_matching_name'})
+#         no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
+#         matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
+#         matching_df = matching_df.assign(now_matching_name=matching_df['now_matching_name'].str.split(';')).explode('now_matching_name')
+#         matching_df = matching_df.reset_index(drop=True)
+#         for l in range(0, len(matching_df), 100):
+#             match_name_new(matching_df=matching_df[l:l+100],
+#                         is_parent=True,
+#                         match_stage=7,
+#                         sci_names=sci_names,
+#                         specific_rank='order')
+#     # 第八階段比對 - sourceClass
+#     sci_names.loc[sci_names.taxonID=='','match_stage'] = 8
+#     no_taxon = sci_names[(sci_names.taxonID=='')]
+#     if 'sourceClass' in sci_names.keys():
+#         no_taxon = no_taxon.rename(columns={'sourceClass': 'now_matching_name'})
+#         no_taxon['now_matching_name'] = no_taxon['now_matching_name'].replace({np.nan:'',None:''})
+#         matching_df = no_taxon[no_taxon.now_matching_name!=''][[k for k in no_taxon.keys() if k in ['now_matching_name','sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sci_index']]]
+#         matching_df = matching_df.assign(now_matching_name=matching_df['now_matching_name'].str.split(';')).explode('now_matching_name')
+#         matching_df = matching_df.reset_index(drop=True)
+#         for l in range(0, len(matching_df), 100):
+#             match_name_new(matching_df=matching_df[l:l+100],
+#                         is_parent=True,
+#                         match_stage=8,
+#                         sci_names=sci_names,
+#                         specific_rank='class')
+#     # 確定match_stage
+#     stage_list = [1,2,3,4,5,6,7,8]
+#     for i in stage_list[:7]:
+#         for stg in stage_list[stage_list.index(i)+1:]:
+#             sci_names.loc[sci_names.match_stage==i,f'stage_{stg}'] = None
+#     # 代表比對到最後還是沒有對到
+#     sci_names.loc[(sci_names.match_stage==8)&(sci_names.taxonID==''),'match_stage'] = None
+#     return sci_names
 
 import numpy as np
 import pandas as pd
@@ -637,7 +637,10 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
         sci_names['taxonID'] = ''
     if 'sci_index' not in sci_names.columns:
         sci_names['sci_index'] = sci_names.index
-    
+
+    # 2026-03 若資料庫提供的taxonID已經在TaiCOL被刪除，將taxonID改為空值
+    sci_names['taxonID'] = sci_names['taxonID'].apply(lambda x: '' if x in deleted_taxon_ids else x)
+
     sci_names['match_stage'] = 0
     sci_names['match_higher_taxon'] = False
     
