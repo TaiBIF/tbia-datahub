@@ -4,15 +4,18 @@ import pandas as pd
 from app import db
 import pandas as pd
 import sqlalchemy as sa
-from scripts.utils import get_taxon_df, db_settings
+from scripts.utils import get_taxon_df
 import time
+
+taxon_cache = {}
 
 total_count = 0
 
-limit = 10000
+limit = 50000
 offset = 0
 min_id = 0
 has_more_data = True
+
 while has_more_data:
     s = time.time()
     results = []
@@ -30,7 +33,15 @@ while has_more_data:
         df = df.drop(columns=['id'])
         df = df.rename(columns={'tbiaID': 'id'})
         if len(df[df.taxonID.notnull()]):
-            taxon = get_taxon_df(taxon_ids=df[df.taxonID.notnull()].taxonID.unique())
+            # taxon = get_taxon_df(taxon_ids=df[df.taxonID.notnull()].taxonID.unique())
+            unique_ids = df[df.taxonID.notnull()].taxonID.unique()
+            missing_ids = [tid for tid in unique_ids if tid not in taxon_cache]
+            if missing_ids:
+                new_taxon = get_taxon_df(taxon_ids=missing_ids)
+                for _, row in new_taxon.iterrows():
+                    taxon_cache[row['taxonID']] = row.to_dict()
+            cached = [taxon_cache[tid] for tid in unique_ids if tid in taxon_cache]
+            taxon = pd.DataFrame(cached) if cached else pd.DataFrame()
             # taxonID
             if len(taxon):
                 final_df = df.merge(taxon,on='taxonID',how='left')

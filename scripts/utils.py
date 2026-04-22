@@ -169,6 +169,14 @@ basis_dict = {
 }
 
 
+def safe_dollar_quote(value):
+    """安全的 PostgreSQL dollar quoting，處理 $v$、\0"""
+    s = str(value)
+    s = s.replace('\0', '')           # 移除 null byte
+    s = s.replace('$v$', '$v$$v$')    # 跳脫 dollar quote tag
+    return f"$v${s}$v$"
+
+
 def format_float(num):
     try:
         num = float(num)
@@ -378,8 +386,8 @@ def get_taxon_df(taxon_ids):
     subset_taxon_list = []
     ids = [f"id:{d}" for d in taxon_ids]
 
-    for tt in range(0, len(taxon_ids), 20):
-        taxa_query = {'query': " OR ".join(ids[tt:tt+20]), 'limit': 20}
+    for tt in range(0, len(taxon_ids), 500):
+        taxa_query = {'query': " OR ".join(ids[tt:tt+500]), 'limit': 500}
         response = requests.post(f'http://solr:8983/solr/taxa/select', data=json.dumps(taxa_query), headers={'content-type': "application/json" })
         if response.status_code == 200:
             resp = response.json()
@@ -430,17 +438,17 @@ def convert_date(date):
                 formatted_date = None
             # 如果超過當下時間就拿掉
             if formatted_date:
-                if formatted_date > datetime.now():
+                if formatted_date > datetime.now(tz=formatted_date.tzinfo):
+                # if formatted_date > datetime.now():
                     formatted_date = None
     return formatted_date
 
 
-
-
-def convert_year_month_day_new(row):
+def convert_year_month_day(row):
     eventDate = row.get('eventDate')
     standardDate, year, month, day = None, None, None, None
     if standardDate := convert_date(eventDate):
+        standardDate = standardDate.replace(tzinfo=None)
         year = standardDate.year
         month = standardDate.month
         day = standardDate.day
@@ -450,6 +458,7 @@ def convert_year_month_day_new(row):
             month = int(row.get('month'))
             day = int(row.get('day'))
             if try_eventDate := convert_date('{}-{}-{}'.format(row.get('year'),row.get('month'),row.get('day'))):
+                try_eventDate = try_eventDate.replace(tzinfo=None)
                 year = try_eventDate.year
                 month = try_eventDate.month
                 day = try_eventDate.day
@@ -458,7 +467,6 @@ def convert_year_month_day_new(row):
         except:
             pass
     return [eventDate, standardDate, year, month, day]
-
 
 
 def convert_coor_to_grid(x, y, grid):
@@ -1277,7 +1285,8 @@ class OptimizedRecordsProcessor:
     def __init__(self, db_engine, batch_size=200):
         self.db = db_engine
         self.batch_size = batch_size
-        
+        self.failed_records = []
+
     def smart_upsert_records(self, df, existed_records=None, table_name='records'):
         """
         智能 UPSERT：使用已取得的existed_records，避免重複查詢
@@ -1407,19 +1416,13 @@ class OptimizedRecordsProcessor:
                     if pd.isna(value) or value is None:
                         values.append('NULL')
                     elif col_type == 'timestamp':
-                        # 時間戳記類型
-                        if isinstance(value, str):
-                            values.append(f"$${value}$$::timestamp")
-                        else:
-                            values.append(f"$${str(value)}$$::timestamp")
+                        values.append(f"{safe_dollar_quote(value)}::timestamp")
                     elif col_type == 'numeric':
-                        # 數值類型
                         if isinstance(value, (int, float)) and not pd.isna(value):
                             values.append(str(value))
                         else:
                             values.append('NULL')
                     elif col_type == 'boolean':
-                        # 布林類型
                         if isinstance(value, bool):
                             values.append('TRUE' if value else 'FALSE')
                         elif str(value).lower() in ['true', '1', 'yes', 't']:
@@ -1429,31 +1432,13 @@ class OptimizedRecordsProcessor:
                         else:
                             values.append('NULL')
                     elif col_type == 'geometry':
-                        # PostGIS 幾何類型
                         if isinstance(value, str) and value.startswith('POINT'):
-                            values.append(f"$${value}$$::geometry")
+                            values.append(f"{safe_dollar_quote(value)}::geometry")
                         else:
-                            values.append(f"ST_GeomFromText($${str(value)}$$)")
+                            values.append(f"ST_GeomFromText({safe_dollar_quote(value)})")
                     else:
-                        # 文字類型
-                        # if isinstance(value, str):
-                        #     escaped_value = value.replace('$$', '$dollar$')
-                        #     values.append(f"$${escaped_value}$$")
-                        # else:
-                        #     values.append(f"$${str(value)}$$")
-                        if isinstance(value, str):
-                            # 1. 處理 PostgreSQL 的 $$ 符號衝突
-                            escaped_value = value.replace('$$', '$dollar$')
-                            # 2. 處理 SQLAlchemy 的參數跳脫
-                            # 將 : 變成 \: 避免被誤認為 bind parameter (例如 :Fr)
-                            # 將 % 變成 %% 避免被 DBAPI 誤認為格式化符號
-                            escaped_value = escaped_value.replace(':', '\\:').replace('%', '%%')
-                            values.append(f"$${escaped_value}$$")
-                        else:
-                            # 即使是非字串轉成字串，保險起見也做一次處理
-                            val_str = str(value).replace(':', '\\:').replace('%', '%%')
-                            values.append(f"$${val_str}$$")
-                               
+                        values.append(safe_dollar_quote(value))
+
                 values_list.append(f"({', '.join(values)})")
             
             # 建立批次更新 SQL
@@ -1489,7 +1474,7 @@ class OptimizedRecordsProcessor:
             
             try:
                 with self.db.connect() as conn:
-                    result = conn.execute(text(batch_sql))
+                    result = conn.exec_driver_sql(batch_sql)
                     conn.commit()
                     print(f"     ✅ 批次 {i//large_batch_size + 1}: 更新了 {result.rowcount} 筆")
                     
@@ -1524,6 +1509,19 @@ class OptimizedRecordsProcessor:
                     
             except Exception as e:
                 print(f"     ❌ 單筆更新失敗 {row['tbiaID']}: {e}")
+                failed = row.to_dict()
+                failed['_error'] = str(e)
+                failed['_table'] = table_name
+                self.failed_records.append(failed)
+
+    def export_failed_records(self, filepath='failed_records.csv'):
+        """匯出失敗記錄到 CSV"""
+        if self.failed_records:
+            pd.DataFrame(self.failed_records).to_csv(filepath, index=False)
+            print(f"📄 已匯出 {len(self.failed_records)} 筆失敗記錄到 {filepath}")
+        else:
+            print("✅ 沒有失敗記錄")
+
 
 class OptimizedMatchLogProcessor:
     """最佳化的 MatchLog 處理器"""
@@ -1531,6 +1529,7 @@ class OptimizedMatchLogProcessor:
     def __init__(self, db_engine, batch_size=300):
         self.db = db_engine
         self.batch_size = batch_size
+        self.failed_match_logs = []
     
     def smart_upsert_match_log(self, match_log_df, existed_records=None):
         """
@@ -1619,10 +1618,7 @@ class OptimizedMatchLogProcessor:
                         values.append('NULL')
                     elif col in timestamp_cols:
                         # 時間戳記類型
-                        if isinstance(value, str):
-                            values.append(f"$${value}$$::timestamp")
-                        else:
-                            values.append(f"$${str(value)}$$::timestamp")
+                        values.append(f"{safe_dollar_quote(value)}::timestamp")
                     elif col in numeric_cols:
                         # 數值類型
                         if isinstance(value, (int, float)) and not pd.isna(value):
@@ -1640,24 +1636,7 @@ class OptimizedMatchLogProcessor:
                         else:
                             values.append('NULL')
                     else:
-                        # 文字類型
-                        # if isinstance(value, str):
-                        #     escaped_value = value.replace('$$', '$dollar$')
-                        #     values.append(f"$${escaped_value}$$")
-                        # else:
-                        #     values.append(f"$${str(value)}$$")
-                        if isinstance(value, str):
-                            # 1. 處理 PostgreSQL 的 $$ 符號衝突
-                            escaped_value = value.replace('$$', '$dollar$')
-                            # 2. 處理 SQLAlchemy 的參數跳脫
-                            # 將 : 變成 \: 避免被誤認為 bind parameter (例如 :Fr)
-                            # 將 % 變成 %% 避免被 DBAPI 誤認為格式化符號
-                            escaped_value = escaped_value.replace(':', '\\:').replace('%', '%%')
-                            values.append(f"$${escaped_value}$$")
-                        else:
-                            # 即使是非字串轉成字串，保險起見也做一次處理
-                            val_str = str(value).replace(':', '\\:').replace('%', '%%')
-                            values.append(f"$${val_str}$$")
+                        values.append(safe_dollar_quote(value))
 
                 values_list.append(f"({', '.join(values)})")
             
@@ -1690,7 +1669,7 @@ class OptimizedMatchLogProcessor:
             
             try:
                 with self.db.connect() as conn:
-                    result = conn.execute(text(batch_sql))
+                    result = conn.exec_driver_sql(batch_sql)
                     conn.commit()
                     print(f"     ✅ match_log 批次 {i//large_batch_size + 1}: 更新了 {result.rowcount} 筆")
                     
@@ -1721,3 +1700,14 @@ class OptimizedMatchLogProcessor:
                     
             except Exception as e:
                 print(f"     ❌ match_log 單筆更新失敗 {row['tbiaID']}: {e}")
+                failed = row.to_dict()
+                failed['_error'] = str(e)
+                failed['_table'] = 'match_log'
+                self.failed_match_logs.append(failed)
+
+    def export_failed_records(self, filepath='failed_match_logs.csv'):
+        if self.failed_match_logs:
+            pd.DataFrame(self.failed_match_logs).to_csv(filepath, index=False)
+            print(f"📄 已匯出 {len(self.failed_match_logs)} 筆失敗記錄到 {filepath}")
+        else:
+            print("✅ 沒有失敗記錄")
