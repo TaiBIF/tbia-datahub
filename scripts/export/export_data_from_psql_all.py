@@ -4,15 +4,12 @@ import pandas as pd
 from app import db
 import pandas as pd
 import sqlalchemy as sa
-# from scripts.utils import get_taxon_df
 import time
 import requests
 import json
 import numpy as np
-# taxon_cache = {}
+import glob
 
-
-# 取代 taxon_cache 和 get_taxon_df 的 on-demand 查詢
 all_taxon_query = {'query': '*:*', 'limit': 250000}
 response = requests.post('http://solr:8983/solr/taxa/select',
                          data=json.dumps(all_taxon_query),
@@ -68,10 +65,14 @@ while has_more_data:
             print('error', min_id)
 
         final_df = final_df.rename(columns={'originalVernacularName': 'originalScientificName'})
-        final_df.to_csv(f'/solr/csvs/export/export_{offset}.csv', index=None)
+        final_df.to_csv(f'/tmp/export/export_{offset}.csv', index=None)
         offset += limit
 
     if len(df) < limit:
         has_more_data = False
 
 print('total_count', total_count)
+
+
+import subprocess
+subprocess.run(['mv'] + glob.glob('/tmp/export/*.csv') + ['/solr/csvs/export/'], check=True)
