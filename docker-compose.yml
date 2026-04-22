@@ -7,7 +7,7 @@ services:
     build: .
     container_name: tbia-datahub-app-container
     image: tbia-datahub-app-image
-    restart: always
+    # restart: always
     ports:
       - 8006:8006
     volumes:
@@ -16,6 +16,7 @@ services:
       - ../tbia-volumes/bucket:/portal/bucket
       - ../tbia-volumes/solr:/solr
       - ../tbia-volumes/media:/portal/media
+      - /tmp/export:/tmp/export
     depends_on:
       - postgres-datahub
     env_file:
@@ -28,7 +29,7 @@ services:
     build: ./postgres
     container_name: tbia-datahub-db-container
     image: tbia-datahub-db-image
-    restart: always
+    # restart: always
     volumes:
       - ../tbia-volumes/datahub_pgdata:/var/lib/postgresql/data/pgdata
       - ../tbia-volumes/datahub_bucket:/bucket
@@ -55,7 +56,7 @@ services:
     container_name: tbia-solr
     ports:
       - "127.0.0.1:8983:8983"
-    restart: always
+    # restart: always
     volumes:
       - ../tbia-volumes/solr:/var/solr
       - ../tbia-volumes/datahub_bucket:/bucket
