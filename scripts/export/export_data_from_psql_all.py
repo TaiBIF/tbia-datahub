@@ -26,7 +26,7 @@ while has_more_data:
 
     if len(df):
         total_count += len(df)
-        min_id = df.id.max()
+        min_id = int(df.id.max())
         df = df.drop(columns=['id'])
         df = df.rename(columns={'tbiaID': 'id'})
 
