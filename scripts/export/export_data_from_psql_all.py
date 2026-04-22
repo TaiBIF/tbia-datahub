@@ -4,10 +4,26 @@ import pandas as pd
 from app import db
 import pandas as pd
 import sqlalchemy as sa
-from scripts.utils import get_taxon_df
+# from scripts.utils import get_taxon_df
 import time
+import requests
+import json
+import numpy as np
+# taxon_cache = {}
 
-taxon_cache = {}
+
+# 取代 taxon_cache 和 get_taxon_df 的 on-demand 查詢
+all_taxon_query = {'query': '*:*', 'limit': 250000}
+response = requests.post('http://solr:8983/solr/taxa/select',
+                         data=json.dumps(all_taxon_query),
+                         headers={'content-type': 'application/json'})
+taxon_all = pd.DataFrame(response.json()['response']['docs'])
+taxon_all = taxon_all.rename(columns={'id': 'taxonID'})
+taxon_all = taxon_all[taxon_all.columns.drop(list(taxon_all.filter(regex='_taxonID')))]
+taxon_all = taxon_all.drop(columns=['taxon_name_id', '_version_'], errors='ignore')
+taxon_all = taxon_all.replace({np.nan: None})
+
+
 total_count = 0
 limit = 50000
 offset = 0
@@ -30,23 +46,24 @@ while has_more_data:
         df = df.drop(columns=['id'])
         df = df.rename(columns={'tbiaID': 'id'})
 
-        if len(df[df.taxonID.notnull()]):
-            unique_ids = df[df.taxonID.notnull()].taxonID.unique()
-            missing_ids = [tid for tid in unique_ids if tid not in taxon_cache]
-            if missing_ids:
-                new_taxon = get_taxon_df(taxon_ids=missing_ids)
-                for _, row in new_taxon.iterrows():
-                    taxon_cache[row['taxonID']] = row.to_dict()
-            cached = [taxon_cache[tid] for tid in unique_ids if tid in taxon_cache]
-            taxon = pd.DataFrame(cached) if cached else pd.DataFrame()
+        # if len(df[df.taxonID.notnull()]):
+        #     unique_ids = df[df.taxonID.notnull()].taxonID.unique()
+        #     missing_ids = [tid for tid in unique_ids if tid not in taxon_cache]
+        #     if missing_ids:
+        #         new_taxon = get_taxon_df(taxon_ids=missing_ids)
+        #         for _, row in new_taxon.iterrows():
+        #             taxon_cache[row['taxonID']] = row.to_dict()
+        #     cached = [taxon_cache[tid] for tid in unique_ids if tid in taxon_cache]
+        #     taxon = pd.DataFrame(cached) if cached else pd.DataFrame()
 
-            if len(taxon):
-                final_df = df.merge(taxon, on='taxonID', how='left')
-            else:
-                final_df = df
-        else:
-            final_df = df
+        #     if len(taxon):
+        #         final_df = df.merge(taxon, on='taxonID', how='left')
+        #     else:
+        #         final_df = df
+        final_df = df.merge(taxon_all, on='taxonID', how='left')
 
+        # else:
+        #     final_df = df
         if len(df) != len(final_df):
             print('error', min_id)
 
