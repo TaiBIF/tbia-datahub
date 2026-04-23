@@ -511,6 +511,7 @@
   <field name="sourceFamily" type="string"/>
   <field name="sourceOrder" type="string"/>
   <field name="sourceClass" type="string"/>
+  <field name="sourceKingdom" type="string"/>
   <field name="year" type="string"/>
   <field name="month" type="string"/>
   <field name="day" type="string"/>
