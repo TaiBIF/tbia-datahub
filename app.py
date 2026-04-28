@@ -2,6 +2,8 @@ import time
 import random
 
 from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 # from sqlalchemy_utils import database_exists, create_database
 
 from dotenv import load_dotenv
@@ -20,8 +22,11 @@ db_settings = {
 
 # connect to the database
 db_string = 'postgresql://{}:{}@{}:{}/{}'.format(db_settings.get('user'), db_settings.get('password'), db_settings.get('host'), db_settings.get('port'), db_settings.get('database'))
-db = create_engine(db_string)
+# db = create_engine(db_string)
 
+engine = create_engine(db_string)
+db = engine                                       # 向後相容，舊程式繼續用
+SessionLocal = sessionmaker(bind=engine, autoflush=False)
 
 
 # def validate_database():
