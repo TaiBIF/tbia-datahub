@@ -452,6 +452,7 @@
   <field name="_text_" type="text_general" multiValued="true" indexed="true" stored="false"/>
   <field name="_version_" type="plong" indexed="false" stored="false"/>
   <field name="associatedMedia" type="string"/>
+  <field name="associatedMediaType" type="string"/>
   <field name="basisOfRecord" type="string"/>
   <!-- <field name="collectionID" type="string"/> -->
   <field name="catalogNumber" type="string"/>

@@ -54,6 +54,7 @@ class Records(Base):
     match_higher_taxon: Mapped[bool] = mapped_column(server_default='f')
     update_version: Mapped[Optional[int]] = mapped_column(server_default='0', index=True)
     associatedMedia: Mapped[Optional[str]] = mapped_column(String(10000))
+    associatedMediaType: Mapped[Optional[str]] = mapped_column(String(10000))
     basisOfRecord: Mapped[Optional[str]] = mapped_column(String(10000))
     catalogNumber: Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     coordinatePrecision: Mapped[Optional[str]] = mapped_column(String(10000))
