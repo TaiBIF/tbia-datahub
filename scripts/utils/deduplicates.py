@@ -5,7 +5,7 @@ import requests
 import json
 from numpy import nan
 import concurrent.futures
-from scripts.utils.utils import to_none_dict
+from scripts.utils.common import to_none_dict
 
 
 class DedupTracker:

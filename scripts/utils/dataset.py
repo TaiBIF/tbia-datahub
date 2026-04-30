@@ -3,9 +3,9 @@ import requests
 import pandas as pd
 import numpy as np
 import bson
-from app import SessionLocal      
+from app import SessionLocal
 from models import Dataset  
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 
@@ -55,6 +55,62 @@ def fetch_tbn_datasets(modified_since: str = '1900-01-01') -> pd.DataFrame:
         url = payload.get('links', {}).get('next')
 
     return url_list, pd.DataFrame(records)
+
+
+def fetch_taibif_datasets(
+    publisher_id=None,
+    source=None,                    # 'GBIF' or 'not_GBIF' or None
+    exclude_publishers=None,        # list of publisher_ids
+    exclude_datasets=None,          # list of taibifDatasetID
+    exclude_gbif_datasets=None,     # list of gbifDatasetID
+    only_tw_publishers=False,       # 是否限定台灣發布者
+):
+    # 取得資料集
+    url = "https://portal.taibif.tw/api/v3/dataset"
+    if publisher_id:
+        url += f"?publisherID={publisher_id}"
+    response = requests.get(url)
+    if response.status_code != 200:
+        return pd.DataFrame(), []
+
+    data = response.json()['data']
+    dataset = pd.DataFrame(data)
+
+    # core 過濾（單一 publisher 情境原本是在產 dataset_list 時才篩，這裡統一前置）
+    dataset = dataset[dataset.core.isin(['OCCURRENCE', 'SAMPLINGEVENT'])]
+
+    # source 過濾
+    if source == 'GBIF':
+        dataset = dataset[dataset.source == 'GBIF']
+    elif source == 'not_GBIF':
+        dataset = dataset[dataset.source != 'GBIF']
+
+    # 排除夥伴單位
+    if exclude_publishers:
+        dataset = dataset[~dataset.publisherID.isin(exclude_publishers)]
+
+    # 限定台灣發布者
+    if only_tw_publishers:
+        pub_resp = requests.get("https://portal.taibif.tw/api/v3/publisher?countryCode=TW")
+        if pub_resp.status_code == 200:
+            tw_ids = [p['publisherID'] for p in pub_resp.json()['data']]
+            if exclude_publishers:
+                tw_ids = [pid for pid in tw_ids if pid not in exclude_publishers]
+            dataset = dataset[dataset.publisherID.isin(tw_ids)]
+
+    # 排除重複資料集
+    if exclude_datasets:
+        dataset = dataset[~dataset.taibifDatasetID.isin(exclude_datasets)]
+    if exclude_gbif_datasets:
+        dataset = dataset[~dataset.gbifDatasetID.isin(exclude_gbif_datasets)]
+
+    dataset = dataset.rename(columns={
+        'publisherName': 'datasetPublisher',
+        'license': 'datasetLicense',
+    })
+
+    dataset_list = dataset[['taibifDatasetID', 'numberOccurrence']].values.tolist()
+    return dataset, dataset_list
 
 
 def build_ds_name_basic(df, extra_cols=None):
@@ -197,8 +253,13 @@ def _upsert_dataset_row(session, r, rights_holder, update_version, group, now):
     session.execute(stmt)
 
 
-def process_dataset(df, group, rights_holder, update_version,
-                     extra_cols, dataset, df_cols, dataset_cols, now, right_on, left_on='sourceDatasetID'):
+def process_dataset(df, group, rights_holder, update_version, now, *,
+                    extra_cols=None,
+                    dataset=None,
+                    df_cols=None,
+                    dataset_cols=None,
+                    left_on='sourceDatasetID',
+                    right_on=None):
     """
     建立 ds_name → 註冊到 portal (取得 tbiaDatasetID) → merge 回 df。
     所有參數需明確傳入 (基本模式不用的欄位傳 None)。
@@ -230,3 +291,15 @@ def process_dataset(df, group, rights_holder, update_version,
         now=now
     )
     return df.merge(return_dataset_id)
+
+
+def update_dataset_deprecated(rights_holder, update_version):
+    # update_version不等於這次的 改成 deprecated = 't'
+    with SessionLocal() as session:
+        session.execute(
+            update(Dataset)
+            .where(Dataset.rights_holder == rights_holder)
+            .where(Dataset.update_version != update_version)
+            .values(deprecated=True)
+        )
+        session.commit()

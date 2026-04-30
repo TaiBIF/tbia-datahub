@@ -1,55 +1,40 @@
-import numpy as np
-from numpy import nan
 import requests
 import pandas as pd
-import bson
 import time
-import os
-from dateutil import parser
-from datetime import datetime, timedelta
-import glob
 import csv
-import json
+from app import engine
+from scripts.utils.common import *
+from scripts.utils.deduplicates import DedupTracker, resolve_existed_records
+from scripts.utils.records import OptimizedRecordsProcessor, prepare_df_for_sql, delete_records
+from scripts.utils.match import OptimizedMatchLogProcessor, process_match_log, process_taxon_match, zip_match_log
+from scripts.utils.geography import process_geo_batch, geo_keys
+from scripts.utils.export import export_records_with_taxon
+from scripts.utils.update_version import init_update_session, update_update_version
+from scripts.utils.dataset import process_dataset, update_dataset_deprecated
 
-from scripts.taxon.match_utils import matching_flow_new_optimized, match_cols
-from scripts.utils import *
-
-records_processor = OptimizedRecordsProcessor(db, batch_size=200)
-matchlog_processor = OptimizedMatchLogProcessor(db, batch_size=300)
+records_processor = OptimizedRecordsProcessor(engine, batch_size=200)
+matchlog_processor = OptimizedMatchLogProcessor(engine, batch_size=300)
 
 # 比對學名時使用的欄位
 sci_cols = ['taxonID', 'sourceVernacularName','sourceScientificName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily']
 
-# 若原資料庫原本就有提供taxonID 在這段要拿掉 避免merge時產生衝突
-df_sci_cols = [s for s in sci_cols if s != 'taxonID'] 
-
-
-# 單位資訊
+# 單位資訊 (在portal.Partner.info裡面的id)
 group = 'oca'
 rights_holder = '海洋保育資料倉儲系統'
-
-# 在portal.Partner.info裡面的id
 info_id = 0
 
+# 更新紀錄
+session = init_update_session(rights_holder)
+update_version = session.update_version
+current_page = session.current_page
+note = session.note 
+now = session.now
+records_processor = session.records_processor
+matchlog_processor = session.matchlog_processor
 
-response = requests.get(f'http://solr:8983/solr/tbia_records/select?fl=update_version&fq=rightsHolder:"{rights_holder}"&q.op=OR&q=*%3A*&rows=1&sort=update_version%20desc')
-if response.status_code == 200:
-    resp = response.json()
-    if data := resp['response']['docs']:
-        update_version = data[0]['update_version'] + 1
-    else:
-        update_version = 1
-
-
-# 在開始之前 先確認存不存在 
-# 若不存在 insert一個新的update_version
-current_page, note = insert_new_update_version(rights_holder=rights_holder,update_version=update_version)
-
-
-now = datetime.now() + timedelta(hours=8)
+dedup_tracker = DedupTracker(rights_holder, update_version)
 
 headers = {'content-type': 'application/json','API-KEY': os.getenv('OCA_KEY')}
-
 final_df = pd.DataFrame()
 
 # iocean 目擊回報
@@ -93,6 +78,7 @@ if r.status_code == 200:
     df['datasetName'] = 'iOcean垂釣回報'
     final_df = pd.concat([df,final_df])
 
+
 # MARN鯨豚擱淺資料
 # 時間格式 2020/1/4 下午 04:39:00 
 url = f"https://iocean.oca.gov.tw/oca_datahub/WebService/GetData.ashx?id=571f4642-79d5-49f2-87c6-25a00d05c32e"
@@ -133,8 +119,8 @@ if r.status_code == 200:
     df['datasetName'] = 'MARN海龜擱淺資料'
     final_df = pd.concat([df,final_df])
 
-# 結構化檔案
 
+# 結構化檔案
 ocas = pd.read_csv('海保署資料集清單.csv')
 
 # 校定物種學名編碼 -> 裡面有可能是taxonID也有可能是namecode 如果不是t開頭的七位數
@@ -199,7 +185,6 @@ for i in ocas.index:
             df['sourceVernacularName'] = df['sourceVernacularName'].apply(lambda x: x.lstrip(';'))
         df['datasetName'] = row.d_name
         drop_keys = [k for k in df.keys() if k in unused_keys]
-        # print(drop_keys)
         df = df.drop(columns=drop_keys)
         df = df.drop(columns=['drop'], errors='ignore')
         final_df = pd.concat([df,final_df])
@@ -211,147 +196,49 @@ final_df = final_df.replace({nan:None, 'nan': None})
 df = final_df
 
 
-if 'sensitiveCategory' in df.keys():
-    df = df[~df.sensitiveCategory.isin(['分類群不開放','物種不開放'])]
-
-df = df.reset_index(drop=True)
-df = df.replace(to_quote_dict)
-
-for col in cols_str_ends:
-    if col in df.keys():
-        df[col] = df[col].apply(check_id_str_ends)
-
-df = df[~((df.taxonID=='')&(df.sourceScientificName=='')&(df.sourceVernacularName=='')&(df.scientificNameID=='')&(df.sourceClass=='')&(df.sourceOrder=='')&(df.sourceFamily==''))]
-
-df = df.reset_index(drop=True)
-df = df.replace(to_quote_dict)
-
-sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
-sci_names['sci_index'] = sci_names.index
-df = df.merge(sci_names)
-match_results = matching_flow_new_optimized(sci_names)
-df = df.drop(columns=['taxonID'], errors='ignore')
-if len(match_results):
-    df = df.merge(match_results[match_cols], on='sci_index', how='left')
+# 因為是完全開放 所以直接帶入CC0
+df['license'] = 'CC0' 
+# 修改民國年錯誤
+mask = (df['datasetName'] == '軟骨魚調查相關結構化檔案')
+df.loc[mask & (df['year'].astype(str) == '113'), 'year'] = 2024
+df.loc[mask, 'eventDate'] = df.loc[mask, 'eventDate'].str.replace(r'^113-', '2024-', regex=True)
 
 
-df['recordType'] = 'occ'
-df['group'] = group
-df['rightsHolder'] = rights_holder
-df['created'] = now
-df['modified'] = now
-df['license'] = 'CC0' # 因為是完全開放 所以直接帶入CC0
-
-# 出現地
-if 'locality' in df.keys():
-    df['locality'] = df['locality'].apply(lambda x: x.strip() if x else x)
-
-# 數量
-df['standardOrganismQuantity'] = df['organismQuantity'].apply(lambda x: standardize_quantity(x))
-
-# basisOfRecord 無資料
-# dataGeneralizations 無資料
-
-# 先給新的tbiaID，但如果原本就有tbiaID則沿用舊的
-df['id'] = df.apply(lambda x: str(bson.objectid.ObjectId()), axis=1)
-
-media_rule_list = []
-#  如果有mediaLicense才放associatedMedia
-if 'mediaLicense' in df.keys() and 'associatedMedia' in df.keys():
-    df['associatedMedia'] = df['associatedMedia'].replace({None: '', np.nan: ''})
-    df['associatedMedia'] = df.apply(lambda x: x.associatedMedia if x.mediaLicense else '', axis=1)
-    df['media_rule_list'] = df[df.associatedMedia.notnull()]['associatedMedia'].apply(lambda x: get_media_rule(x))
-    media_rule_list += list(df[df.media_rule_list.notnull()].media_rule_list.unique())
+df = filter_by_taxon_fields(df, required_cols=['taxonID','sourceScientificName','sourceVernacularName','scientificNameID','sourceClass','sourceOrder','sourceFamily'])
+df = filter_by_license_and_sensitivity(df)
 
 
-for i in df.index:
-    row = df.loc[i]
-    # 敏感資料才需要屏蔽
-    if row.datasetName in ocas.d_name.unique():
-        # 全部都補上敏感層級
-        df.loc[i, 'dataGeneralizations'] = True
-        df.loc[i, 'sensitiveCategory'] = '縣市'
-    else:
-        df.loc[i, 'dataGeneralizations'] = False
-        df.loc[i, 'sensitiveCategory'] = None
+if len(df):
+    df = df.reset_index(drop=True)
+    df = df.replace(to_quote_dict)
+    df = process_taxon_match(df, sci_cols)
+    df = apply_common_fields(df, group, rights_holder, now)
+    df = apply_record_type(df, mode='occ')  # basisOfRecord 無資料
+    df, media_rule_list = apply_media_rule(df, [])
+    # 根據 datasetName 決定敏感層級（屬於 oca 結構化檔案清單的 → 縣市等級敏感）
+    sensitive_mask = df['datasetName'].isin(ocas['d_name'].unique())
+    df['dataGeneralizations'] = sensitive_mask
+    df['sensitiveCategory'] = sensitive_mask.map({True: '縣市', False: None})
+    # 地理資訊
+    df[geo_keys] = process_geo_batch(df, is_full_hidden='auto')
+    df = df.replace(to_quote_dict)
+    df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
+    df = process_dataset(df, group, rights_holder, update_version, now)
+    df, existed_records = resolve_existed_records(df, rights_holder, dedup_tracker)
+    df = df.replace(to_none_dict)
+    process_match_log(df, matchlog_processor, existed_records, now, group, info_id, suffix=None)
+    df = prepare_df_for_sql(df, update_version)
+    records_processor.smart_upsert_records(df, existed_records=existed_records)
+    export_records_with_taxon(df, f'/solr/csvs/export/{group}_{info_id}.csv')
+    update_media_rules(media_rules=media_rule_list,rights_holder=rights_holder, now=now)
 
 
-# 地理資訊
-df['is_hidden'] = df.apply(lambda x: True if x.sensitiveCategory in ['縣市','座標不開放'] else False, axis=1)
-for g in geo_keys:
-    if g not in df.keys():
-        df[g] = ''
-
-df['coordinatePrecision'] = None
-df[geo_keys] = df.apply(lambda x: pd.Series(create_blurred_grid_data_new(x.verbatimLongitude, x.verbatimLatitude, x.coordinatePrecision, x.dataGeneralizations, is_full_hidden=x.is_hidden)),  axis=1)
-
-# 年月日
-df[date_keys] = df.apply(lambda x: pd.Series(convert_year_month_day_new(x.to_dict())), axis=1)
-for d_col in ['year','month','day']:
-    if d_col in df.keys():
-        df[d_col] = df[d_col].fillna(0).astype(int).replace({0: None})
-
-df = df.replace(to_quote_dict)
-df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
-
-
-# 資料集
-ds_name = df[['datasetName','recordType']].drop_duplicates().to_dict(orient='records')
-# return tbiaDatasetID 並加上去
-return_dataset_id = update_dataset_key(ds_name=ds_name, rights_holder=rights_holder, update_version=update_version, group=group)
-df = df.merge(return_dataset_id)
-
-df = df.replace(to_quote_dict)
-df['catalogNumber'] = ''
-
-# 取得已建立的tbiaID
-if 'occurrenceID' in df.keys():
-    df['occurrenceID'] = df['occurrenceID'].replace({ None: ''})
-    df['occurrenceID'] = df['occurrenceID'].astype('str')
-    existed_records = pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
-    existed_records = get_existed_records_optimized(occ_ids=df[df.occurrenceID!='']['occurrenceID'].to_list(), rights_holder=rights_holder, cata_ids=df[df.catalogNumber!='']['catalogNumber'].to_list())
-    existed_records = existed_records.replace({nan:''})
-    if len(existed_records):
-        df = df.merge(existed_records, how='left')
-        df = df.replace(to_none_dict)
-        df['id'] = df.apply(lambda x: x.tbiaID if x.tbiaID else x.id, axis=1)
-        df = df.drop(columns=['tbiaID'])
-else:
-    df['occurrenceID'] = ''
-
-
-
-df = df.replace(to_none_dict)
-# 更新match_log
-match_log = df[match_log_cols]
-match_log = match_log.reset_index(drop=True)
-match_log = create_match_log_df(match_log,now)
-matchlog_processor.smart_upsert_match_log(match_log, existed_records=existed_records)
-match_log.to_csv(f'/portal/media/match_log/{group}_{info_id}.csv',index=None)
-
-# 用tbiaID更新records
-df['is_deleted'] = False
-df['update_version'] = int(update_version)
-df = df.rename(columns=({'id': 'tbiaID'}))
-df = df.drop(columns=[ck for ck in df.keys() if ck not in records_cols],errors='ignore')
-records_processor.smart_upsert_records(df, existed_records=existed_records)
-
-for mm in media_rule_list:
-    update_media_rule(media_rule=mm,rights_holder=rights_holder)
-
-
-# 刪除is_deleted的records & match_log
 delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version))
-
-# 打包match_log
 zip_match_log(group=group,info_id=info_id)
-
-# 更新update_version
 update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder)
-
-# 更新 datahub - dataset
-# update if deprecated
 update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
+records_processor.export_failed_records(f'failed_records_{group}_{info_id}.csv')
+matchlog_processor.export_failed_records(f'failed_match_logs_{group}_{info_id}.csv')
 
 
 print('done!')

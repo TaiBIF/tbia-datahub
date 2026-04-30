@@ -8,6 +8,40 @@ import os
 import psycopg2
 from app import db_settings
 import numpy as np
+import requests
+from numpy import nan
+
+
+to_none_dict = {nan: None, 
+                'NA': None, 
+                '-99999': None, 
+                '-999999': None, 
+                -99999: None, 
+                -999999: None, 
+                'N/A': None, 
+                'nan': None, 
+                '': None}
+
+to_quote_dict = {nan: '', 
+                 'NA': '', 
+                 '-99999': '', 
+                 '-999999': '', 
+                 -99999: '', 
+                 -999999: '', 
+                 'N/A': '', 
+                 'nan': '',
+                 None: ''}
+
+
+def get_gbif_id(gbifDatasetID, occurrenceID):
+    gbif_url = f"https://api.gbif.org/v1/occurrence/{gbifDatasetID}/{occurrenceID}"
+    gbif_resp = requests.get(gbif_url)
+    gbifID = None
+    if gbif_resp.status_code == 200:
+        gbif_res = gbif_resp.json()
+        gbifID = gbif_res.get('gbifID')
+    return gbifID
+
 
 basis_dict = {
     "人為觀測": "HumanObservation",
@@ -229,7 +263,60 @@ def apply_common_fields(df, group, rights_holder, now):
     return df
 
 
+ 
 # 取得影像網址前綴
+MEDIA_TYPE_MAPPING = {
+    # image
+    'jpg': 'image', 'jpeg': 'image', 'png': 'image', 'gif': 'image',
+    'webp': 'image', 'bmp': 'image', 'svg': 'image', 'tif': 'image', 'tiff': 'image',
+    # video
+    'mp4': 'video', 'mov': 'video', 'avi': 'video', 'mkv': 'video',
+    'webm': 'video', 'flv': 'video', 'wmv': 'video',
+    # audio
+    'mp3': 'audio', 'wav': 'audio', 'ogg': 'audio', 'flac': 'audio',
+    'm4a': 'audio', 'aac': 'audio', 'wma': 'audio',
+}
+ 
+ 
+def _get_media_extension(media_url):
+    """
+    從 URL 取出副檔名 (lowercase, 不含點)。
+    支援 query string (?xxx) 與 fragment (#xxx)，無法判斷時回傳 ''。
+    """
+    if not media_url:
+        return ''
+    url = media_url.split('?', 1)[0].split('#', 1)[0]
+    last_segment = url.rsplit('/', 1)[-1]
+    if '.' not in last_segment:
+        return ''
+    ext = last_segment.rsplit('.', 1)[1].lower()
+    # 防呆: 太長或含特殊字元的視為無效
+    if not ext or len(ext) > 5 or not ext.isalnum():
+        return ''
+    return ext
+ 
+ 
+def _get_media_type(media_url):
+    """從 URL 推斷類別 (image / video / audio)；無法判斷回傳 'unknown'"""
+    ext = _get_media_extension(media_url)
+    return MEDIA_TYPE_MAPPING.get(ext, 'unknown')
+ 
+ 
+def _compute_media_types(media_str):
+    """
+    從 ';' 分隔的 URL 字串對應出 ';' 分隔的類別字串。
+    每個 URL 對應一個類別 (image/video/audio/unknown)，位置與原 URL 對齊。
+    """
+    if not media_str:
+        return ''
+    types = []
+    for url in media_str.split(';'):
+        url = url.strip()
+        types.append(_get_media_type(url) if url else 'unknown')
+    return ';'.join(types)
+ 
+ 
+ # 取得影像網址前綴
 def _get_media_rule(media_url):
     full_rule = None
     string_list = media_url.split('//')
@@ -262,8 +349,21 @@ def _extract_media_rules(media_str):
         if rule and rule not in rules:
             rules.append(rule)
     return rules
- 
- 
+
+
+def flatten_media(media_list):
+    # asiz, fact的 media 
+    if not isinstance(media_list, list):
+        return '', ''
+    urls = []
+    licences = []
+    for am in media_list:
+        if am and am.get('licence'): 
+            urls.append(am.get('url'))
+            licences.append(am.get('licence'))
+    return ';'.join(urls), ';'.join(licences)
+
+
 def apply_media_rule(df, media_rule_list):
     """
     處理 mediaLicense + associatedMedia 區塊。
@@ -287,7 +387,10 @@ def apply_media_rule(df, media_rule_list):
             lambda x: x.associatedMedia if x.mediaLicense else '', axis=1
         )
 
-    # 3. 展平所有 row 的 media_rule，跨 row 去重後再合進累積 list
+    # 3. 從最終的 associatedMedia 統一重算 associatedMediaType (覆蓋來源原值)
+    df['associatedMediaType'] = df['associatedMedia'].apply(_compute_media_types)
+
+    # 4. 展平所有 row 的 media_rule，跨 row 去重後再合進累積 list
     new_rules = set()
     for media_str in df['associatedMedia']:
         if media_str:
@@ -397,3 +500,54 @@ def calculate_data_quality(row):
     else:
         data_quality = 1
     return data_quality
+
+
+
+from concurrent.futures import ThreadPoolExecutor
+
+
+def update_gbif_references(df, existed_records, max_workers=10):
+    """
+    更新 df 的 references 欄位為 GBIF occurrence URL。
+
+    規則：
+    1. 有 gbifID 的直接組 URL
+    2. 沒有 gbifID 但 existed_records 中該 tbiaID 已有 references 的跳過
+    3. 其餘呼叫 get_gbif_id 取得
+
+    Args:
+        df: 待更新的 DataFrame，需包含 id, gbifID, gbifDatasetID, occurrenceID 欄位
+        existed_records: 已存在的記錄 DataFrame，可能包含 tbiaID, references 欄位
+        max_workers: 平行呼叫 get_gbif_id 的 thread 數
+
+    Returns:
+        修改後的 df
+    """
+    # 1. 有 gbifID 的直接向量化處理
+    mask_has_gbif = df['gbifID'].astype(bool)
+    df.loc[mask_has_gbif, 'references'] = (
+        'https://www.gbif.org/occurrence/' + df.loc[mask_has_gbif, 'gbifID'].astype(str)
+    )
+
+    # 2. 找出需要呼叫 API 的 rows
+    if 'references' in existed_records.columns:
+        ids_with_ref = set(
+            existed_records.loc[existed_records['references'] != '', 'tbiaID']
+        )
+        need_api_mask = ~mask_has_gbif & ~df['id'].isin(ids_with_ref)
+    else:
+        need_api_mask = ~mask_has_gbif
+
+    # 3. 平行呼叫 get_gbif_id
+    need_api_df = df.loc[need_api_mask, ['gbifDatasetID', 'occurrenceID']]
+
+    def fetch(idx_row):
+        idx, row = idx_row
+        return idx, get_gbif_id(row.gbifDatasetID, row.occurrenceID)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for idx, gbif_id in executor.map(fetch, need_api_df.iterrows()):
+            if gbif_id:
+                df.loc[idx, 'references'] = f"https://www.gbif.org/occurrence/{gbif_id}"
+
+    return df

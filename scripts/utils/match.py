@@ -8,8 +8,29 @@ import time
 import re
 import json
 import pymysql
-from scripts.utils.utils import taicol_db_settings, clean_html_tags
+import os
+import subprocess
+from sqlalchemy import text
+from dotenv import load_dotenv
+load_dotenv(override=True)
 
+
+taicol_db_settings = {
+    "host": os.getenv('TaiCOL_DB_HOST'),
+    "port": int(os.getenv('TaiCOL_DB_PORT')),
+    "user": os.getenv('TaiCOL_DB_USER'),
+    "password": os.getenv('TaiCOL_DB_PASSWORD'),
+    "database": os.getenv('TaiCOL_DB_DBNAME'),
+}
+
+
+def clean_html_tags(text):
+    # 1. 檢查是否為字串 (處理 NaN 或 float 的情況)
+    if not isinstance(text, str):
+        return text
+    # 2. 移除 <i> 和 </i>
+    # 3. 移除前後多餘空白 (.strip())
+    return text.replace('<i>', '').replace('</i>', '').strip()
 
 match_cols = ['taxonID','sci_index',
                 'match_stage', 'match_higher_taxon', 'stage_1', 'stage_2', 'stage_3',
@@ -33,7 +54,7 @@ rank_map = {
     'Nothosubspecies', 37: 'Variety', 38: 'Subvariety', 39: 'Nothovariety', 40: 'Form', 41: 'Subform', 42: 'Special Form', 43: 'Race', 44: 'Stirp', 45: 'Morph', 46: 'Aberration', 47: 'Hybrid Formula'}
 
 
-def proceess_taxon_match(df, sci_cols):
+def process_taxon_match(df, sci_cols):
     """
     從 df 取出學名欄位去重後比對 TaiCOL，並將結果 merge 回 df。
 
@@ -44,6 +65,9 @@ def proceess_taxon_match(df, sci_cols):
     Returns:
         df: 已加上 match_cols 比對結果的 DataFrame
     """
+    missing = [c for c in sci_cols if c not in df.columns]
+    if missing:
+        df = df.assign(**{c: '' for c in missing})
     sci_names = df[sci_cols].drop_duplicates().reset_index(drop=True)
     sci_names['sci_index'] = sci_names.index
     df = df.merge(sci_names)
@@ -531,3 +555,210 @@ def process_match_log(df, matchlog_processor, existed_records, now, group, info_
     filename = f'{group}_{info_id}_{suffix}.csv' if suffix is not None else f'{group}_{info_id}.csv'
     match_log.to_csv(f'/portal/media/match_log/{filename}', index=None)
     # return match_log
+
+
+def zip_match_log(group, info_id):
+    zip_file_path = f'/portal/media/match_log/{group}_{info_id}_match_log.zip'
+    csv_file_path = f'{group}_{info_id}*.csv'
+    commands = f"cd /portal/media/match_log/; zip -j {zip_file_path} {csv_file_path}; rm {csv_file_path}"
+    process = subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # 等待檔案完成
+    a = process.communicate()
+    return a
+
+
+class OptimizedMatchLogProcessor:
+    """最佳化的 MatchLog 處理器"""
+    
+    def __init__(self, db_engine, batch_size=300):
+        self.db = db_engine
+        self.batch_size = batch_size
+        self.failed_match_logs = []
+        
+    def _safe_dollar_quote(self, value):
+        """安全的 PostgreSQL dollar quoting，處理 $v$、\0"""
+        s = str(value)
+        s = s.replace('\0', '')           # 移除 null byte
+        s = s.replace('$v$', '$v$$v$')    # 跳脫 dollar quote tag
+        return f"$v${s}$v$"
+
+    def smart_upsert_match_log(self, match_log_df, existed_records=None):
+        """
+        最佳化的 MatchLog 處理
+        使用已取得的existed_records判斷，避免重複查詢
+        
+        Args:
+            match_log_df: 要處理的 match_log 資料
+            existed_records: 已存在的記錄(從get_existed_records_optimized取得)
+        """
+        if match_log_df.empty:
+            return
+            
+        print(f"🎯 Processing {len(match_log_df)} match_log records...")
+        start_time = time.time()
+        
+        # 1. 使用已取得的existed_records判斷（避免重複查詢）
+        if existed_records is not None and not existed_records.empty:
+            existing_ids = set(existed_records['tbiaID'].tolist())
+            print(f"   📋 Using existing records info for match_log: {len(existing_ids)} existed")
+        else:
+            existing_ids = set()
+            print(f"   📋 No existing records provided - treating all match_log as new")
+        
+        # 2. 分離新增和更新
+        new_match_log = match_log_df[~match_log_df['tbiaID'].isin(existing_ids)].copy()
+        update_match_log = match_log_df[match_log_df['tbiaID'].isin(existing_ids)].copy()
+        
+        print(f"   📝 New match_log: {len(new_match_log)}")
+        print(f"   🔄 Update match_log: {len(update_match_log)}")
+        
+        # 3. 批次新增
+        if not new_match_log.empty:
+            new_match_log.to_sql(
+                'match_log',
+                self.db,
+                if_exists='append',
+                index=False,
+                chunksize=self.batch_size,
+                method='multi'
+            )
+        
+        # 4. 批次更新
+        if not update_match_log.empty:
+            self._batch_update_match_log(update_match_log)
+        
+        total_time = time.time() - start_time
+        rate = len(match_log_df) / total_time if total_time > 0 else 0
+        print(f"✅ Match_log processing completed: {rate:.0f} records/sec")
+    
+    def _batch_update_match_log(self, update_df):
+        """match_log 批次更新，使用固定的欄位類型（相對單純）"""
+        if update_df.empty:
+            return
+            
+        # 更新所有欄位（除了主鍵）
+        exclude_cols = ['created', 'tbiaID']
+        update_cols = [col for col in update_df.columns if col not in exclude_cols]
+        
+        if not update_cols:
+            return
+        
+        print(f"   🎯 批次更新 match_log {len(update_df)} 筆記錄...")
+        
+        # match_log 的固定欄位類型（相對單純）
+        timestamp_cols = ['modified', 'created']
+        numeric_cols = ['match_stage', 'stage_1', 'stage_2', 'stage_3', 'stage_4', 
+                       'stage_5', 'stage_6', 'stage_7', 'stage_8']
+        boolean_cols = ['match_higher_taxon', 'is_matched']
+        
+        # 使用大批次處理
+        large_batch_size = min(1000, len(update_df))
+        
+        for i in range(0, len(update_df), large_batch_size):
+            batch = update_df.iloc[i:i+large_batch_size]
+            
+            # 建立 VALUES 子句
+            values_list = []
+            for _, row in batch.iterrows():
+                values = [f"'{row['tbiaID']}'"]  # tbiaID 作為鍵值
+                
+                for col in update_cols:
+                    value = row[col]
+                    
+                    if pd.isna(value) or value is None:
+                        values.append('NULL')
+                    elif col in timestamp_cols:
+                        # 時間戳記類型
+                        values.append(f"{self._safe_dollar_quote(value)}::timestamp")
+                    elif col in numeric_cols:
+                        # 數值類型
+                        if isinstance(value, (int, float)) and not pd.isna(value):
+                            values.append(str(value))
+                        else:
+                            values.append('NULL')
+                    elif col in boolean_cols:
+                        # 布林類型
+                        if isinstance(value, bool):
+                            values.append('TRUE' if value else 'FALSE')
+                        elif str(value).lower() in ['true', '1', 'yes', 't']:
+                            values.append('TRUE')
+                        elif str(value).lower() in ['false', '0', 'no', 'f']:
+                            values.append('FALSE')
+                        else:
+                            values.append('NULL')
+                    else:
+                        values.append(self._safe_dollar_quote(value))
+
+                values_list.append(f"({', '.join(values)})")
+            
+            # 建立批次更新 SQL
+            values_clause = ',\n    '.join(values_list)
+            
+            # 建立 SET 子句
+            set_clauses = []
+            for j, col in enumerate(update_cols, 1):
+                if col in timestamp_cols:
+                    set_clauses.append(f'"{col}" = v.col_{j}::timestamp')
+                elif col in numeric_cols:
+                    set_clauses.append(f'"{col}" = v.col_{j}::numeric')
+                elif col in boolean_cols:
+                    set_clauses.append(f'"{col}" = v.col_{j}::boolean')
+                else:
+                    set_clauses.append(f'"{col}" = v.col_{j}')
+            
+            # 建立欄位別名
+            col_aliases = ['tbia_id'] + [f'col_{j}' for j in range(1, len(update_cols) + 1)]
+            
+            batch_sql = f"""
+            UPDATE match_log 
+            SET {', '.join(set_clauses)}
+            FROM (VALUES 
+                {values_clause}
+            ) AS v({', '.join(col_aliases)})
+            WHERE match_log."tbiaID" = v.tbia_id;
+            """
+            
+            try:
+                with self.db.connect() as conn:
+                    result = conn.exec_driver_sql(batch_sql)
+                    conn.commit()
+                    print(f"     ✅ match_log 批次 {i//large_batch_size + 1}: 更新了 {result.rowcount} 筆")
+                    
+            except Exception as e:
+                print(f"     ❌ match_log 批次更新失敗: {e}")
+                # 回退到逐筆更新
+                self._fallback_single_match_log_updates(batch, update_cols)
+    
+    def _fallback_single_match_log_updates(self, batch_df, update_cols):
+        """match_log 回退到逐筆更新"""
+        print(f"     🔄 match_log 回退到逐筆更新 {len(batch_df)} 筆...")
+        
+        for _, row in batch_df.iterrows():
+            try:
+                set_clause = ', '.join([f'"{col}" = :{col}' for col in update_cols])
+                params = {col: row[col] for col in update_cols}
+                params['tbiaID'] = row['tbiaID']
+                
+                update_sql = f"""
+                UPDATE match_log 
+                SET {set_clause}
+                WHERE "tbiaID" = :tbiaID
+                """
+                
+                with self.db.connect() as conn:
+                    conn.execute(text(update_sql), params)
+                    conn.commit()
+                    
+            except Exception as e:
+                print(f"     ❌ match_log 單筆更新失敗 {row['tbiaID']}: {e}")
+                failed = row.to_dict()
+                failed['_error'] = str(e)
+                failed['_table'] = 'match_log'
+                self.failed_match_logs.append(failed)
+
+    def export_failed_records(self, filepath='failed_match_logs.csv'):
+        if self.failed_match_logs:
+            pd.DataFrame(self.failed_match_logs).to_csv(filepath, index=False)
+            print(f"📄 已匯出 {len(self.failed_match_logs)} 筆失敗記錄到 {filepath}")
+        else:
+            print("✅ 沒有失敗記錄")

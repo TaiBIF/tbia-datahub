@@ -9,10 +9,14 @@ import geopandas as gpd
 geo_keys = ['verbatimRawLongitude', 'verbatimRawLatitude', 'standardRawLongitude','standardRawLatitude','raw_location_rpt','verbatimLongitude', 'verbatimLatitude', 'standardLongitude','standardLatitude','location_rpt',
             'grid_1','grid_1_blurred','grid_5','grid_5_blurred','grid_10','grid_10_blurred','grid_100','grid_100_blurred','rawCounty','rawMunicipality','county','municipality']
 
-
+ 
 gdf = gpd.read_file('/bucket/TW_TOWN/TOWN_MOI_1131028.shp')
+if gdf.crs is None:
+    gdf = gdf.set_crs('EPSG:4326')
 gdf_ocean = gpd.read_file('/bucket/TW_TOWN_OCEAN/tw_map_o.shp')
-
+if gdf_ocean.crs is None:
+    gdf_ocean = gdf_ocean.set_crs('EPSG:4326')
+ 
 
 def _coor_to_grid(x, y, grid):
     grid_x = int(math.floor((x + 180) / grid))
@@ -167,7 +171,7 @@ def _lookup_county_batch(lons, lats):
     geom = [Point(lo, la) if (lo is not None and la is not None) else None
             for lo, la in zip(lons, lats)]
     points = gpd.GeoDataFrame({'_idx': range(n), 'geometry': geom}, crs='EPSG:4326')
-    valid = points[points.geometry.notna() & ~points.geometry.is_empty].copy()
+    valid = points[~(points.geometry.is_empty | points.geometry.isna())].copy()
 
     if valid.empty:
         return counties, municipalities
@@ -183,7 +187,6 @@ def _lookup_county_batch(lons, lats):
     unmatched_idx = set(valid._idx) - set(single._idx)
     if unmatched_idx:
         unmatched = valid[valid._idx.isin(unmatched_idx)].copy()
-        unmatched = unmatched.set_crs('EPSG:4326')
         ocean = gpd.sjoin(unmatched, gdf_ocean[['geometry', 'COUNTYO']], how='inner', predicate='within')
         ocean_single = ocean.groupby('_idx').filter(lambda g: len(g) == 1)
         if not ocean_single.empty:
@@ -197,7 +200,16 @@ def _normalize_data_generalizations(series):
     return series.map(lambda v: v is True or v == 'Y' or v == 'y')
 
 
-def process_geo_batch(df, is_full_hidden=False, skip_blur=False):
+def process_geo_batch(df, is_full_hidden=False, skip_blur=False, infer_generalizations='auto'):
+    
+    """
+    infer_generalizations:
+        'auto'  (預設) - 用 df 既有的 dataGeneralizations 欄位 (寫法 2/3 的單位)
+        True           - 從 coordinatePrecision 推斷 (寫法 1 的單位，
+                         該單位 API 沒給 dataGeneralizations 欄位)
+        False          - 強制 dataGeneralizations 全部設 False
+    """
+
     df = df.copy()
 
     if skip_blur:
@@ -206,7 +218,18 @@ def process_geo_batch(df, is_full_hidden=False, skip_blur=False):
         df['_is_hidden'] = False
     else:
         df['coordinatePrecision'] = _resolve_coordinate_precision(df)
-        df['dataGeneralizations'] = _normalize_data_generalizations(df['dataGeneralizations'])
+
+        if infer_generalizations is True:
+            df['dataGeneralizations'] = df['coordinatePrecision'].apply(
+                lambda x: True if x else False
+            )
+        elif infer_generalizations is False:
+            df['dataGeneralizations'] = False
+        else:  # 'auto'
+            df['dataGeneralizations'] = _normalize_data_generalizations(
+                df.get('dataGeneralizations', pd.Series(False, index=df.index))
+            )
+
         if is_full_hidden == 'auto':
             if 'sensitiveCategory' in df.columns:
                 df['_is_hidden'] = df['sensitiveCategory'].isin(['縣市', '座標不開放'])
@@ -245,3 +268,35 @@ def process_geo_batch(df, is_full_hidden=False, skip_blur=False):
         if k not in geo_df.columns:
             geo_df[k] = None
     return geo_df[geo_keys]
+
+
+def parse_verbatim_coords(coord_str):
+    # 如果是空值或非字串，回傳 None
+    if pd.isna(coord_str) or str(coord_str).strip() == '':
+        return None, None
+    text = str(coord_str).strip()
+    # 使用正規表示式切割，支援「全形逗號」與「半形逗號」
+    # 這裡假設分隔符號是逗號
+    parts = re.split(r'[，,]', text)
+    # 去除每個部分的空白
+    parts = [p.strip() for p in parts if p.strip()]
+    v_lat = None
+    v_lon = None
+    for part in parts:
+        upper_part = part.upper()
+        # 判斷緯度 (N 或 S)
+        if 'N' in upper_part or 'S' in upper_part:
+            v_lat = part
+        # 判斷經度 (E 或 W)
+        elif 'E' in upper_part or 'W' in upper_part:
+            v_lon = part
+    # 特殊補救：如果有兩段，且其中一段沒找到方向，依照常見順序補齊 (通常是 經度, 緯度)
+    # 例如資料中的 '0244748， 121431N' (只有後面有 N)
+    if len(parts) == 2:
+        if v_lat and not v_lon:
+            # 已經找到緯度，剩下那個大概是經度
+            v_lon = parts[0] if parts[0] != v_lat else parts[1]
+        elif v_lon and not v_lat:
+            # 已經找到經度，剩下那個大概是緯度
+            v_lat = parts[0] if parts[0] != v_lon else parts[1]
+    return v_lat, v_lon

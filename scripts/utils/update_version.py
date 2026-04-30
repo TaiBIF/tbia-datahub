@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
 import requests
-from scripts.utils.sql import OptimizedRecordsProcessor, OptimizedMatchLogProcessor
+from scripts.utils.records import OptimizedRecordsProcessor
+from scripts.utils.match import OptimizedMatchLogProcessor
 from app import db, db_settings
 import psycopg2
 
