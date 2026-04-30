@@ -50,8 +50,6 @@ while has_more_data:
             total_page = result['meta']['pagination']['num_pages']
             data += result.get('data')
             print('page:',c , ' , offset:', offset, 'total page:', total_page)
-            # 測試用
-            total_page = 25
             if c + 1 >= total_page:
                 has_more_data = False
                 break

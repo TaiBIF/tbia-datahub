@@ -52,8 +52,8 @@ for url in url_list[url_index:]:
         time.sleep(0.5)
         if request_url.find('limit=1000') < 0:
             request_url += '&limit=1000'
-        # if request_url.find(f"apikey={os.getenv('TBN_KEY')}") < 0:
-        #     request_url += f"&apikey={os.getenv('TBN_KEY')}"
+        if request_url.find(f"apikey={os.getenv('TBN_KEY')}") < 0:
+            request_url += f"&apikey={os.getenv('TBN_KEY')}"
         response = requests.get(request_url)
         if response.status_code == 200:
             result = response.json()
