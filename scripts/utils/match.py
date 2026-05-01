@@ -218,12 +218,12 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
         
         if column_name not in no_taxon.columns:
             # 如果欄位不存在，跳過此階段
-            print(f"  Stage {stage_num}: Column '{column_name}' not found - skipping")
+            # print(f"  Stage {stage_num}: Column '{column_name}' not found - skipping")
             return sci_names
             
         if no_taxon[column_name].isna().all():
             # 如果欄位存在但全部為空，跳過此階段
-            print(f"  Stage {stage_num}: No data in column '{column_name}'")
+            # print(f"  Stage {stage_num}: No data in column '{column_name}'")
             return sci_names
         
         # 向量化清理數據
@@ -241,10 +241,10 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
         
         # 如果沒有有效的匹配名稱，保持與原版一致，不設置stage值
         if matching_df.empty:
-            print(f"  Stage {stage_num}: No valid names to match")
+            # print(f"  Stage {stage_num}: No valid names to match")
             return sci_names
         
-        print(f"  Stage {stage_num}: Processing {len(matching_df)} names")
+        # print(f"  Stage {stage_num}: Processing {len(matching_df)} names")
         
         # 選擇需要的欄位
         keep_columns = ['now_matching_name', 'sci_index'] + [
@@ -294,11 +294,11 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
             # 保持與原版一致：沒有找到匹配的記錄不設置stage值
             # 原版的行為是保持stage_*為None，不主動標記為'none'
             
-            print(f"    Successful matches: {successful_matches}")
+            # print(f"    Successful matches: {successful_matches}")
             
-        else:
+        # else:
             # 如果API沒有回傳任何結果，保持與原版一致，不設置stage值
-            print(f"  Stage {stage_num}: No API results")
+            # print(f"  Stage {stage_num}: No API results")
         
         return sci_names
     
@@ -427,7 +427,7 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
         return matched if matched else results_dict
     
     # 主要處理流程
-    print("=== Optimized Matching Flow ===")
+    # print("=== Optimized Matching Flow ===")
     
     # 初始化必要欄位
     if 'taxonID' not in sci_names.columns:
@@ -459,7 +459,7 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
     # 處理 Stage 1 - sourceScientificName
     stage_start = time.time()
     sci_names = process_stage_vectorized(sci_names, 1, 'sourceScientificName', False, None, None)
-    print(f"Stage 1: {time.time() - stage_start:.2f}s")
+    # print(f"Stage 1: {time.time() - stage_start:.2f}s")
     
     # 處理 Stage 2 (namecode matching) - 保持原有邏輯
     stage2_start = time.time()
@@ -474,7 +474,7 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
         
         if namecode_mask.any():
             namecode_df = no_taxon[namecode_mask].copy()
-            print(f"    Processing {len(namecode_df)} namecode matches...")
+            # print(f"    Processing {len(namecode_df)} namecode matches...")
             
             for idx, row in namecode_df.iterrows():
                 try:
@@ -487,18 +487,18 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
                     )
                 except:
                     pass  # 忽略namecode匹配錯誤
-        else:
-            print("    No valid scientificNameID to process")
-    else:
-        print("    No scientificNameID column found - skipping Stage 2")
+        # else:
+        #     print("    No valid scientificNameID to process")
+    # else:
+    #     print("    No scientificNameID column found - skipping Stage 2")
     
-    print(f"Stage 2 (namecode): {time.time() - stage2_start:.2f}s")
+    # print(f"Stage 2 (namecode): {time.time() - stage2_start:.2f}s")
     
     # 處理 Stage 3-8
     for stage_num, column, is_parent, rank, transform_func in stages[1:]:  # 跳過已處理的stage_1
         stage_start = time.time()
         sci_names = process_stage_vectorized(sci_names, stage_num, column, is_parent, rank, transform_func)
-        print(f"Stage {stage_num}: {time.time() - stage_start:.2f}s")
+        # print(f"Stage {stage_num}: {time.time() - stage_start:.2f}s")
     
     # 最終清理階段（與原版一致）
     stage_list = [1,2,3,4,5,6,7,8]
@@ -509,7 +509,7 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
     # 代表比對到最後還是沒有對到
     sci_names.loc[(sci_names.match_stage==8)&(sci_names.taxonID==''),'match_stage'] = None
     
-    print("=== Matching Flow Completed ===")
+    # print("=== Matching Flow Completed ===")
     return sci_names
 
 
@@ -594,23 +594,23 @@ class OptimizedMatchLogProcessor:
         if match_log_df.empty:
             return
             
-        print(f"🎯 Processing {len(match_log_df)} match_log records...")
+        # print(f"🎯 Processing {len(match_log_df)} match_log records...")
         start_time = time.time()
         
         # 1. 使用已取得的existed_records判斷（避免重複查詢）
         if existed_records is not None and not existed_records.empty:
             existing_ids = set(existed_records['tbiaID'].tolist())
-            print(f"   📋 Using existing records info for match_log: {len(existing_ids)} existed")
+            # print(f"   📋 Using existing records info for match_log: {len(existing_ids)} existed")
         else:
             existing_ids = set()
-            print(f"   📋 No existing records provided - treating all match_log as new")
+            # print(f"   📋 No existing records provided - treating all match_log as new")
         
         # 2. 分離新增和更新
         new_match_log = match_log_df[~match_log_df['tbiaID'].isin(existing_ids)].copy()
         update_match_log = match_log_df[match_log_df['tbiaID'].isin(existing_ids)].copy()
         
-        print(f"   📝 New match_log: {len(new_match_log)}")
-        print(f"   🔄 Update match_log: {len(update_match_log)}")
+        # print(f"   📝 New match_log: {len(new_match_log)}")
+        # print(f"   🔄 Update match_log: {len(update_match_log)}")
         
         # 3. 批次新增
         if not new_match_log.empty:
@@ -629,7 +629,7 @@ class OptimizedMatchLogProcessor:
         
         total_time = time.time() - start_time
         rate = len(match_log_df) / total_time if total_time > 0 else 0
-        print(f"✅ Match_log processing completed: {rate:.0f} records/sec")
+        # print(f"✅ Match_log processing completed: {rate:.0f} records/sec")
     
     def _batch_update_match_log(self, update_df):
         """match_log 批次更新，使用固定的欄位類型（相對單純）"""
@@ -643,7 +643,7 @@ class OptimizedMatchLogProcessor:
         if not update_cols:
             return
         
-        print(f"   🎯 批次更新 match_log {len(update_df)} 筆記錄...")
+        # print(f"   🎯 批次更新 match_log {len(update_df)} 筆記錄...")
         
         # match_log 的固定欄位類型（相對單純）
         timestamp_cols = ['modified', 'created']
@@ -722,7 +722,7 @@ class OptimizedMatchLogProcessor:
                 with self.db.connect() as conn:
                     result = conn.exec_driver_sql(batch_sql)
                     conn.commit()
-                    print(f"     ✅ match_log 批次 {i//large_batch_size + 1}: 更新了 {result.rowcount} 筆")
+                    # print(f"     ✅ match_log 批次 {i//large_batch_size + 1}: 更新了 {result.rowcount} 筆")
                     
             except Exception as e:
                 print(f"     ❌ match_log 批次更新失敗: {e}")

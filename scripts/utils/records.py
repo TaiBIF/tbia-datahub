@@ -2,7 +2,7 @@ import time
 import pandas as pd
 from sqlalchemy import text, inspect
 from app import engine
-from app import SessionLocal      
+from app import SessionLocal
 
 """
 批次處理最佳化方案
@@ -41,19 +41,19 @@ def prepare_df_for_sql(df, update_version):
 
 
 def delete_records(rights_holder, group, update_version):
+    """
+    刪除 update_version 不一致的 records 與對應 match_log。
+    """
     query = text("""
-        WITH moved_rows AS (
-            DELETE FROM records a
-            WHERE a.update_version != :update_version 
-              AND a."rightsHolder" = :rights_holder 
-              AND a."group" = :group
-            RETURNING a."tbiaID", a."occurrenceID", a."rightsHolder", a."group", a."catalogNumber"
-        ), delete_match_log AS (
-            DELETE FROM match_log 
-            WHERE "tbiaID" IN (SELECT "tbiaID" FROM moved_rows)
+        WITH deleted_ids AS (
+            DELETE FROM records
+            WHERE update_version != :update_version
+              AND "rightsHolder" = :rights_holder
+              AND "group" = :group
+            RETURNING "tbiaID"
         )
-        INSERT INTO deleted_records ("tbiaID", "occurrenceID", "rights_holder", "group", "catalogNumber", "deleted")
-        SELECT *, NOW() AS deleted FROM moved_rows;
+        DELETE FROM match_log
+        WHERE "tbiaID" IN (SELECT "tbiaID" FROM deleted_ids);
     """)
     with SessionLocal() as session:
         session.execute(query, {
