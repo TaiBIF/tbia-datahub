@@ -89,10 +89,6 @@ duplicated_dataset_list = [
 ]
 
 
-# TODO 這邊是測試用的
-duplicated_dataset_list += ['50c9509d-22c7-4a22-a47d-8c48425ef4a7']
-
-
 dataset, dataset_list = fetch_taibif_datasets(
     source='GBIF',
     exclude_publishers=partners,

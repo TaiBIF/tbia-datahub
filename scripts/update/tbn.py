@@ -40,9 +40,6 @@ dedup_tracker = DedupTracker(rights_holder, update_version)
 
 request_url, url_index = (note.get('request_url'), note.get('url_index')) if note else (None, 0)
 
-# 測試用
-url_list = ['https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=e1b7adf8-9315-4134-aced-729a09da40f6']
-
 for url in url_list[url_index:]:
     if not request_url:
         request_url = url
