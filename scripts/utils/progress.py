@@ -56,4 +56,5 @@ def timed(name=None):
         def wrapper(*args, **kwargs):
             with timer(step_name):
                 return fn(*args, **kwargs)
+        return wrapper   # ← 補上這行
     return deco
