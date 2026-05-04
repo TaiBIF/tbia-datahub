@@ -7,6 +7,7 @@ from app import SessionLocal
 from models import Dataset  
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from scripts.utils.progress import timed
 
 
 def fetch_tbn_datasets(modified_since: str = '1900-01-01') -> pd.DataFrame:
@@ -252,7 +253,7 @@ def _upsert_dataset_row(session, r, rights_holder, update_version, group, now):
     )
     session.execute(stmt)
 
-
+@timed()
 def process_dataset(df, group, rights_holder, update_version, now, *,
                     extra_cols=None,
                     dataset=None,

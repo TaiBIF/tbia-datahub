@@ -10,6 +10,7 @@ from app import db_settings
 import numpy as np
 import requests
 from numpy import nan
+from scripts.utils.progress import timed
 
 
 to_none_dict = {nan: None, 
@@ -217,7 +218,7 @@ def check_id_str_ends(now_id):
         now_id = str(now_id)
     return now_id
 
-
+@timed()
 def apply_common_fields(df, group, rights_holder, now):
     """
     套用所有單位共通的欄位賦值與基本標準化。
@@ -505,7 +506,7 @@ def calculate_data_quality(row):
 
 from concurrent.futures import ThreadPoolExecutor
 
-
+@timed()
 def update_gbif_references(df, existed_records, max_workers=10):
     """
     更新 df 的 references 欄位為 GBIF occurrence URL。

@@ -8,6 +8,7 @@ from scripts.utils.records import OptimizedRecordsProcessor
 from scripts.utils.match import OptimizedMatchLogProcessor
 from app import db, db_settings
 import psycopg2
+from scripts.utils.progress import timed
 
 
 @dataclass

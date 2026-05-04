@@ -12,6 +12,8 @@ from scripts.utils.export import export_records_with_taxon
 from scripts.utils.dataset import fetch_tbn_datasets
 from scripts.utils.update_version import init_update_session, update_update_version
 from scripts.utils.dataset import process_dataset, update_dataset_deprecated
+from tqdm import tqdm
+from scripts.utils.progress import timer
 
 records_processor = OptimizedRecordsProcessor(engine, batch_size=200)
 matchlog_processor = OptimizedMatchLogProcessor(engine, batch_size=300)
@@ -45,6 +47,7 @@ for url in url_list[url_index:]:
         request_url = url
     c = current_page
     data = []
+    pbar = None
     while request_url:
         time.sleep(0.5)
         if request_url.find('limit=1000') < 0:
@@ -55,7 +58,13 @@ for url in url_list[url_index:]:
         if response.status_code == 200:
             result = response.json()
             total_count = result['meta']['total']
-            print(c, ',', (c+1)*1000, '/', total_count, ',', request_url)
+            # print(c, ',', (c+1)*1000, '/', total_count, ',', request_url)
+            if pbar is None:
+                pbar = tqdm(total=total_count, unit='筆',
+                            desc=f"URL {url_index+1}/{len(url_list)}")
+                if c > 0:
+                    pbar.update(c * 1000)  # resume 時快進
+            pbar.update(len(result["data"]))
             request_url = result['links']['next']
             data += result["data"]
             c += 1
@@ -121,9 +130,12 @@ for url in url_list[url_index:]:
                 records_processor.smart_upsert_records(df, existed_records=existed_records)
                 export_records_with_taxon(df, f'/solr/csvs/export/{group}_{info_id}_{url_index}_{c}.csv')
                 update_media_rules(media_rules=media_rule_list,rights_holder=rights_holder, now=now)
+                timer.batch_summary(label=f"批次 {url_index}_{c}")  # ← 新增
             # 成功之後 更新update_update_version 也有可能這批page 沒有資料 一樣從下一個c開始
             data = []
             update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=json.dumps({'url_index': url_index, 'request_url': request_url}))
+    if pbar:
+        pbar.close()
     url_index += 1
     current_page = 0 # 換成新的url時要重新開始
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=0, note=json.dumps({'url_index': url_index, 'request_url': None}))

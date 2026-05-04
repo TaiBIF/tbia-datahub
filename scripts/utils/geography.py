@@ -4,6 +4,7 @@ import twd97
 import math
 from shapely.geometry import Point
 import geopandas as gpd
+from scripts.utils.progress import timed
 
 
 geo_keys = ['verbatimRawLongitude', 'verbatimRawLatitude', 'standardRawLongitude','standardRawLatitude','raw_location_rpt','verbatimLongitude', 'verbatimLatitude', 'standardLongitude','standardLatitude','location_rpt',
@@ -199,7 +200,7 @@ def _normalize_data_generalizations(series):
     """將 dataGeneralizations 統一轉為 bool，處理 'Y'/'N'/True/False/None"""
     return series.map(lambda v: v is True or v == 'Y' or v == 'y')
 
-
+@timed()
 def process_geo_batch(df, is_full_hidden=False, skip_blur=False, infer_generalizations='auto'):
     
     """

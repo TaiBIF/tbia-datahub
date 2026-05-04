@@ -13,6 +13,7 @@ import subprocess
 from sqlalchemy import text
 from dotenv import load_dotenv
 load_dotenv(override=True)
+from scripts.utils.progress import timed
 
 
 taicol_db_settings = {
@@ -53,7 +54,7 @@ rank_map = {
     24: 'Infraorder', 25: 'Superfamily', 26: 'Family', 27: 'Subfamily', 28: 'Tribe', 29: 'Subtribe', 30: 'Genus', 31: 'Subgenus', 32: 'Section', 33: 'Subsection', 34: 'Species', 35: 'Subspecies', 36:
     'Nothosubspecies', 37: 'Variety', 38: 'Subvariety', 39: 'Nothovariety', 40: 'Form', 41: 'Subform', 42: 'Special Form', 43: 'Race', 44: 'Stirp', 45: 'Morph', 46: 'Aberration', 47: 'Hybrid Formula'}
 
-
+@timed()
 def process_taxon_match(df, sci_cols):
     """
     從 df 取出學名欄位去重後比對 TaiCOL，並將結果 merge 回 df。
@@ -526,7 +527,7 @@ def create_match_log_df(match_log, now):
     match_log[['created', 'modified']] = now
     return match_log.rename(columns={'id': 'tbiaID', 'rightsHolder': 'rights_holder'})
 
-    
+@timed()
 def process_match_log(df, matchlog_processor, existed_records, now, group, info_id, suffix=None):
     """建立 match_log、upsert 到 DB、輸出 CSV。
 
@@ -725,13 +726,13 @@ class OptimizedMatchLogProcessor:
                     # print(f"     ✅ match_log 批次 {i//large_batch_size + 1}: 更新了 {result.rowcount} 筆")
                     
             except Exception as e:
-                print(f"     ❌ match_log 批次更新失敗: {e}")
+                # print(f"     ❌ match_log 批次更新失敗: {e}")
                 # 回退到逐筆更新
                 self._fallback_single_match_log_updates(batch, update_cols)
     
     def _fallback_single_match_log_updates(self, batch_df, update_cols):
         """match_log 回退到逐筆更新"""
-        print(f"     🔄 match_log 回退到逐筆更新 {len(batch_df)} 筆...")
+        # print(f"     🔄 match_log 回退到逐筆更新 {len(batch_df)} 筆...")
         
         for _, row in batch_df.iterrows():
             try:
@@ -750,7 +751,7 @@ class OptimizedMatchLogProcessor:
                     conn.commit()
                     
             except Exception as e:
-                print(f"     ❌ match_log 單筆更新失敗 {row['tbiaID']}: {e}")
+                # print(f"     ❌ match_log 單筆更新失敗 {row['tbiaID']}: {e}")
                 failed = row.to_dict()
                 failed['_error'] = str(e)
                 failed['_table'] = 'match_log'

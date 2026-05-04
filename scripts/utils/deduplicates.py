@@ -6,6 +6,7 @@ import json
 from numpy import nan
 import concurrent.futures
 from scripts.utils.common import to_none_dict
+from scripts.utils.progress import timed
 
 
 class DedupTracker:
@@ -244,7 +245,7 @@ class DedupTracker:
             os.remove(self.db_path)
             print(f'🗑️ 已清除 dedup cache: {self.db_path}')
 
-
+@timed()
 def resolve_existed_records(df, rights_holder, dedup_tracker):
     """
     批內去重、查詢已存在記錄、跨批去重補充，並回寫 tbiaID。

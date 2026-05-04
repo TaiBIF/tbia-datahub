@@ -2,6 +2,7 @@ import pandas as pd
 import requests
 import json
 import numpy as np
+from scripts.utils.progress import timed
 
 def fetch_taxon_df(taxon_ids, solr_url='http://solr:8983/solr/taxa/select', chunk_size=500):
     """依 taxonID 列表從 Solr 撈回對應 taxon 資料，回傳已清洗的 DataFrame。"""
@@ -36,7 +37,7 @@ def fetch_taxon_df(taxon_ids, solr_url='http://solr:8983/solr/taxa/select', chun
     taxon_df = taxon_df.replace({np.nan: None})
     return taxon_df
 
-
+@timed()
 def export_records_with_taxon(df, output_path):
     """把 records df 與 taxon 資料合併後輸出 CSV。"""
     taxon_df = fetch_taxon_df(df['taxonID'].dropna().tolist())

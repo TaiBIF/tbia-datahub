@@ -3,6 +3,7 @@ import pandas as pd
 from sqlalchemy import text, inspect
 from app import engine
 from app import SessionLocal
+from scripts.utils.progress import timed
 
 """
 批次處理最佳化方案
@@ -80,6 +81,7 @@ class OptimizedRecordsProcessor:
         s = s.replace('$v$', '$v$$v$')    # 跳脫 dollar quote tag
         return f"$v${s}$v$"
 
+    @timed()
     def smart_upsert_records(self, df, existed_records=None, table_name='records'):
         """
         智能 UPSERT：使用已取得的existed_records，避免重複查詢
@@ -98,17 +100,17 @@ class OptimizedRecordsProcessor:
         # 1. 使用已取得的existed_records（避免重複查詢）
         if existed_records is not None and not existed_records.empty:
             existing_ids = set(existed_records['tbiaID'].tolist())
-            print(f"   📋 Using existing records info: {len(existing_ids)} existed")
+            # print(f"   📋 Using existing records info: {len(existing_ids)} existed")
         else:
             existing_ids = set()
-            print(f"   📋 No existing records provided - treating all as new")
+            # print(f"   📋 No existing records provided - treating all as new")
         
         # 2. 分離新增和更新資料
         new_records = df[~df['tbiaID'].isin(existing_ids)].copy()
         update_records = df[df['tbiaID'].isin(existing_ids)].copy()
         
-        print(f"   📝 New records: {len(new_records)}")
-        print(f"   🔄 Update records: {len(update_records)}")
+        # print(f"   📝 New records: {len(new_records)}")
+        # print(f"   🔄 Update records: {len(update_records)}")
         
         # 3. 批次新增（使用 COPY）
         if not new_records.empty:
@@ -124,7 +126,7 @@ class OptimizedRecordsProcessor:
         
         total_time = time.time() - start_time
         rate = len(df) / total_time if total_time > 0 else 0
-        print(f"🎯 Smart upsert completed: {len(df)} records in {total_time:.2f}s ({rate:.0f} records/sec)")
+        # print(f"🎯 Smart upsert completed: {len(df)} records in {total_time:.2f}s ({rate:.0f} records/sec)")
 
     def _copy_insert_records(self, df, table_name):
         """使用 COPY 協議批次新增，比 to_sql 快 5-7 倍"""
@@ -144,7 +146,7 @@ class OptimizedRecordsProcessor:
             raw_conn.commit()
         except Exception as e:
             raw_conn.rollback()
-            print(f"     ⚠️ COPY 失敗，回退到 to_sql: {e}")
+            # print(f"     ⚠️ COPY 失敗，回退到 to_sql: {e}")
             df.to_sql(
                 table_name, self.db, if_exists='append',
                 index=False, chunksize=self.batch_size, method='multi'
@@ -189,7 +191,7 @@ class OptimizedRecordsProcessor:
             return column_types
             
         except Exception as e:
-            print(f"     ⚠️ 無法取得欄位類型資訊: {e}")
+            # print(f"     ⚠️ 無法取得欄位類型資訊: {e}")
             return {}
 
     def _batch_update_records(self, update_df, table_name):
@@ -204,12 +206,12 @@ class OptimizedRecordsProcessor:
         if not update_cols:
             return
         
-        print(f"   🔄 批次更新 {len(update_df)} 筆記錄...")
+        # print(f"   🔄 批次更新 {len(update_df)} 筆記錄...")
         
         # 動態獲取欄位類型
         column_types = self._get_column_types(table_name)
         if not column_types:
-            print(f"     ⚠️ 無法取得 {table_name} 的欄位類型，回退到逐筆更新")
+            # print(f"     ⚠️ 無法取得 {table_name} 的欄位類型，回退到逐筆更新")
             self._fallback_single_updates(update_df, table_name, update_cols)
             return
         
@@ -293,18 +295,18 @@ class OptimizedRecordsProcessor:
                     """
                     
                     result = conn.exec_driver_sql(batch_sql)
-                    print(f"     ✅ 批次 {i//large_batch_size + 1}: 更新了 {result.rowcount} 筆")
+                    # print(f"     ✅ 批次 {i//large_batch_size + 1}: 更新了 {result.rowcount} 筆")
                 
                 conn.commit()
                     
         except Exception as e:
-            print(f"     ❌ 批次更新失敗: {e}")
+            # print(f"     ❌ 批次更新失敗: {e}")
             # 如果批次失敗，回退到逐筆更新
             self._fallback_single_updates(update_df, table_name, update_cols)
     
     def _fallback_single_updates(self, batch_df, table_name, update_cols):
         """回退到逐筆更新（當批次更新失敗時）"""
-        print(f"     🔄 回退到逐筆更新 {len(batch_df)} 筆...")
+        # print(f"     🔄 回退到逐筆更新 {len(batch_df)} 筆...")
         
         for _, row in batch_df.iterrows():
             try:
@@ -327,7 +329,7 @@ class OptimizedRecordsProcessor:
                     conn.commit()
                     
             except Exception as e:
-                print(f"     ❌ 單筆更新失敗 {row['tbiaID']}: {e}")
+                # print(f"     ❌ 單筆更新失敗 {row['tbiaID']}: {e}")
                 failed = row.to_dict()
                 failed['_error'] = str(e)
                 failed['_table'] = table_name
