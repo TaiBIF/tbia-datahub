@@ -10,6 +10,9 @@ from scripts.utils.geography import process_geo_batch, geo_keys
 from scripts.utils.export import export_records_with_taxon
 from scripts.utils.update_version import init_update_session, update_update_version
 from scripts.utils.dataset import process_dataset, update_dataset_deprecated
+from tqdm import tqdm
+from scripts.utils.progress import timer
+import atexit
 
 records_processor = OptimizedRecordsProcessor(engine, batch_size=200)
 matchlog_processor = OptimizedMatchLogProcessor(engine, batch_size=300)
@@ -30,6 +33,13 @@ note = session.note
 now = session.now
 records_processor = session.records_processor
 matchlog_processor = session.matchlog_processor
+
+# 更新失敗紀錄
+atexit.register(records_processor.export_failed_records, 
+                f'failed_records_{group}_{info_id}.csv')
+atexit.register(matchlog_processor.export_failed_records, 
+                f'failed_match_logs_{group}_{info_id}.csv')
+
 
 dedup_tracker = DedupTracker(rights_holder, update_version)
 
@@ -72,8 +82,6 @@ while has_more_data:
         # 有些資料沒有 補上
         cols_to_ensure = ['familyName', 'isPreferredName']
         df = df.reindex(columns=df.columns.union(cols_to_ensure), fill_value='')
-        # 如果學名相關的欄位都是空值才排除
-        df = filter_by_taxon_fields(df, required_cols=['isPreferredName','scientificName','familyName'])
         df = filter_by_license_and_sensitivity(df)
         if len(df):
             df = df.reset_index(drop=True)
@@ -118,8 +126,6 @@ if not has_more_data:
     zip_match_log(group=group,info_id=info_id)
     update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder)
     update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
-    records_processor.export_failed_records(f'failed_records_{group}_{info_id}.csv')
-    matchlog_processor.export_failed_records(f'failed_match_logs_{group}_{info_id}.csv')
 
 
 print('done!')
