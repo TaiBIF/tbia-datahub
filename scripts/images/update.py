@@ -10,6 +10,7 @@ from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 from dotenv import load_dotenv
 from app import db_settings
+from tqdm import tqdm
 
 load_dotenv(override=True)
 
@@ -32,6 +33,14 @@ adapter = HTTPAdapter(max_retries=retry,
                       pool_maxsize=MAX_WORKERS)
 session.mount('http://', adapter)
 session.mount('https://', adapter)
+
+
+def get_solr_total():
+    r = session.get(SOLR_URL,
+                    params={'q': '*:*', 'rows': 0, 'wt': 'json'},
+                    timeout=HTTP_TIMEOUT)
+    r.raise_for_status()
+    return r.json()['response']['numFound']
 
 
 def fetch_taieol(taxon_id):
@@ -105,15 +114,15 @@ def iter_solr_ids():
 def main():
     conn = psycopg2.connect(**db_settings)
     cur = conn.cursor()
-    total = 0
+    total_count = get_solr_total()
     try:
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool, \
+             tqdm(total=total_count, desc='taxa', unit='筆') as pbar:
             for ids in iter_solr_ids():
                 results = list(pool.map(fetch_taieol, ids))
                 upsert_batch(cur, results)
                 conn.commit()
-                total += len(results)
-                print(f'processed {total}')
+                pbar.update(len(results))
     finally:
         cur.close()
         conn.close()
