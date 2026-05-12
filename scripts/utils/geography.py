@@ -8,8 +8,8 @@ from scripts.utils.progress import timed
 
 
 geo_keys = ['verbatimRawLongitude', 'verbatimRawLatitude', 'standardRawLongitude','standardRawLatitude','raw_location_rpt','verbatimLongitude', 'verbatimLatitude', 'standardLongitude','standardLatitude','location_rpt',
-            'grid_1','grid_1_blurred','grid_5','grid_5_blurred','grid_10','grid_10_blurred','grid_100','grid_100_blurred','rawCounty','rawMunicipality','county','municipality']
-
+            'grid_1','grid_1_blurred','grid_5','grid_5_blurred','grid_10','grid_10_blurred','grid_100','grid_100_blurred','rawCounty','rawMunicipality','county','municipality',
+            'dataGeneralizations','coordinatePrecision']
  
 gdf = gpd.read_file('/bucket/TW_TOWN/TOWN_MOI_1131028.shp')
 if gdf.crs is None:
@@ -200,44 +200,80 @@ def _normalize_data_generalizations(series):
     """將 dataGeneralizations 統一轉為 bool，處理 'Y'/'N'/True/False/None"""
     return series.map(lambda v: v is True or v == 'Y' or v == 'y')
 
+
+def _safe_bool(value):
+    """合法 bool 或可判讀為 bool 的字串就轉換，其他都回 None"""
+    if value is True or value is False:
+        return value
+    if pd.isna(value):
+        return None
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if s in ('true', 't', 'yes', 'y', '1'):
+            return True
+        if s in ('false', 'f', 'no', 'n', '0'):
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return None
+
+
+def _safe_float(value):
+    """可轉 float 就轉，否則 None"""
+    if pd.isna(value):
+        return None
+    try:
+        f = float(value)
+        if math.isnan(f) or math.isinf(f):
+            return None
+        return f
+    except (TypeError, ValueError):
+        return None
+
 @timed()
 def process_geo_batch(df, is_full_hidden=False, skip_blur=False, infer_generalizations='auto'):
-    
     """
     infer_generalizations:
         'auto'  (預設) - 用 df 既有的 dataGeneralizations 欄位 (寫法 2/3 的單位)
         True           - 從 coordinatePrecision 推斷 (寫法 1 的單位，
                          該單位 API 沒給 dataGeneralizations 欄位)
         False          - 強制 dataGeneralizations 全部設 False
+
+    skip_blur=True 時：完全跳過 geo 計算，保留原 df 所有 geo 欄位的值；
+        僅對 dataGeneralizations / coordinatePrecision 逐筆檢查型別，
+        不合法才設為 None，以避免 DB 寫入時 type error。
     """
+    if skip_blur:
+        out = pd.DataFrame(index=df.index)
+        for k in geo_keys:
+            out[k] = df[k] if k in df.columns else None
+        if 'dataGeneralizations' in df.columns:
+            out['dataGeneralizations'] = df['dataGeneralizations'].map(_safe_bool)
+        if 'coordinatePrecision' in df.columns:
+            out['coordinatePrecision'] = df['coordinatePrecision'].map(_safe_float)
+        return out
 
     df = df.copy()
+    df['coordinatePrecision'] = _resolve_coordinate_precision(df)
 
-    if skip_blur:
-        df['coordinatePrecision'] = float('nan')
+    if infer_generalizations is True:
+        df['dataGeneralizations'] = df['coordinatePrecision'].apply(
+            lambda x: True if x else False
+        )
+    elif infer_generalizations is False:
         df['dataGeneralizations'] = False
-        df['_is_hidden'] = False
-    else:
-        df['coordinatePrecision'] = _resolve_coordinate_precision(df)
+    else:  # 'auto'
+        df['dataGeneralizations'] = _normalize_data_generalizations(
+            df.get('dataGeneralizations', pd.Series(False, index=df.index))
+        )
 
-        if infer_generalizations is True:
-            df['dataGeneralizations'] = df['coordinatePrecision'].apply(
-                lambda x: True if x else False
-            )
-        elif infer_generalizations is False:
-            df['dataGeneralizations'] = False
-        else:  # 'auto'
-            df['dataGeneralizations'] = _normalize_data_generalizations(
-                df.get('dataGeneralizations', pd.Series(False, index=df.index))
-            )
-
-        if is_full_hidden == 'auto':
-            if 'sensitiveCategory' in df.columns:
-                df['_is_hidden'] = df['sensitiveCategory'].isin(['縣市', '座標不開放'])
-            else:
-                df['_is_hidden'] = False
+    if is_full_hidden == 'auto':
+        if 'sensitiveCategory' in df.columns:
+            df['_is_hidden'] = df['sensitiveCategory'].isin(['縣市', '座標不開放'])
         else:
-            df['_is_hidden'] = bool(is_full_hidden)
+            df['_is_hidden'] = False
+    else:
+        df['_is_hidden'] = bool(is_full_hidden)
 
     geo_results = df.apply(
         lambda x: _compute_geo_row(
@@ -265,11 +301,15 @@ def process_geo_batch(df, is_full_hidden=False, skip_blur=False, infer_generaliz
         geo_df.loc[blur_idx, 'rawMunicipality'] = raw_muni.loc[blur_idx].values
         geo_df.loc[blur_idx, 'county'] = blur_county.values
         geo_df.loc[blur_idx, 'municipality'] = blur_muni.values
+
+    # 把 normalize 後的兩欄放回 geo_df，這樣呼叫端 df[geo_keys] = process_geo_batch(...) 才會更新到
+    geo_df['dataGeneralizations'] = df['dataGeneralizations'].astype(bool)
+    geo_df['coordinatePrecision'] = df['coordinatePrecision']
+
     for k in geo_keys:
         if k not in geo_df.columns:
             geo_df[k] = None
     return geo_df[geo_keys]
-
 
 def parse_verbatim_coords(coord_str):
     # 如果是空值或非字串，回傳 None

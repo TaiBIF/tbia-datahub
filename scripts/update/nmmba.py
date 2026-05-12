@@ -124,7 +124,6 @@ while has_more_data:
     data = []
     p = c + 10
     while c < p and has_more_data:
-        # offset = 300 * c
         time.sleep(1)
         url = f"https://helloocean.nmmba.gov.tw/nmmba_front/API/get.aspx?pageIndex={c}"
         response = requests.post(url, headers=headers)
