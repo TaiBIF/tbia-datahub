@@ -762,4 +762,4 @@ class OptimizedMatchLogProcessor:
             pd.DataFrame(self.failed_match_logs).to_csv(filepath, index=False)
             print(f"📄 已匯出 {len(self.failed_match_logs)} 筆失敗記錄到 {filepath}")
         else:
-            print("✅ 沒有失敗記錄")
+            print("✅ 沒有 match log 失敗記錄")

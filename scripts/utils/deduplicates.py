@@ -8,7 +8,6 @@ import concurrent.futures
 from scripts.utils.common import to_none_dict
 from scripts.utils.progress import timed
 
-
 class DedupTracker:
     """
     使用 SQLite 追蹤已處理的 (datasetName, occurrenceID/catalogNumber)，
@@ -33,13 +32,19 @@ class DedupTracker:
 
     def _init_db(self):
         with sqlite3.connect(self.db_path) as conn:
+            # 偵測舊 schema（有 key_field 欄位）→ 直接 drop 重建
+            cursor = conn.execute("PRAGMA table_info(seen_keys)")
+            cols = [row[1] for row in cursor.fetchall()]
+            if cols and 'key_field' in cols:
+                conn.execute('DROP TABLE seen_keys')
+
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS seen_keys (
-                    dataset_name TEXT NOT NULL,
-                    key_field    TEXT NOT NULL,
-                    key_value    TEXT NOT NULL,
-                    tbia_id      TEXT NOT NULL,
-                    PRIMARY KEY (dataset_name, key_field, key_value)
+                    dataset_name    TEXT NOT NULL,
+                    occurrence_id   TEXT NOT NULL DEFAULT '',
+                    catalog_number  TEXT NOT NULL DEFAULT '',
+                    tbia_id         TEXT NOT NULL,
+                    PRIMARY KEY (dataset_name, occurrence_id, catalog_number)
                 )
             ''')
 
@@ -47,8 +52,9 @@ class DedupTracker:
 
     def dedup_within_batch(self, df):
         """
-        同一批 df 內，(datasetName, occurrenceID) 或 (datasetName, catalogNumber)
-        有重複的，只保留第一筆並記錄。
+        同一批 df 內，依 (datasetName, occurrenceID, catalogNumber) 完全相同視為重複，
+        只保留第一筆並記錄。空值會和其他空值匹配，但與任何非空值都不匹配。
+        occurrenceID 和 catalogNumber 都為空的記錄一律保留（無法辨識）。
         回傳去重後的 df。
         """
         if df.empty:
@@ -56,53 +62,60 @@ class DedupTracker:
 
         compare_cols = [c for c in df.columns
                         if c not in self.TIME_COLS and c != 'id']
+
+        # 建立 normalized 的 key 欄位（trim 後的字串），確保 '' 和缺欄位都當作空
+        key_df = pd.DataFrame(index=df.index)
+        key_df['datasetName'] = df.get('datasetName', '').astype(str)
+        for col in ['occurrenceID', 'catalogNumber']:
+            if col in df.columns:
+                key_df[col] = df[col].astype(str).str.strip()
+            else:
+                key_df[col] = ''
+
+        # 只考慮至少有一個 identifier 的 rows
+        has_id = (key_df['occurrenceID'] != '') | (key_df['catalogNumber'] != '')
+        subset_keys = key_df[has_id]
+        if subset_keys.empty:
+            return df
+
+        group_cols = ['datasetName', 'occurrenceID', 'catalogNumber']
+        dup_mask = subset_keys.duplicated(subset=group_cols, keep=False)
+        if not dup_mask.any():
+            return df
+
         to_remove = set()
 
-        for key_field in ['occurrenceID', 'catalogNumber']:
-            if key_field not in df.columns:
-                continue
+        for (ds, occ_id, cat_num), grp in subset_keys[dup_mask].groupby(group_cols):
+            # 比對非時間欄位
+            grp_full = df.loc[grp.index]
+            grp_cmp = grp_full[compare_cols].astype(str)
+            fields_identical = len(grp_cmp.drop_duplicates()) == 1
 
-            mask = df[key_field].astype(str).str.strip() != ''
-            subset = df[mask]
-            if subset.empty:
-                continue
+            differing = ''
+            if not fields_identical:
+                first = grp_cmp.iloc[0]
+                diffs = set()
+                for _, row in grp_cmp.iloc[1:].iterrows():
+                    diffs.update(
+                        c for c in compare_cols if first[c] != row[c])
+                differing = ','.join(sorted(diffs))
 
-            dup_mask = subset.duplicated(
-                subset=['datasetName', key_field], keep=False)
-            if not dup_mask.any():
-                continue
-
-            for (ds, kv), grp in subset[dup_mask].groupby(
-                    ['datasetName', key_field]):
-                # 比對非時間欄位
-                grp_cmp = grp[compare_cols].astype(str)
-                fields_identical = len(grp_cmp.drop_duplicates()) == 1
-
-                differing = ''
-                if not fields_identical:
-                    first = grp_cmp.iloc[0]
-                    diffs = set()
-                    for _, row in grp_cmp.iloc[1:].iterrows():
-                        diffs.update(
-                            c for c in compare_cols if first[c] != row[c])
-                    differing = ','.join(sorted(diffs))
-
-                keep_idx = grp.index[0]
-                for idx in grp.index[1:]:
-                    if idx in to_remove:
-                        continue
-                    to_remove.add(idx)
-                    self.duplicates.append({
-                        'rightsHolder': self.rights_holder,
-                        'datasetName': ds,
-                        'key_field': key_field,
-                        'key_value': kv,
-                        'duplicate_type': 'within_batch',
-                        'fields_identical': fields_identical,
-                        'differing_fields': differing,
-                        'kept_id': df.at[keep_idx, 'id'],
-                        'removed_id': df.at[idx, 'id'],
-                    })
+            keep_idx = grp.index[0]
+            for idx in grp.index[1:]:
+                if idx in to_remove:
+                    continue
+                to_remove.add(idx)
+                self.duplicates.append({
+                    'rightsHolder': self.rights_holder,
+                    'datasetName': ds,
+                    'occurrenceID': occ_id,
+                    'catalogNumber': cat_num,
+                    'duplicate_type': 'within_batch',
+                    'fields_identical': fields_identical,
+                    'differing_fields': differing,
+                    'kept_id': df.at[keep_idx, 'id'],
+                    'removed_id': df.at[idx, 'id'],
+                })
 
         if to_remove:
             print(f'   ⚠️ 批內去重：移除 {len(to_remove)} 筆重複')
@@ -114,84 +127,89 @@ class DedupTracker:
 
     def find_cross_batch_supplement(self, df, existed_records):
         """
-        查 SQLite 找出已在先前批次處理、但 Solr 尚未收錄的 key，
+        查 SQLite 找出已在先前批次處理、但 Solr 尚未收錄的 records。
+        依 (datasetName, occurrenceID, catalogNumber) 完整 tuple 比對。
         回傳補充用的 DataFrame（格式同 existed_records）。
         """
         if df.empty:
-            return pd.DataFrame(columns=['tbiaID', 'occurrenceID',
-                                         'catalogNumber'])
+            return pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
 
         already_found = set()
         if existed_records is not None and not existed_records.empty:
             already_found = set(existed_records['tbiaID'].tolist())
 
+        # 建立 normalized 的 key 欄位
+        key_df = pd.DataFrame(index=df.index)
+        key_df['datasetName'] = df.get('datasetName', '').astype(str)
+        for col in ['occurrenceID', 'catalogNumber']:
+            if col in df.columns:
+                key_df[col] = df[col].astype(str).str.strip()
+            else:
+                key_df[col] = ''
+
+        # 只查至少有一個 identifier 的 rows
+        has_id = (key_df['occurrenceID'] != '') | (key_df['catalogNumber'] != '')
+        subset = key_df[has_id]
+        if subset.empty:
+            return pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
+
+        # 取出 unique tuples，避免重複查詢
+        unique_tuples = subset[['datasetName', 'occurrenceID', 'catalogNumber']].drop_duplicates()
+
         supplement = []
+        batch_size = 500
 
         with sqlite3.connect(self.db_path) as conn:
-            for key_field in ['occurrenceID', 'catalogNumber']:
-                if key_field not in df.columns:
-                    continue
+            tuples_list = list(unique_tuples.itertuples(index=False, name=None))
+            # 分批：每批用 OR 串接 tuple 比對
+            for i in range(0, len(tuples_list), batch_size):
+                batch = tuples_list[i:i + batch_size]
+                conditions = ' OR '.join(
+                    ['(dataset_name = ? AND occurrence_id = ? AND catalog_number = ?)'] * len(batch)
+                )
+                params = [v for tup in batch for v in tup]
+                rows = conn.execute(
+                    f'SELECT dataset_name, occurrence_id, catalog_number, tbia_id '
+                    f'FROM seen_keys WHERE {conditions}',
+                    params,
+                ).fetchall()
 
-                mask = df[key_field].astype(str).str.strip() != ''
-                subset = df[mask]
-                if subset.empty:
-                    continue
+                for ds_name, occ_id, cat_num, tbia_id in rows:
+                    if tbia_id in already_found:
+                        continue  # Solr 已回傳，不用補
+                    already_found.add(tbia_id)
 
-                # 依 datasetName 分組查詢（利用 PK index）
-                for ds_name, grp in subset.groupby('datasetName'):
-                    key_values = grp[key_field].unique().tolist()
+                    # 找 df 中對應的行記錄為 duplicate
+                    matched_mask = (
+                        (subset['datasetName'] == ds_name)
+                        & (subset['occurrenceID'] == occ_id)
+                        & (subset['catalogNumber'] == cat_num)
+                    )
+                    for idx in subset[matched_mask].index:
+                        self.duplicates.append({
+                            'rightsHolder': self.rights_holder,
+                            'datasetName': ds_name,
+                            'occurrenceID': occ_id,
+                            'catalogNumber': cat_num,
+                            'duplicate_type': 'cross_batch',
+                            'fields_identical': '',
+                            'differing_fields': '',
+                            'kept_id': tbia_id,
+                            'removed_id': df.at[idx, 'id'],
+                        })
 
-                    # 分批查 SQLite
-                    batch_size = 500
-                    for i in range(0, len(key_values), batch_size):
-                        batch = key_values[i:i + batch_size]
-                        placeholders = ','.join(['?'] * len(batch))
-                        rows = conn.execute(f'''
-                            SELECT key_value, tbia_id FROM seen_keys
-                            WHERE key_field = ?
-                              AND dataset_name = ?
-                              AND key_value IN ({placeholders})
-                        ''', [key_field, ds_name] + batch).fetchall()
-
-                        hits = {r[0]: r[1] for r in rows}
-                        if not hits:
-                            continue
-
-                        for kv, tbia_id in hits.items():
-                            if tbia_id in already_found:
-                                continue  # Solr 已經回傳，不用補
-                            already_found.add(tbia_id)
-
-                            # 找 df 中對應的行記錄 duplicate
-                            matched = grp[grp[key_field] == kv]
-                            for idx in matched.index:
-                                self.duplicates.append({
-                                    'rightsHolder': self.rights_holder,
-                                    'datasetName': ds_name,
-                                    'key_field': key_field,
-                                    'key_value': kv,
-                                    'duplicate_type': 'cross_batch',
-                                    'fields_identical': '',
-                                    'differing_fields': '',
-                                    'kept_id': tbia_id,
-                                    'removed_id': df.at[idx, 'id'],
-                                })
-
-                            occ = kv if key_field == 'occurrenceID' else ''
-                            cat = kv if key_field == 'catalogNumber' else ''
-                            supplement.append({
-                                'tbiaID': tbia_id,
-                                'occurrenceID': occ,
-                                'catalogNumber': cat,
-                            })
+                    supplement.append({
+                        'tbiaID': tbia_id,
+                        'occurrenceID': occ_id,
+                        'catalogNumber': cat_num,
+                    })
 
         if supplement:
             result = pd.DataFrame(supplement).drop_duplicates()
             print(f'   ⚠️ 跨批重複：發現 {len(result)} 筆已在先前批次處理過')
             return result
 
-        return pd.DataFrame(columns=['tbiaID', 'occurrenceID',
-                                     'catalogNumber'])
+        return pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
 
     # ── 3. 記錄已處理的 key ────────────────────────────────────
 
@@ -208,18 +226,22 @@ class DedupTracker:
         for _, row in df.iterrows():
             tbia_id = str(row.get(tbia_col, ''))
             ds_name = str(row.get('datasetName', ''))
-            for key_field in ['occurrenceID', 'catalogNumber']:
-                if key_field not in df.columns:
-                    continue
-                val = str(row.get(key_field, '')).strip()
-                if val and val != 'None' and val != 'nan':
-                    records.append((ds_name, key_field, val, tbia_id))
+            occ_id = str(row.get('occurrenceID', '')).strip() if 'occurrenceID' in df.columns else ''
+            cat_num = str(row.get('catalogNumber', '')).strip() if 'catalogNumber' in df.columns else ''
+            # 過濾掉 'None'、'nan' 等假空值
+            if occ_id in ('None', 'nan'):
+                occ_id = ''
+            if cat_num in ('None', 'nan'):
+                cat_num = ''
+            # 至少有一個 identifier 才寫入
+            if occ_id or cat_num:
+                records.append((ds_name, occ_id, cat_num, tbia_id))
 
         if records:
             with sqlite3.connect(self.db_path) as conn:
                 conn.executemany('''
                     INSERT OR REPLACE INTO seen_keys
-                    (dataset_name, key_field, key_value, tbia_id)
+                    (dataset_name, occurrence_id, catalog_number, tbia_id)
                     VALUES (?, ?, ?, ?)
                 ''', records)
 

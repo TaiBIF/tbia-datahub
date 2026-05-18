@@ -21,7 +21,8 @@ to_none_dict = {nan: None,
                 -999999: None, 
                 'N/A': None, 
                 'nan': None, 
-                '': None}
+                '': None,
+                'NaT': None}
 
 to_quote_dict = {nan: '', 
                  'NA': '', 

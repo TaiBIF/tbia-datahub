@@ -33,6 +33,7 @@ note = session.note
 now = session.now
 records_processor = session.records_processor
 matchlog_processor = session.matchlog_processor
+dedup_tracker = session.dedup_tracker
 
 # 更新失敗紀錄
 atexit.register(records_processor.export_failed_records, 
@@ -41,7 +42,7 @@ atexit.register(matchlog_processor.export_failed_records,
                 f'failed_match_logs_{group}_{info_id}.csv')
 
 
-dedup_tracker = DedupTracker(rights_holder, update_version)
+# dedup_tracker = DedupTracker(rights_holder, update_version)
 
 c = current_page if current_page != 0 else 1
 has_more_data = True
@@ -112,19 +113,30 @@ while has_more_data:
             df = process_dataset(df, group, rights_holder, update_version, now)
             df, existed_records = resolve_existed_records(df, rights_holder, dedup_tracker)
             df = df.replace(to_none_dict)
+            df_for_sql = prepare_df_for_sql(df, update_version)
+            failed_ids = records_processor.smart_upsert_records(
+                df_for_sql, existed_records=existed_records, dedup_tracker=dedup_tracker
+            )
+            if failed_ids:
+                df = df[~df['id'].isin(failed_ids)].reset_index(drop=True)
+                df_for_sql = df_for_sql[~df_for_sql['tbiaID'].isin(failed_ids)].reset_index(drop=True)
             process_match_log(df, matchlog_processor, existed_records, now, group, info_id, suffix=c)
-            df = prepare_df_for_sql(df, update_version)
-            records_processor.smart_upsert_records(df, existed_records=existed_records)
             export_records_with_taxon(df, f'/solr/csvs/export/{group}_{info_id}_{c}.csv')
+            # process_match_log(df, matchlog_processor, existed_records, now, group, info_id, suffix=c)
+            # df = prepare_df_for_sql(df, update_version)
+            # records_processor.smart_upsert_records(df, existed_records=existed_records)
+            # export_records_with_taxon(df, f'/solr/csvs/export/{group}_{info_id}_{c}.csv')
             update_media_rules(media_rules=media_rule_list,rights_holder=rights_holder, now=now)
     # 成功之後 更新update_update_version
-    update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None)
+    update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None, total_count=records_processor.success_count)
 
 
 if not has_more_data:
-    delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version))
+    failed_tbia_ids = {r['tbiaID'] for r in records_processor.failed_records if r.get('tbiaID')}
+    delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version),exclude_ids=failed_tbia_ids)
+    # delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version))
     zip_match_log(group=group,info_id=info_id)
-    update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder)
+    update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder, total_count=records_processor.success_count)
     update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
 
 

@@ -212,6 +212,7 @@ class UpdateVersion(Base):
 
     update_version: Mapped[Optional[int]]
     current_page: Mapped[Optional[int]]
+    total_count: Mapped[Optional[int]]
     rights_holder:  Mapped[Optional[str]] = mapped_column(String(10000), index=True)
     note: Mapped[Optional[str]] = mapped_column(JSON)
     is_finished: Mapped[bool] = mapped_column(server_default='f')
