@@ -243,9 +243,7 @@ if len(df):
         df = df[~df['id'].isin(failed_ids)].reset_index(drop=True)
         df_for_sql = df_for_sql[~df_for_sql['tbiaID'].isin(failed_ids)].reset_index(drop=True)
     process_match_log(df, matchlog_processor, existed_records, now, group, info_id, suffix=None)
-    # df = prepare_df_for_sql(df, update_version)
-    # records_processor.smart_upsert_records(df, existed_records=existed_records)
-    export_records_with_taxon(df, f'/solr/csvs/export/{group}_{info_id}.csv')
+    export_records_with_taxon(df_for_sql,f'/solr/csvs/export/{group}_{info_id}.csv')
     update_media_rules(media_rules=media_rule_list,rights_holder=rights_holder, now=now)
 
 failed_tbia_ids = {r['tbiaID'] for r in records_processor.failed_records if r.get('tbiaID')}
