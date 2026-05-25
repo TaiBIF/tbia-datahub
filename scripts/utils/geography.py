@@ -197,8 +197,8 @@ def _lookup_county_batch(lons, lats):
 
 
 def _normalize_data_generalizations(series):
-    """將 dataGeneralizations 統一轉為 bool，處理 'Y'/'N'/True/False/None"""
-    return series.map(lambda v: v is True or v == 'Y' or v == 'y')
+    """將 dataGeneralizations 統一轉為 bool；無法判讀的值（含 NaN/None/未知字串）一律視為 False"""
+    return series.map(_safe_bool).fillna(False).astype(bool)
 
 
 def _safe_bool(value):
@@ -239,33 +239,48 @@ def process_geo_batch(df, is_full_hidden=False, skip_blur=False, infer_generaliz
                          該單位 API 沒給 dataGeneralizations 欄位)
         False          - 強制 dataGeneralizations 全部設 False
 
-    skip_blur=True 時：完全跳過 geo 計算，保留原 df 所有 geo 欄位的值；
-        僅對 dataGeneralizations / coordinatePrecision 逐筆檢查型別，
-        不合法才設為 None，以避免 DB 寫入時 type error。
-    """
-    if skip_blur:
-        out = pd.DataFrame(index=df.index)
-        for k in geo_keys:
-            out[k] = df[k] if k in df.columns else None
-        if 'dataGeneralizations' in df.columns:
-            out['dataGeneralizations'] = df['dataGeneralizations'].map(_safe_bool)
-        if 'coordinatePrecision' in df.columns:
-            out['coordinatePrecision'] = df['coordinatePrecision'].map(_safe_float)
-        return out
+    is_full_hidden:
+        False (預設) - 不強制隱藏
+        True         - 強制所有 row 視為完全隱藏
+        'auto'       - 依 sensitiveCategory 欄位判斷（'縣市' / '座標不開放' 視為完全隱藏）
 
+    skip_blur=True 時：來源資料的座標已預先模糊過，跳過 _blur_coordinate
+        與第二次 (blurred) county lookup，但仍會做標準化、grid 計算、county lookup。
+        verbatimLongitude/Latitude、dataGeneralizations、coordinatePrecision
+        會還原為輸入的原始值，以保留來源端的描述性 metadata。
+    """
     df = df.copy()
+
+    # skip_blur：保存原始 verbatim 與 metadata，並把驅動 blur 的欄位中性化
+    if skip_blur:
+        preserved_verbatim_lon = (df['verbatimLongitude'].copy()
+                                  if 'verbatimLongitude' in df.columns else None)
+        preserved_verbatim_lat = (df['verbatimLatitude'].copy()
+                                  if 'verbatimLatitude' in df.columns else None)
+        preserved_dg = (df['dataGeneralizations'].map(_safe_bool)
+                        if 'dataGeneralizations' in df.columns
+                        else pd.Series(None, index=df.index, dtype=object))
+        preserved_cp = (df['coordinatePrecision'].map(_safe_float)
+                        if 'coordinatePrecision' in df.columns
+                        else pd.Series(None, index=df.index, dtype=object))
+        df['dataGeneralizations'] = False
+        df['coordinatePrecision'] = None
+        if 'sensitiveCategory' in df.columns:
+            df = df.drop(columns=['sensitiveCategory'])
+
     df['coordinatePrecision'] = _resolve_coordinate_precision(df)
 
-    if infer_generalizations is True:
-        df['dataGeneralizations'] = df['coordinatePrecision'].apply(
-            lambda x: True if x else False
-        )
-    elif infer_generalizations is False:
-        df['dataGeneralizations'] = False
-    else:  # 'auto'
-        df['dataGeneralizations'] = _normalize_data_generalizations(
-            df.get('dataGeneralizations', pd.Series(False, index=df.index))
-        )
+    if not skip_blur:
+        if infer_generalizations is True:
+            df['dataGeneralizations'] = df['coordinatePrecision'].apply(
+                lambda x: True if x else False
+            )
+        elif infer_generalizations is False:
+            df['dataGeneralizations'] = False
+        else:  # 'auto'
+            df['dataGeneralizations'] = _normalize_data_generalizations(
+                df.get('dataGeneralizations', pd.Series(False, index=df.index))
+            )
 
     if is_full_hidden == 'auto':
         if 'sensitiveCategory' in df.columns:
@@ -306,10 +321,20 @@ def process_geo_batch(df, is_full_hidden=False, skip_blur=False, infer_generaliz
     geo_df['dataGeneralizations'] = df['dataGeneralizations'].astype(bool)
     geo_df['coordinatePrecision'] = df['coordinatePrecision']
 
+    # skip_blur：還原原始 verbatim 與 metadata
+    if skip_blur:
+        if preserved_verbatim_lon is not None:
+            geo_df['verbatimLongitude'] = preserved_verbatim_lon
+        if preserved_verbatim_lat is not None:
+            geo_df['verbatimLatitude'] = preserved_verbatim_lat
+        geo_df['dataGeneralizations'] = preserved_dg
+        geo_df['coordinatePrecision'] = preserved_cp
+
     for k in geo_keys:
         if k not in geo_df.columns:
             geo_df[k] = None
     return geo_df[geo_keys]
+
 
 def parse_verbatim_coords(coord_str):
     # 如果是空值或非字串，回傳 None

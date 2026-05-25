@@ -22,7 +22,8 @@ to_none_dict = {nan: None,
                 'N/A': None, 
                 'nan': None, 
                 '': None,
-                'NaT': None}
+                'NaT': None,
+                'NaN': None}
 
 to_quote_dict = {nan: '', 
                  'NA': '', 
@@ -32,7 +33,9 @@ to_quote_dict = {nan: '',
                  -999999: '', 
                  'N/A': '', 
                  'nan': '',
-                 None: ''}
+                 None: '',
+                 'NaT': '',
+                 'NaN': ''}
 
 
 def get_gbif_id(gbifDatasetID, occurrenceID):
