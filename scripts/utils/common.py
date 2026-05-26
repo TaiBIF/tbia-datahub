@@ -5,6 +5,7 @@ from datetime import datetime
 from dateutil import parser
 import threading
 import os
+import re
 import psycopg2
 from app import db_settings
 import numpy as np
@@ -309,19 +310,19 @@ def _get_media_type(media_url):
  
 def _compute_media_types(media_str):
     """
-    從 ';' 分隔的 URL 字串對應出 ';' 分隔的類別字串。
+    從 '|' 或 ';' 分隔的 URL 字串對應出 ';' 分隔的類別字串。
     每個 URL 對應一個類別 (image/video/audio/unknown)，位置與原 URL 對齊。
     """
     if not media_str:
         return ''
     types = []
-    for url in media_str.split(';'):
+    for url in re.split(r'[|;]', media_str):
         url = url.strip()
         types.append(_get_media_type(url) if url else 'unknown')
     return ';'.join(types)
  
  
- # 取得影像網址前綴
+# 取得影像網址前綴
 def _get_media_rule(media_url):
     full_rule = None
     string_list = media_url.split('//')
@@ -340,13 +341,13 @@ def _get_media_rule(media_url):
 
 def _extract_media_rules(media_str):
     """
-    從 ';' 分隔的 URL 字串取出所有 media_rule (protocol+domain)。
+    從 '|' 或 ';' 分隔的 URL 字串取出所有 media_rule (protocol+domain)。
     支援單一 URL 或多 URL；自動忽略空字串、保留出現順序、跨 URL 去重。
     """
     if not media_str:
         return []
     rules = []
-    for url in media_str.split(';'):
+    for url in re.split(r'[|;]', media_str):
         url = url.strip()
         if not url:
             continue
@@ -373,7 +374,7 @@ def apply_media_rule(df, media_rule_list):
     """
     處理 mediaLicense + associatedMedia 區塊。
     若 mediaLicense 為空（或根本沒有該欄位）則清空 associatedMedia，並蒐集所有出現過的 media_rule。
-    associatedMedia 支援 ';' 分隔多 URL，跨 domain 也能正確收集。
+    associatedMedia 支援 '|' 或 ';' 分隔多 URL，跨 domain 也能正確收集。
     """
     # 1. 如果根本沒有 associatedMedia 欄位，直接回傳即可
     if 'associatedMedia' not in df.keys():
