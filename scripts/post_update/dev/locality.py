@@ -2,8 +2,7 @@ import requests
 import pandas as pd
 from datetime import datetime
 
-from solr_helper import SOLR_BASE, solr_reimport_from_csv
-
+from scripts.post_update.solr_helper import SOLR_BASE, solr_reimport_from_csv
 
 now = datetime.now().strftime('%Y%m%d')
 

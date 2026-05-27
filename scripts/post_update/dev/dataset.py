@@ -7,8 +7,7 @@ from datetime import datetime
 from tqdm import tqdm
 
 from app import db_settings
-from solr_helper import SOLR_BASE, solr_reimport_from_csv
-
+from scripts.post_update.solr_helper import SOLR_BASE, solr_reimport_from_csv
 
 bio_group_en = {
     '鳥類':       'Birds',
