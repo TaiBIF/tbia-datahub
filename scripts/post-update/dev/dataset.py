@@ -48,8 +48,8 @@ with conn.cursor() as cursor:
 
 # 每個 dataset 查一次 Solr,一次取得所有需要的 facet 與 stats
 records = []
-# for i, row in tqdm(df.iterrows(), total=len(df), desc='fetch dataset stats'):
-for i, row in df.iterrows():
+
+for i, row in tqdm(df.iterrows(), total=len(df), desc='fetch dataset stats'):
     params = {
         'q': '*:*',
         'fq': f'tbiaDatasetID:"{row.tbiaDatasetID}"',
