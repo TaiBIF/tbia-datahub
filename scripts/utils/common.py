@@ -145,7 +145,12 @@ def convert_date(date):
 
     if not formatted_date:
         try:
-            formatted_date = parser.parse(date)
+            # 用兩個不同 default 解析，月/日若隨 default 變動代表原字串沒提供，
+            # 視為無法解析成完整日期（避免 dateutil 用今天補齊年份字串）
+            d1 = parser.parse(date, default=datetime(1900, 1, 1))
+            d2 = parser.parse(date, default=datetime(1901, 2, 2))
+            if d1.month == d2.month and d1.day == d2.day:
+                formatted_date = d1
         except:
             pass
 

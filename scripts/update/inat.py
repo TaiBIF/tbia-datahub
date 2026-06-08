@@ -89,8 +89,6 @@ while has_more_data:
                 'common_name': 'sourceVernacularName', 
             })
             df['eventDate'] = df.apply(lambda x: x.time_observed_at if x.time_observed_at else x.observed_on, axis=1)
-            # 如果sensitiveCategory為重度 只保留年份
-            df['eventDate'] = df.apply(lambda x: x.eventDate.split('-')[0] if x.coordinates_obscured == True and x.eventDate else x.eventDate, axis=1)
             df['locality'] = df.apply(
                 lambda x: ', '.join(filter(None, [x.place_county_name, x.place_country_name])) or None,
                 axis=1
@@ -98,6 +96,8 @@ while has_more_data:
             df['basisOfRecord'] = 'HumanObservation'
             df = process_taxon_match(df, sci_cols)
             df = apply_common_fields(df, group, rights_holder, now)
+            # 如果sensitiveCategory為重度 只保留年份
+            df.loc[df['coordinates_obscured'] == True, ['standardDate', 'month', 'day']] = None
             df = apply_record_type(df, mode='occ')  # basisOfRecord 無資料
             df, media_rule_list = apply_media_rule(df, [])
             # 地理資訊
