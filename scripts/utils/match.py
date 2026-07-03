@@ -34,7 +34,8 @@ def clean_html_tags(text):
     return text.replace('<i>', '').replace('</i>', '').strip()
 
 match_cols = ['taxonID','sci_index',
-                'match_stage', 'match_higher_taxon', 'stage_1', 'stage_2', 'stage_3',
+                'match_stage', 'match_higher_taxon', 'match_higher_partial',
+                'stage_1', 'stage_2', 'stage_3',
                 'stage_4', 'stage_5', 'stage_6', 'stage_7', 'stage_8']
 
 deleted_taxon_ids = pd.read_csv('/bucket/deleted_taxon.csv')
@@ -48,11 +49,202 @@ match_issue_map = {
     4: 'multiple'
 }
 
+# TODO rank map待新增47之後的
 rank_map = {
     1: 'Domain', 2: 'Superkingdom', 3: 'Kingdom', 4: 'Subkingdom', 5: 'Infrakingdom', 6: 'Superdivision', 7: 'Division', 8: 'Subdivision', 9: 'Infradivision', 10: 'Parvdivision', 11: 'Superphylum', 12:
     'Phylum', 13: 'Subphylum', 14: 'Infraphylum', 15: 'Microphylum', 16: 'Parvphylum', 17: 'Superclass', 18: 'Class', 19: 'Subclass', 20: 'Infraclass', 21: 'Superorder', 22: 'Order', 23: 'Suborder',
     24: 'Infraorder', 25: 'Superfamily', 26: 'Family', 27: 'Subfamily', 28: 'Tribe', 29: 'Subtribe', 30: 'Genus', 31: 'Subgenus', 32: 'Section', 33: 'Subsection', 34: 'Species', 35: 'Subspecies', 36:
     'Nothosubspecies', 37: 'Variety', 38: 'Subvariety', 39: 'Nothovariety', 40: 'Form', 41: 'Subform', 42: 'Special Form', 43: 'Race', 44: 'Stirp', 45: 'Morph', 46: 'Aberration', 47: 'Hybrid Formula'}
+
+
+# ── rank 標準化:由 TaiCOL 階層表程式化生成對照,涵蓋 key / 英文 / 中文(含 | 分隔別名) ──
+def _canon_rank_str(s):
+    """rank 字串正規化:小寫、分隔符(- _)轉空格、收合空白"""
+    s = str(s).strip().lower()
+    s = re.sub(r'[-_]+', ' ', s)
+    s = re.sub(r'\s+', ' ', s)
+    return s
+
+def _build_rank_normalize_map(rank_df):
+    """從階層表建立 {正規化字串 -> 標準 key}。來源:key、en-us、zh-tw(以 | 分隔的每個別名)。"""
+    m = {}
+    for _, r in rank_df.iterrows():
+        key = r['key']
+        candidates = [key]
+        try:
+            disp = json.loads(r['display'])
+            candidates.append(disp.get('en-us', ''))
+            candidates += disp.get('zh-tw', '').split('|')
+        except Exception:
+            pass
+        for c in candidates:
+            c = _canon_rank_str(c)
+            if c:
+                m[c] = key
+    return m
+
+# 階層表(欄位:id, key, display, order, ...)。若要改從 DB 撈最新,替換此處載入即可。
+_rank_df = pd.read_csv('/bucket/taicol_rank.csv')
+RANK_NORMALIZE_MAP = _build_rank_normalize_map(_rank_df)
+
+# 種下哨兵:泛指「種下某階層」,無法對應到單一 key
+BELOW_SPECIES_SENTINEL = '__below_species__'
+
+# 手動修正:署 為 屬(genus)的同音誤植;種下階層 → 種下哨兵
+RANK_NORMALIZE_MAP[_canon_rank_str('署')] = 'genus'
+RANK_NORMALIZE_MAP[_canon_rank_str('種下階層')] = BELOW_SPECIES_SENTINEL
+
+# 由 order 推導:species 與所有「種下」階層(order 大於 species),但排除 hybrid-formula(非種下)
+SPECIES_RANK = 'species'
+_NOT_BELOW_SPECIES = {'hybrid-formula'}
+_species_order = int(_rank_df.loc[_rank_df['key'] == 'species', 'order'].iloc[0])
+BELOW_SPECIES_RANKS = set(
+    _rank_df.loc[(_rank_df['order'] > _species_order) &
+                 (~_rank_df['key'].isin(_NOT_BELOW_SPECIES)), 'key']
+)
+
+def normalize_rank(v):
+    """標準化 rank → 標準 key;無法對應或空值回 None"""
+    if v is None:
+        return None
+    s = str(v).strip()
+    if s == '' or s.lower() == 'nan':
+        return None
+    return RANK_NORMALIZE_MAP.get(_canon_rank_str(s))
+
+def _rank_match(source_rank, cand_rank):
+    """species 須等於 species;種下(含哨兵)對應任一種下;其餘須完全相等。
+    候選無 rank 資訊時視為不通過(保守)。"""
+    if cand_rank is None:
+        return False
+    if source_rank == SPECIES_RANK:
+        return cand_rank == SPECIES_RANK
+    if source_rank in BELOW_SPECIES_RANKS or source_rank == BELOW_SPECIES_SENTINEL:
+        return cand_rank in BELOW_SPECIES_RANKS
+    return cand_rank == source_rank
+
+def has_hybrid_marker(name):
+    if not isinstance(name, str):
+        return False
+    # × 符號:出現即算
+    if '\u00d7' in name:
+        return True
+    # 半形 x/X:只有獨立成詞(前後空格)才算雜交,例如 "Genus x species"
+    # 但如果是 "Genus xspecies" 就會被跳過
+    tokens = name.split()
+    return 'x' in tokens or 'X' in tokens
+
+def _stage4_genus_transform(df):
+    """stage 4:取屬名(第一個字)去比對。
+    - 有 sourceTaxonRank:限種/種下(原行為)。
+    - 無 sourceTaxonRank:退而用「雙名格式」判斷(≥2 字、首字為屬名格式),
+      涵蓋 Gracilaria chorda 這種缺 rank 但實為雙名的種名。
+    學名有雜交符號者一律跳過。"""
+    names = df['now_matching_name'].fillna('').astype(str)
+    no_hybrid = ~names.map(has_hybrid_marker)
+
+    # 首字為屬名格式(首字母大寫的純拉丁字),且整串 ≥ 2 個字 → 視為雙名
+    def _looks_binomial(n):
+        parts = n.strip().split()
+        return len(parts) >= 2 and bool(re.match(r'^[A-Z][a-z]+$', parts[0]))
+
+    if 'sourceTaxonRank' in df.columns:
+        ranks = df['sourceTaxonRank'].map(normalize_rank)
+        has_rank = ranks.notna()
+        is_sp_or_below = ranks.map(
+            lambda r: r == SPECIES_RANK or r in BELOW_SPECIES_RANKS or r == BELOW_SPECIES_SENTINEL
+        )
+        # 有 rank → 用 rank;無 rank → 用雙名格式
+        eligible = (has_rank & is_sp_or_below) | (~has_rank & names.map(_looks_binomial))
+    else:
+        eligible = names.map(_looks_binomial)
+
+    genus = names.str.split(' ').str[0]
+    return genus.where(eligible & no_hybrid, '')
+
+
+# ── 無上階層資訊時,用 COL 來源做同名/相似名歧義偵測 ──
+COL_MATCH_BASE_URL = 'https://match.taibif.tw/v2/'   # 測試用外部 endpoint;之後改本機
+_col_ambiguity_cache = {}
+
+# 各階層的上下關係(數字越小越上階)
+_LEVEL_ORDER = {'kingdom': 0, 'class': 1, 'order': 2, 'family': 3, 'genus': 4, 'species': 5}
+_HIER_SOURCE_FIELDS = [
+    ('kingdom', 'sourceKingdom'), ('class', 'sourceClass'),
+    ('order', 'sourceOrder'), ('family', 'sourceFamily'),
+]
+_FIELD_TO_CAND = {
+    'sourceFamily': 'family', 'sourceClass': 'class',
+    'sourceOrder': 'order', 'sourceKingdom': 'kingdom',
+}
+
+
+def _disambiguating_fields(specific_rank):
+    """回傳「比 matched rank 更上階」的來源欄位(可用於消歧義的上階層)。
+    例:stage 8 比對 class → 只回 sourceKingdom;stage 4 比對 genus → 回全部四個。"""
+    r = specific_rank if specific_rank in _LEVEL_ORDER else 'species'
+    cutoff = _LEVEL_ORDER[r]
+    return [f for (lvl, f) in _HIER_SOURCE_FIELDS if _LEVEL_ORDER[lvl] < cutoff]
+
+
+def _col_is_ambiguous(name):
+    """用 COL 來源查同名/相似名:results 多筆 → 視為歧義(True)。
+    查詢失敗一律回 False(放行,沿用 TaiCOL 唯一候選);之後改本機後可再調整。"""
+    if not name or not isinstance(name, str):
+        return False
+    key = name.strip()
+    if key == '':
+        return False
+    if key in _col_ambiguity_cache:
+        return _col_ambiguity_cache[key]
+    result = False
+    try:
+        url = f"{COL_MATCH_BASE_URL}api.php?names={urllib.parse.quote(key)}&format=json&source=col"
+        resp = requests.get(url, timeout=30)
+        if resp.status_code == 200:
+            data = resp.json()
+            rows = data.get('data')
+            if isinstance(rows, list) and rows and isinstance(rows[0], list) and rows[0]:
+                best = rows[0][0]
+                if isinstance(best, dict):
+                    rs = best.get('results', [])
+                    result = isinstance(rs, list) and len(rs) > 1
+    except Exception as e:
+        print(f"COL ambiguity check error for {key}: {e}")
+    _col_ambiguity_cache[key] = result
+    return result
+
+
+def _col_has_exact(name):
+    """用 COL 來源查:是否存在與查詢名「完全相同」的結果(score == 1)。
+    用於單名 fuzzy 否決——COL 有完全命中、但 TaiCOL 只有 fuzzy,代表 TaiCOL 很可能對錯。
+    查詢失敗一律回 False(不否決,保守放行)。"""
+    if not name or not isinstance(name, str):
+        return False
+    key = name.strip()
+    if key == '':
+        return False
+    cache_key = f'exact::{key}'
+    if cache_key in _col_ambiguity_cache:
+        return _col_ambiguity_cache[cache_key]
+    result = False
+    try:
+        url = f"{COL_MATCH_BASE_URL}api.php?names={urllib.parse.quote(key)}&format=json&source=col"
+        resp = requests.get(url, timeout=30)
+        if resp.status_code == 200:
+            data = resp.json()
+            rows = data.get('data')
+            if isinstance(rows, list) and rows and isinstance(rows[0], list) and rows[0]:
+                best = rows[0][0]
+                if isinstance(best, dict):
+                    rs = best.get('results', [])
+                    if isinstance(rs, list):
+                        result = any(isinstance(r, dict) and r.get('score') == 1 for r in rs)
+    except Exception as e:
+        print(f"COL exact check error for {key}: {e}")
+    _col_ambiguity_cache[cache_key] = result
+    return result
+
 
 @timed()
 def process_taxon_match(df, sci_cols):
@@ -235,8 +427,8 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
 
         # 應用轉換函數（如果有）
         if transform_func:
-            no_taxon['now_matching_name'] = transform_func(no_taxon['now_matching_name'])
-        
+            no_taxon['now_matching_name'] = transform_func(no_taxon)
+
         # 過濾空值
         matching_df = no_taxon[no_taxon.now_matching_name != ''].copy()
         
@@ -249,7 +441,7 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
         
         # 選擇需要的欄位
         keep_columns = ['now_matching_name', 'sci_index'] + [
-            col for col in ['sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom'] 
+            col for col in ['sourceFamily', 'sourceClass', 'sourceOrder', 'sourceKingdom', 'sourceTaxonRank']
             if col in matching_df.columns
         ]
         matching_df = matching_df[keep_columns]
@@ -354,26 +546,26 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
                 # 沒有符合rank要求的結果
                 continue
             
-            # 向量化狀態過濾
-            if (results_df.name_status == 'accepted').any():
-                results_df = results_df[results_df.name_status == 'accepted']
-            elif (results_df.name_status == 'not-accepted').any():
-                results_df = results_df[results_df.name_status == 'not-accepted']
-            
-            if results_df.empty:
-                # 沒有有效狀態的結果
-                continue
-            
-            # 處理階層匹配
-            results_dict = results_df.drop(columns=['name_status', 'taxon_rank']).to_dict(orient='records')
-            
-            # 向量化階層檢查
-            matched_results = _check_hierarchy_match_vectorized(results_dict, row)
-            
+            # 保留 taxon_rank 供 rank 消歧義(name_status 也保留供後續挑選)
+            results_dict = results_df.to_dict(orient='records')
+
+            # 向量化階層檢查(含 rank 消歧義;無上階層時用 COL 偵測歧義)
+            matched_results = _check_hierarchy_match_vectorized(results_dict, row, is_parent, specific_rank)
+
+            # 在通過階層比對的候選中做狀態過濾:accepted 優先,其次 not-accepted
+            if matched_results:
+                if any(m.get('name_status') == 'accepted' for m in matched_results):
+                    matched_results = [m for m in matched_results if m.get('name_status') == 'accepted']
+                elif any(m.get('name_status') == 'not-accepted' for m in matched_results):
+                    matched_results = [m for m in matched_results if m.get('name_status') == 'not-accepted']
+
             if matched_results:
                 # 更新sci_names
                 best_match = matched_results[0]
                 sci_names.loc[sci_names.sci_index == sci_idx, 'taxonID'] = best_match['accepted_namecode']
+
+                if best_match.get('_higher_partial'):
+                    sci_names.loc[sci_names.sci_index == sci_idx, 'match_higher_partial'] = True
                 
                 if is_parent:
                     sci_names.loc[sci_names.sci_index == sci_idx, 'match_higher_taxon'] = True
@@ -401,31 +593,89 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
         
         return successful_matches
     
-    def _check_hierarchy_match_vectorized(results_dict, row):
-        """向量化階層檢查"""
+
+    # 開放命名/不確定標記,計算詞數時先去除
+    _OPEN_NOMEN_TOKENS = {'sp', 'sp.', 'spp', 'spp.', 'indet', 'indet.', 'cf', 'cf.', 'aff', 'aff.'}
+
+    def _is_single_name(name):
+        """去除開放命名標記後,判斷是否為單名(僅一個詞)。"""
+        if not name or not isinstance(name, str):
+            return False
+        parts = [p for p in name.strip().split() if p.lower() not in _OPEN_NOMEN_TOKENS]
+        return len(parts) == 1
+
+    def _check_hierarchy_match_vectorized(results_dict, row, is_parent, specific_rank):
+        """階層檢查(規則 A):由上而下取「來源與候選都有值」的可比較層,
+        任一層相符即通過;只有單一可比較層時等同該層須完全相符。
+        有相符但也有不符的層 → 標記 _higher_partial 供稽核。
+        來源完全無上階層資訊 → 退回 COL 單候選歧義判斷。"""
         if not results_dict:
             return []
-        
-        # 獲取上階層資訊
-        source_family = row.get('sourceFamily')
-        source_class = row.get('sourceClass') 
-        source_order = row.get('sourceOrder')
-        source_kingdom = row.get('sourceKingdom')
-        
-        # 如果沒有上階層資訊，直接返回所有結果
-        if not any([source_family, source_class, source_order, source_kingdom]):
-            return results_dict
-        
-        # 過濾匹配的階層
+
+        def _norm(v):
+            if v is None:
+                return None
+            s = str(v).strip()
+            if s == '' or s.lower() == 'nan':
+                return None
+            return s.casefold()
+
+        # 由上而下的上階層來源欄位(界→綱→目→科),僅取比 matched rank 更上階者
+        disambig_fields = _disambiguating_fields(specific_rank)
+        src_vals = [(f, _norm(row.get(f))) for f in disambig_fields]
+        has_any_src = any(sv for _, sv in src_vals)
+
+        # rank 僅在非 is_parent 階段作為輔助維度
+        src_rank = normalize_rank(row.get('sourceTaxonRank')) if not is_parent else None
+
         matched = []
         for result in results_dict:
-            if (not source_family or result.get('family') == source_family) and \
-               (not source_class or result.get('class') == source_class) and \
-               (not source_order or result.get('order') == source_order) and \
-               (not source_kingdom or result.get('kingdom') == source_kingdom):
+            if src_rank and not _rank_match(src_rank, normalize_rank(result.get('taxon_rank'))):
+                continue
+
+            # 來源與候選皆有值的層(可比較層)
+            comparable = [
+                (sv, _norm(result.get(_FIELD_TO_CAND[f])))
+                for f, sv in src_vals
+                if sv and _norm(result.get(_FIELD_TO_CAND[f])) is not None
+            ]
+
+            if not comparable:
+                if has_any_src:
+                    # 來源有上階層、但此候選無任何可比較層 → 無法驗證,淘汰
+                    continue
+                # 來源本身無上階層資訊 → 收集,交給 COL 判斷
+                result['_higher_partial'] = False
                 matched.append(result)
-        
-        return matched if matched else results_dict
+                continue
+
+            # 規則 A:任一可比較層相符即通過
+            if not any(cv == sv for sv, cv in comparable):
+                continue
+
+            # 有相符、但也有不符的層 → partial
+            is_partial = any(cv != sv for sv, cv in comparable)
+
+            # 單名 COL 否決:名字為單名 + TaiCOL 為 fuzzy(score<1) + 高階層未全對(partial)
+            # + COL 有完全相同 → 視為 TaiCOL fuzzy 湊錯(如 Cerceis/Cerceris),否決此候選
+            if (is_partial
+                    and _is_single_name(row.get('now_matching_name'))
+                    and float(result.get('score') or 0) < 1.0
+                    and _col_has_exact(row.get('now_matching_name'))):
+                continue
+
+            result['_higher_partial'] = is_partial
+            matched.append(result)
+        # 來源有上階層資訊:回傳通過者(0/1/多筆由呼叫端處理)
+        if has_any_src:
+            return matched
+
+        # 來源無上階層資訊:沿用 COL 單候選 + 相似名歧義判斷
+        if len(matched) != 1:
+            return []
+        if _col_is_ambiguous(row.get('now_matching_name')):
+            return []
+        return matched    
     
     # 主要處理流程
     # print("=== Optimized Matching Flow ===")
@@ -441,7 +691,8 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
 
     sci_names['match_stage'] = 0
     sci_names['match_higher_taxon'] = False
-    
+    sci_names['match_higher_partial'] = False
+
     # 初始化所有 stage 欄位
     for i in range(1, 9):
         sci_names[f'stage_{i}'] = None
@@ -450,7 +701,7 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
     stages = [
         (1, 'sourceScientificName', False, None, None),
         (3, 'sourceVernacularName', False, None, None),
-        (4, 'sourceScientificName', True, 'genus', lambda x: x.str.split(' ').str[0]),
+        (4, 'sourceScientificName', True, 'genus', _stage4_genus_transform),
         (5, 'originalVernacularName', False, None, None),
         (6, 'sourceFamily', True, 'family', None),
         (7, 'sourceOrder', True, 'order', None),
@@ -518,6 +769,7 @@ def create_match_log_df(match_log, now):
     match_log = match_log.replace({np.nan: None})
     match_log['is_matched'] = match_log['taxonID'].notna()
     match_log['match_higher_taxon'] = match_log['match_higher_taxon'].replace({None: False, '': False})
+    match_log['match_higher_partial'] = match_log['match_higher_partial'].replace({None: False, '': False})
     match_log['match_stage'] = match_log['match_stage'].apply(lambda x: int(x) if x or x == 0 else None)
 
     for i in range(1, 9):
@@ -550,7 +802,7 @@ def process_match_log(df, matchlog_processor, existed_records, now, group, info_
     process_match_log(...)  # suffix 省略
 
     """
-    match_log_cols = ['occurrenceID','catalogNumber','id','sourceScientificName','taxonID','match_higher_taxon','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','group','rightsHolder','created','modified']
+    match_log_cols = ['occurrenceID','catalogNumber','id','sourceScientificName','taxonID','match_higher_taxon','match_higher_partial','match_stage','stage_1','stage_2','stage_3','stage_4','stage_5','stage_6','stage_7','stage_8','group','rightsHolder','created','modified']    
     match_log = create_match_log_df(df[match_log_cols].reset_index(drop=True), now)
     matchlog_processor.smart_upsert_match_log(match_log, existed_records=existed_records)
     filename = f'{group}_{info_id}_{suffix}.csv' if suffix is not None else f'{group}_{info_id}.csv'
@@ -650,7 +902,7 @@ class OptimizedMatchLogProcessor:
         timestamp_cols = ['modified', 'created']
         numeric_cols = ['match_stage', 'stage_1', 'stage_2', 'stage_3', 'stage_4', 
                        'stage_5', 'stage_6', 'stage_7', 'stage_8']
-        boolean_cols = ['match_higher_taxon', 'is_matched']
+        boolean_cols = ['match_higher_taxon', 'match_higher_partial', 'is_matched']
         
         # 使用大批次處理
         large_batch_size = min(1000, len(update_df))

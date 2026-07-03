@@ -27,6 +27,9 @@ class MatchLog(Base):
     taxonID: Mapped[Optional[str]] = mapped_column(String(10), index=True)
     # parentTaxonID: Mapped[Optional[str]] = mapped_column(String(10), index=True)
     match_higher_taxon: Mapped[bool] = mapped_column(server_default='f')
+    match_higher_partial: Mapped[bool] = mapped_column(server_default='f')
+    # match_higher_taxon:完全靠上階層(parent)才對到的
+    # match_higher_partial:有可比較的上階層相符、但也有層不符,仍放行對到的
 
     match_stage: Mapped[Optional[int]]
     stage_1: Mapped[Optional[str]] = mapped_column(String(20))
