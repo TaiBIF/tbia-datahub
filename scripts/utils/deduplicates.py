@@ -10,8 +10,8 @@ from scripts.utils.progress import timed
 
 class DedupTracker:
     """
-    使用 SQLite 追蹤已處理的 (datasetName, occurrenceID/catalogNumber)，
-    支援批內去重與跨批去重，並累積重複紀錄供最後輸出 CSV。
+    使用 SQLite 追蹤已處理的 (datasetName, occurrenceID, catalogNumber)，
+    支援批內去重與跨批去重，每批即時寫入重複紀錄 CSV。
     """
 
     TIME_COLS = {'created', 'modified', 'sourceCreated', 'sourceModified'}
@@ -20,13 +20,22 @@ class DedupTracker:
                  cache_dir='/bucket/dedup_cache'):
         self.rights_holder = rights_holder
         self.update_version = update_version
-        self.duplicates = []
+        self._pending_duplicates = []
+        self.duplicates_count = 0
 
         os.makedirs(cache_dir, exist_ok=True)
         safe_name = rights_holder.replace(' ', '_').replace('/', '_')
         self.db_path = os.path.join(
             cache_dir, f'{safe_name}_{update_version}.sqlite')
         self._init_db()
+
+        # 即時寫入 CSV
+        self._dup_csv_dir = '/bucket/duplicate_logs'
+        os.makedirs(self._dup_csv_dir, exist_ok=True)
+        self._dup_csv_path = os.path.join(
+            self._dup_csv_dir,
+            f'duplicates_{safe_name}_{update_version}.csv')
+        self._dup_csv_initialized = os.path.exists(self._dup_csv_path)
 
     # ── SQLite 初始化 ──────────────────────────────────────────
 
@@ -53,7 +62,7 @@ class DedupTracker:
     def dedup_within_batch(self, df):
         """
         同一批 df 內，依 (datasetName, occurrenceID, catalogNumber) 完全相同視為重複，
-        只保留第一筆並記錄。空值會和其他空值匹配，但與任何非空值都不匹配。
+        只保留 created 最早的一筆並記錄。空值會和其他空值匹配，但與任何非空值都不匹配。
         occurrenceID 和 catalogNumber 都為空的記錄一律保留（無法辨識）。
         回傳去重後的 df。
         """
@@ -86,6 +95,9 @@ class DedupTracker:
         to_remove = set()
 
         for (ds, occ_id, cat_num), grp in subset_keys[dup_mask].groupby(group_cols):
+            # 按 created 排序，保留最早的
+            grp = grp.loc[df.loc[grp.index, 'created'].sort_values().index]
+
             # 比對非時間欄位
             grp_full = df.loc[grp.index]
             grp_cmp = grp_full[compare_cols].astype(str)
@@ -105,7 +117,7 @@ class DedupTracker:
                 if idx in to_remove:
                     continue
                 to_remove.add(idx)
-                self.duplicates.append({
+                self._pending_duplicates.append({
                     'rightsHolder': self.rights_holder,
                     'datasetName': ds,
                     'occurrenceID': occ_id,
@@ -131,14 +143,14 @@ class DedupTracker:
         依 (datasetName, occurrenceID, catalogNumber) 完整 tuple 比對。
         回傳補充用的 DataFrame（格式同 existed_records）。
         """
+        empty_cols = ['tbiaID', 'occurrenceID', 'catalogNumber', 'datasetName']
         if df.empty:
-            return pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
+            return pd.DataFrame(columns=empty_cols)
 
         already_found = set()
         if existed_records is not None and not existed_records.empty:
             already_found = set(existed_records['tbiaID'].tolist())
 
-        # 建立 normalized 的 key 欄位
         key_df = pd.DataFrame(index=df.index)
         key_df['datasetName'] = df.get('datasetName', '').astype(str)
         for col in ['occurrenceID', 'catalogNumber']:
@@ -147,13 +159,11 @@ class DedupTracker:
             else:
                 key_df[col] = ''
 
-        # 只查至少有一個 identifier 的 rows
         has_id = (key_df['occurrenceID'] != '') | (key_df['catalogNumber'] != '')
         subset = key_df[has_id]
         if subset.empty:
-            return pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
+            return pd.DataFrame(columns=empty_cols)
 
-        # 取出 unique tuples，避免重複查詢
         unique_tuples = subset[['datasetName', 'occurrenceID', 'catalogNumber']].drop_duplicates()
 
         supplement = []
@@ -161,7 +171,6 @@ class DedupTracker:
 
         with sqlite3.connect(self.db_path) as conn:
             tuples_list = list(unique_tuples.itertuples(index=False, name=None))
-            # 分批：每批用 OR 串接 tuple 比對
             for i in range(0, len(tuples_list), batch_size):
                 batch = tuples_list[i:i + batch_size]
                 conditions = ' OR '.join(
@@ -176,17 +185,16 @@ class DedupTracker:
 
                 for ds_name, occ_id, cat_num, tbia_id in rows:
                     if tbia_id in already_found:
-                        continue  # Solr 已回傳，不用補
+                        continue
                     already_found.add(tbia_id)
 
-                    # 找 df 中對應的行記錄為 duplicate
                     matched_mask = (
                         (subset['datasetName'] == ds_name)
                         & (subset['occurrenceID'] == occ_id)
                         & (subset['catalogNumber'] == cat_num)
                     )
                     for idx in subset[matched_mask].index:
-                        self.duplicates.append({
+                        self._pending_duplicates.append({
                             'rightsHolder': self.rights_holder,
                             'datasetName': ds_name,
                             'occurrenceID': occ_id,
@@ -202,6 +210,7 @@ class DedupTracker:
                         'tbiaID': tbia_id,
                         'occurrenceID': occ_id,
                         'catalogNumber': cat_num,
+                        'datasetName': ds_name,
                     })
 
         if supplement:
@@ -209,7 +218,7 @@ class DedupTracker:
             print(f'   ⚠️ 跨批重複：發現 {len(result)} 筆已在先前批次處理過')
             return result
 
-        return pd.DataFrame(columns=['tbiaID', 'occurrenceID', 'catalogNumber'])
+        return pd.DataFrame(columns=empty_cols)
 
     # ── 3. 記錄已處理的 key ────────────────────────────────────
 
@@ -245,37 +254,60 @@ class DedupTracker:
                     VALUES (?, ?, ?, ?)
                 ''', records)
 
-    # ── 4. 輸出重複紀錄 CSV ────────────────────────────────────
+    # ── 4. 每批 flush 重複紀錄到 CSV ──────────────────────────
 
-    def export_duplicates_csv(self,
-                              output_dir='/portal/media/duplicate_logs'):
-        os.makedirs(output_dir, exist_ok=True)
-        if self.duplicates:
-            safe_name = self.rights_holder.replace(' ', '_').replace('/', '_')
-            path = os.path.join(
-                output_dir,
-                f'duplicates_{safe_name}_{self.update_version}.csv')
-            pd.DataFrame(self.duplicates).to_csv(path, index=False)
-            print(f'📋 重複紀錄已輸出：{path}（共 {len(self.duplicates)} 筆）')
+    def flush_duplicates(self, id_mapping=None):
+        """
+        每批結束後呼叫：把 pending duplicates 寫入 CSV。
+        id_mapping: {原始id → 最終tbiaID}，用來補上 final_id。
+        """
+        if not self._pending_duplicates:
+            return
+
+        for dup in self._pending_duplicates:
+            kept = dup['kept_id']
+            if id_mapping and kept in id_mapping:
+                dup['final_id'] = id_mapping[kept]
+            else:
+                dup['final_id'] = kept
+
+        self.duplicates_count += len(self._pending_duplicates)
+        out = pd.DataFrame(self._pending_duplicates)
+        out.to_csv(self._dup_csv_path, mode='a', index=False,
+                   header=not self._dup_csv_initialized)
+        self._dup_csv_initialized = True
+        self._pending_duplicates = []
+
+    # ── 5. 輸出摘要（run 結束時呼叫）──────────────────────────
+
+    def export_duplicates_csv(self, output_dir=None):
+        """flush 剩餘的 pending + 印摘要"""
+        self.flush_duplicates()
+        if self.duplicates_count > 0:
+            print(f'📋 重複紀錄：{self._dup_csv_path}（共 {self.duplicates_count} 筆）')
         else:
             print('✅ 本次無重複紀錄')
 
-    # ── 5. 清理 SQLite（整個 run 結束後可選呼叫）───────────────
+    # ── 6. 清理 SQLite（整個 run 結束後可選呼叫）───────────────
 
     def cleanup_cache(self):
         if os.path.exists(self.db_path):
             os.remove(self.db_path)
             print(f'🗑️ 已清除 dedup cache: {self.db_path}')
 
+
 @timed()
 def resolve_existed_records(df, rights_holder, dedup_tracker):
     """
     批內去重、查詢已存在記錄、跨批去重補充，並回寫 tbiaID。
+    最後 flush duplicates 到 CSV（含 final_id）。
     """
     df = df.copy()
     for col in ['occurrenceID', 'catalogNumber']:
         if col in df.columns:
-            df[col] = df[col].astype(str)
+            df[col] = df[col].astype(str).str.strip()
+            # 與 record_batch_keys 一致：假空值一律歸零
+            df[col] = df[col].replace({'nan': '', 'None': '', 'NaT': '', '<NA>': ''})
         else:
             df[col] = ''
 
@@ -292,17 +324,24 @@ def resolve_existed_records(df, rights_holder, dedup_tracker):
         existed_records = pd.concat(
             [existed_records, cross_supplement]).drop_duplicates(subset=['tbiaID'])
 
+    id_mapping = None
     if len(existed_records):
+        pre_merge_ids = df['id'].copy()
         df = df.merge(existed_records, how='left').replace(to_none_dict)
         df['id'] = df['tbiaID'].fillna(df['id'])
         df = df.drop(columns=['tbiaID'])
+        changed = pre_merge_ids != df['id']
+        if changed.any():
+            id_mapping = dict(zip(pre_merge_ids[changed], df['id'][changed]))
+
+    dedup_tracker.flush_duplicates(id_mapping)
 
     return df, existed_records
 
 
 def get_existed_records_optimized(occ_ids, rights_holder, get_reference=False, cata_ids=[],
                                  batch_size=500, max_workers=4):
-    get_fields = ['id', 'occurrenceID', 'catalogNumber']
+    get_fields = ['id', 'occurrenceID', 'catalogNumber', 'datasetName']
     if get_reference:
         get_fields.append('references')
 
@@ -350,7 +389,7 @@ def get_existed_records_optimized(occ_ids, rights_holder, get_reference=False, c
 
     result_df = pd.DataFrame(subset_list).rename(columns={'id': 'tbiaID'})
     result_cols = ['tbiaID' if c == 'id' else c for c in get_fields]
-    for col in ['tbiaID', 'occurrenceID', 'catalogNumber']:
+    for col in ['tbiaID', 'occurrenceID', 'catalogNumber', 'datasetName']:
         if col not in result_df.columns:
             result_df[col] = ''
     return result_df[result_cols].drop_duplicates()

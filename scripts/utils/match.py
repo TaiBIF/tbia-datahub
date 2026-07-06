@@ -187,16 +187,18 @@ def _disambiguating_fields(specific_rank):
     return [f for (lvl, f) in _HIER_SOURCE_FIELDS if _LEVEL_ORDER[lvl] < cutoff]
 
 
-def _col_is_ambiguous(name):
-    """用 COL 來源查同名/相似名:results 多筆 → 視為歧義(True)。
-    查詢失敗一律回 False(放行,沿用 TaiCOL 唯一候選);之後改本機後可再調整。"""
+def _col_is_ambiguous(name, specific_rank=None):
+    """用 COL 來源查同名/相似名:若指定 specific_rank,只計算同 rank 的結果,
+    再依 accepted_namecode 去重;去重後 > 1 筆 → 視為歧義(True)。
+    查詢失敗一律回 False(放行,沿用 TaiCOL 唯一候選)。"""
     if not name or not isinstance(name, str):
         return False
     key = name.strip()
     if key == '':
         return False
-    if key in _col_ambiguity_cache:
-        return _col_ambiguity_cache[key]
+    cache_key = f'{key}::{specific_rank}'
+    if cache_key in _col_ambiguity_cache:
+        return _col_ambiguity_cache[cache_key]
     result = False
     try:
         url = f"{COL_MATCH_BASE_URL}api.php?names={urllib.parse.quote(key)}&format=json&source=col"
@@ -208,10 +210,16 @@ def _col_is_ambiguous(name):
                 best = rows[0][0]
                 if isinstance(best, dict):
                     rs = best.get('results', [])
-                    result = isinstance(rs, list) and len(rs) > 1
+                    if isinstance(rs, list):
+                        # 只保留同 rank(有指定時)
+                        if specific_rank:
+                            rs = [r for r in rs if isinstance(r, dict) and r.get('taxon_rank') == specific_rank]
+                        # 依 accepted_namecode 去重,同一 taxon 不重複計數
+                        codes = {r.get('accepted_namecode') for r in rs if isinstance(r, dict)}
+                        result = len(codes) > 1
     except Exception as e:
         print(f"COL ambiguity check error for {key}: {e}")
-    _col_ambiguity_cache[key] = result
+    _col_ambiguity_cache[cache_key] = result
     return result
 
 
@@ -537,7 +545,16 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
                 results_df[col] = None
             
             results_df = results_df[required_cols].drop_duplicates()
-            
+
+            # 同一 taxon(accepted_namecode 相同)只保留一筆,優先 accepted,
+            # 避免同 taxon 的 accepted/not-accepted 兩筆被誤判成 multiple
+            _status_rank = {'accepted': 0, 'not-accepted': 1}
+            results_df = results_df.assign(
+                _srank=results_df['name_status'].map(_status_rank).fillna(2)
+            ).sort_values('_srank').drop_duplicates(
+                subset='accepted_namecode', keep='first'
+            ).drop(columns='_srank')
+
             # 應用rank過濾
             if specific_rank:
                 results_df = results_df[results_df.taxon_rank == specific_rank]
@@ -673,10 +690,10 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
         # 來源無上階層資訊:沿用 COL 單候選 + 相似名歧義判斷
         if len(matched) != 1:
             return []
-        if _col_is_ambiguous(row.get('now_matching_name')):
+        if _col_is_ambiguous(row.get('now_matching_name'), specific_rank):
             return []
-        return matched    
-    
+        return matched
+
     # 主要處理流程
     # print("=== Optimized Matching Flow ===")
     

@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 import numpy as np
 import bson
+import os
 from app import SessionLocal
 from models import Dataset  
 from sqlalchemy import select, update
@@ -127,11 +128,12 @@ def build_ds_name_basic(df, extra_cols=None):
     return df[cols].drop_duplicates().to_dict(orient='records')
 
 
-def build_ds_name_with_merge(df, dataset, df_cols, dataset_cols, 
-                             right_on, left_on='sourceDatasetID'):
-                            #   left_on='sourceDatasetID', right_on='taibifDatasetID'):
+def build_ds_name_with_merge(df, dataset, df_cols, dataset_cols,
+                             right_on, left_on='sourceDatasetID',
+                             rights_holder=None, update_version=None, group=None):
     """
     模式 3, 4, 5 用：先從 df 挑欄位，再跟 dataset DataFrame merge license/publisher 等。
+    以 indicator 抓出 sourceDatasetID 對不到外部 dataset 表、會被濾掉的列並記錄。
     模式 3: 要從 TaiBIF dataset 表 merge license/publisher(4 檔，少 recordType)
     模式 4: 模式 3 + recordType (1 檔, gbif 有帶 recordType 進去)
     模式 5: 從 TBN dataset 表 merge license (1 檔)
@@ -140,10 +142,24 @@ def build_ds_name_with_merge(df, dataset, df_cols, dataset_cols,
     dataset_cols: 從 dataset 取的欄位（要包含 right_on）
     """
     ds_name = df[df_cols]
-    ds_name = ds_name.merge(dataset[dataset_cols], left_on=left_on, right_on=right_on)
-    return ds_name.drop_duplicates().to_dict(orient='records')
+    merged = ds_name.merge(
+        dataset[dataset_cols], left_on=left_on, right_on=right_on,
+        how='left', indicator=True,
+    )
 
- 
+    unmatched = merged[merged['_merge'] == 'left_only']
+    if len(unmatched):
+        print(f'   ⚠️ dataset 未對到外部表：{len(unmatched)} 列（依 {left_on}）')
+        os.makedirs('/code/dataset_unmatched', exist_ok=True)
+        out_path = (f'/code/dataset_unmatched/'
+                    f'unmatched_{group}_{rights_holder}_{update_version}.csv')
+        unmatched[df_cols].drop_duplicates().to_csv(
+            out_path, mode='a', index=False,
+            header=not os.path.exists(out_path),
+        )
+
+    matched = merged[merged['_merge'] == 'both'].drop(columns='_merge')
+    return matched.drop_duplicates().to_dict(orient='records')
 
 
 def update_dataset_key(ds_name, rights_holder, update_version, group, now):
@@ -153,14 +169,7 @@ def update_dataset_key(ds_name, rights_holder, update_version, group, now):
     比對優先順序:
         有 sourceDatasetID: (sourceDatasetID, rights_holder) → (name, rights_holder) → INSERT
         無 sourceDatasetID: (name, rights_holder) → INSERT
-
-    註: (name, rights_holder) fallback 命中時會覆寫 sourceDatasetID 欄位，
-        為了 (a) 補上之前沒有、現在才有的 sourceDatasetID
-            (b) 將現在沒有的覆寫回空字串，以維持下次對應的一致性
-        皆為有意設計。
     """
-    # now = datetime.now() + timedelta(hours=8)
-
     with SessionLocal() as session:
         for r in ds_name:
             _upsert_dataset_row(session, r, rights_holder, update_version, group, now)
@@ -174,7 +183,13 @@ def update_dataset_key(ds_name, rights_holder, update_version, group, now):
 
     dataset_ids = pd.DataFrame(rows, columns=['tbiaDatasetID', 'datasetName', 'sourceDatasetID'])
     dataset_ids = dataset_ids.replace({None: '', np.nan: ''})
-    dataset_ids = dataset_ids.merge(pd.DataFrame(ds_name))
+
+    ds_name_df = pd.DataFrame(ds_name)
+    for key in ['datasetName', 'sourceDatasetID']:      # 與 dataset_ids 對齊空值表示
+        if key in ds_name_df.columns:
+            ds_name_df[key] = ds_name_df[key].replace({None: '', np.nan: ''})
+
+    dataset_ids = dataset_ids.merge(ds_name_df)
     if len(dataset_ids):
         dataset_ids = dataset_ids[['tbiaDatasetID', 'datasetName', 'sourceDatasetID']].drop_duplicates()
     return dataset_ids
@@ -253,6 +268,7 @@ def _upsert_dataset_row(session, r, rights_holder, update_version, group, now):
     )
     session.execute(stmt)
 
+
 @timed()
 def process_dataset(df, group, rights_holder, update_version, now, *,
                     extra_cols=None,
@@ -264,15 +280,24 @@ def process_dataset(df, group, rights_holder, update_version, now, *,
     """
     建立 ds_name → 註冊到 portal (取得 tbiaDatasetID) → merge 回 df。
     所有參數需明確傳入 (基本模式不用的欄位傳 None)。
- 
+
     基本模式 (dataset=None，走 build_ds_name_basic):
         extra_cols: None 或 list (例: ['sourceDatasetID'])
         其他 merge 參數 (df_cols, dataset_cols, left_on, right_on) 傳 None
- 
+
     Merge 模式 (dataset 為 DataFrame，走 build_ds_name_with_merge):
         必須傳入 df_cols / dataset_cols / left_on / right_on
         extra_cols 傳 None
     """
+    df = df.copy()
+    if 'datasetName' in df.columns:
+        # 移除 \r \n，避免匯出時被當換行；同時讓 dataset 表與 records 的 datasetName 一致
+        df['datasetName'] = (
+            df['datasetName'].astype(str)
+                             .str.replace(r'[\r\n]+', '', regex=True)
+                             .str.strip()
+        )
+
     if dataset is None:
         ds_name = build_ds_name_basic(df, extra_cols=extra_cols)
     else:
@@ -282,8 +307,11 @@ def process_dataset(df, group, rights_holder, update_version, now, *,
             dataset_cols=dataset_cols,
             left_on=left_on,
             right_on=right_on,
+            rights_holder=rights_holder,
+            update_version=update_version,
+            group=group,
         )
- 
+
     return_dataset_id = update_dataset_key(
         ds_name=ds_name,
         rights_holder=rights_holder,
@@ -291,7 +319,13 @@ def process_dataset(df, group, rights_holder, update_version, now, *,
         group=group,
         now=now
     )
-    return df.merge(return_dataset_id)
+
+    # 明確指定 merge key，並對齊空值，避免隱式 join key / '' vs NaN 造成掉列
+    merge_keys = [c for c in ['datasetName', 'sourceDatasetID']
+                  if c in df.columns and c in return_dataset_id.columns]
+    for k in merge_keys:
+        df[k] = df[k].replace({None: '', np.nan: ''})
+    return df.merge(return_dataset_id, on=merge_keys)
 
 
 def update_dataset_deprecated(rights_holder, update_version):

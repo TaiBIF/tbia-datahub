@@ -62,6 +62,13 @@ for i, row in tqdm(df.iterrows(), total=len(df), desc='fetch dataset stats'):
     }
     resp = requests.get(f'{SOLR_BASE}/tbia_records/select', params=params).json()
     occurrence_count = resp['response']['numFound']
+
+    # deprecated='f' 但 Solr 查不到任何 record → 印錯誤並跳過，不更新
+    if occurrence_count == 0:
+        print(f'❌ Solr 查無資料，跳過：{row.tbiaDatasetID} / '
+              f'{row.datasetName} / {row.rights_holder}')
+        continue
+
     date_stats = resp['stats']['stats_fields']['standardDate']
     date_min = date_stats.get('min')
     date_max = date_stats.get('max')
@@ -71,7 +78,6 @@ for i, row in tqdm(df.iterrows(), total=len(df), desc='fetch dataset stats'):
     record_types = facets['recordType'][::2]
     # bioGroup → taxon_stat / taxon_string
     taxon_stat = {en: 0 for en in bio_group_en.values()}
-    # taxon_stat['Others'] = 0   # 2026-05 已不再填充
     taxon_string = []
     bio_data = facets['bioGroup']
     for k in range(0, len(bio_data), 2):
