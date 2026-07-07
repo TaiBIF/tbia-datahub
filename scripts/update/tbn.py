@@ -4,7 +4,7 @@ import time
 from app import engine
 import json
 from scripts.utils.common import *
-from scripts.utils.deduplicates import DedupTracker, resolve_existed_records
+from scripts.utils.deduplicates import resolve_existed_records
 from scripts.utils.records import OptimizedRecordsProcessor, prepare_df_for_sql, delete_records
 from scripts.utils.match import OptimizedMatchLogProcessor, process_match_log, process_taxon_match, zip_match_log
 from scripts.utils.geography import process_geo_batch, geo_keys

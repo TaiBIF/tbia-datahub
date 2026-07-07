@@ -4,7 +4,7 @@ import time
 import json
 from app import engine
 from scripts.utils.common import *
-from scripts.utils.deduplicates import DedupTracker, resolve_existed_records
+from scripts.utils.deduplicates import resolve_existed_records
 from scripts.utils.records import OptimizedRecordsProcessor, prepare_df_for_sql, delete_records
 from scripts.utils.match import OptimizedMatchLogProcessor, process_match_log, process_taxon_match, zip_match_log
 from scripts.utils.geography import process_geo_batch, geo_keys
@@ -43,10 +43,6 @@ atexit.register(records_processor.export_failed_records,
                 f'failed_records_{group}_{info_id}.csv')
 atexit.register(matchlog_processor.export_failed_records, 
                 f'failed_match_logs_{group}_{info_id}.csv')
-
-
-# dedup_tracker = DedupTracker(rights_holder, update_version)
-
 
 if not note:
     d_list_index = 0

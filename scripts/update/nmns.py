@@ -4,9 +4,9 @@ import time
 import json
 from app import engine
 from scripts.utils.common import *
-from scripts.utils.deduplicates import DedupTracker, resolve_existed_records
+from scripts.utils.deduplicates import resolve_existed_records
 from scripts.utils.records import OptimizedRecordsProcessor, prepare_df_for_sql, delete_records
-from scripts.utils.match import OptimizedMatchLogProcessor, process_match_log, process_taxon_match, zip_match_log
+from scripts.utils.match import OptimizedMatchLogProcessor, process_match_log, process_taxon_match, zip_match_log, clean_html_tags
 from scripts.utils.geography import process_geo_batch, geo_keys, parse_verbatim_coords
 from scripts.utils.export import export_records_with_taxon
 from scripts.utils.update_version import init_update_session, update_update_version
@@ -14,6 +14,7 @@ from scripts.utils.dataset import process_dataset, update_dataset_deprecated
 from tqdm import tqdm
 from scripts.utils.progress import timer
 import atexit
+import os
 
 records_processor = OptimizedRecordsProcessor(engine, batch_size=200)
 matchlog_processor = OptimizedMatchLogProcessor(engine, batch_size=300)
@@ -42,9 +43,6 @@ atexit.register(records_processor.export_failed_records,
 atexit.register(matchlog_processor.export_failed_records, 
                 f'failed_match_logs_{group}_{info_id}.csv')
 
-
-# dedup_tracker = DedupTracker(rights_holder, update_version)
-
 if not note:
     category_index = 0
     offset = 0
@@ -53,15 +51,15 @@ else:
     offset = note.get('offset')
 
 # 鳥獸學門 - 沒有資料
-# 鳥獸學門(哺乳類蒐藏) - 沒有資料
-# 鳥獸學門(鳥類蒐藏) - 沒有資料
-# 非維管束學門 - 階層: 「分類資訊 Taxonomy」門 (Phylum) ， 綱 (Class) ， 目 (Order) ， 科 (Family) 逗號分隔 但有可能有前後多於空格
-# 昆蟲學門 - 階層有分開欄位
-# 無脊椎動物學門 - 階層有分開欄位
-# 維管束學門 - 階層有分開欄位
-# 真菌學門 - 階層: 「分類資訊 Taxonomy」門 (Phylum) ， 綱 (Class) ， 目 (Order) ， 科 (Family) 逗號分隔 但有可能有前後多於空格
-# 兩棲爬蟲學門 - 階層有分開欄位
-# 古生物學門 - 沒有資料
+# v 鳥獸學門(哺乳類蒐藏) - 中文名 Chinese Common Name, 目中文名, 目名(英文), 科中文名, 科名(英文), 學名(含<i>)
+# v 鳥獸學門(鳥類蒐藏) - 中文名 Chinese Common Name, 目中文名, 目名(英文), 科中文名, 科名(英文), 學名(含<i>)
+# v 非維管束學門 - 中文名 Chinese Common Name, 類別(會寫是藻類/苔蘚/地衣), 學名 Scientific Name(含<i>), 分類資訊 Taxonomy(門 (Phylum) ， 綱 (Class) ， 目 (Order) ， 科 (Family) 全形逗號分隔 但有可能有前後多餘空格)
+# v 昆蟲學門 - 中文名 Chinese Common Name, 目名(英文), 科名(英文), 學名(含<i>), 
+# v 無脊椎動物學門 - 中文名 Chinese Common Name, 科名(英文), 學名(含<i>), 中文科名
+# v 維管束學門 - 中文名 Chinese Common Name, 科名(英文+空格+中文) 學名, 
+# v 真菌學門 - 中文名 Chinese Common Name, 學名 Scientific Name(含<i>), 分類資訊 Taxonomy(門 (Phylum) ， 綱 (Class) ， 目 (Order) ， 科 (Family) 全形逗號分隔 但有可能有前後多餘空格)
+# v 兩棲爬蟲學門 - 中文名 Chinese Common Name, 目名 (英文+空格＋中文), 科名(英文+空格＋中文), 屬名(含<i>), 種名(實際上是種小名, 含<i>), 
+# v 古生物學門 - 學名 Scientific Name, 名稱 Chinese Common Name, 科名 Family(英文),	目名 Order(英文), 綱名 Class(英文),	門名 Phylum(英文), 界名 Kingdom(英文)
 # 兩爬學門(魚類蒐藏) - 沒有資料
 
 # 依據學門給kingdom
@@ -71,15 +69,19 @@ kingdom_map = {
     '無脊椎動物學門': 'Animalia',
     '維管束學門': 'Plantae',
     '真菌學門': 'Fungi',
+    '鳥獸學門(哺乳類蒐藏)': 'Animalia',
+    '鳥獸學門(鳥類蒐藏)': 'Animalia',
+    # 古生物學門靠「界名 Kingdom」欄位帶入，不放這
     # '非維管束學門': None,  <-- 這裡留空，等到迴圈內依據「類別」動態處理
 }
 
-category_list = ['昆蟲學門', '兩棲爬蟲學門', '非維管束學門', '維管束學門', '真菌學門', '無脊椎動物學門']
-
+category_list = ['昆蟲學門', '兩棲爬蟲學門', '非維管束學門', '維管束學門', '真菌學門',
+                 '無脊椎動物學門', '古生物學門', '鳥獸學門(哺乳類蒐藏)', '鳥獸學門(鳥類蒐藏)']
 
 field_map = {
     # --- 學名 ---
     '中文名 Chinese Common Name': 'sourceVernacularName', # 裡面可能有學名 但暫時不處理
+    '名稱 Chinese Common Name': 'sourceVernacularName', # 裡面可能有學名 但暫時不處理
     '學名': 'sourceScientificName',
     '學名 Scientific Name': 'sourceScientificName',
     '屬名': 'genus',
@@ -88,6 +90,12 @@ field_map = {
     '目名': 'sourceOrder',
     '科名': 'sourceFamily',
     # '中文科名': '', 統一用英文科名
+    # --- 古生物學門專屬階層 (caption 名稱不同，不衝突可直接對應) ---
+    '界名 Kingdom': 'sourceKingdom',
+    '綱名 Class':   'sourceClass',
+    '目名 Order':   'sourceOrder',
+    '科名 Family':  'sourceFamily',
+    # '門名 Phylum': 'sourcePhylum',  # 現行流程不比對門，需要才開
     # --- 館藏編號 ---
     '館號/編目號 Catalog No.':  'catalogNumber',
     '館號 TNM No.': 'catalogNumber',
@@ -109,6 +117,7 @@ field_map = {
     '採集地':   'locality_3',
     '採集地名': 'locality_3',
     '採集地 Locality':  'locality_3',
+    '產地 Locality': 'locality_3',
     '經緯度 Coordinates': 'Coordinates',
     # '海拔': ,
     # '海拔 Altitude': ,
@@ -119,6 +128,7 @@ field_map = {
     '數量': 'organismQuantity',
     '保存液': 'preservation',
     '固定方式': 'preservation',
+    '標本類型 Types of specimens': 'typeStatus',
     # '菌株 Culture':
     # 'DNA': 
 }
@@ -147,7 +157,7 @@ for now_category in category_list[category_index:]:
         for r in resp:
             now_dict = {'sourceModified': r.get('MDDATE'), 
                         'references': r.get('CollectionUrl'),
-                        'associatedMedia': r.get('ImageFocus'),
+                        'associatedMedia': r.get('ImageList'),
                         'license': r.get('GalCC')}
             # Step A: 先依據學門給予預設的 Kingdom
             if now_category in kingdom_map:
@@ -185,31 +195,47 @@ for now_category in category_list[category_index:]:
         if len(data) > 9999 or not has_more_data:
             print(now_category, len(data), all_count)
             df = pd.DataFrame(data)
+            # 保存原始抓回資料供最後核對筆數（append，每學門一檔）
+            raw_path = f'/solr/csvs/raw_{group}_{info_id}_{now_category}.csv'
+            df.to_csv(raw_path, mode='a', header=not os.path.exists(raw_path),
+                      index=False, encoding='utf-8-sig')
             df = df.replace(to_quote_dict)
             data = [] # 重新下一個loop
             # 先補上所有欄位 避免後面錯誤
             new_columns = df.columns.union(field_list, sort=False)
             df = df.reindex(columns=new_columns, fill_value='')
-            df['sourceScientificName'] = df['genus'].fillna('') + ' ' + df['specificEpithet'].fillna('')
+            # 全欄位清 HTML tag（含 <i>），順便 strip 掉古生物階層的前後空白
+            df = df.apply(lambda col: col.map(clean_html_tags) if col.dtype == 'object' else col)
+            # genus + specificEpithet 只作為 fallback，避免覆蓋已有的學名
+            binomial = (df['genus'].fillna('').str.strip() + ' ' +
+                        df['specificEpithet'].fillna('').str.strip()).str.strip()
+            sci = df['sourceScientificName'].fillna('').str.strip()
+            df['sourceScientificName'] = sci.where(sci != '', binomial)
             df = filter_by_license_and_sensitivity(df)
             if len(df):
                 df = df.reset_index(drop=True)
                 df = df.replace(to_quote_dict)
-                # locality 合併（取代原本的 row 迴圈）
+                # locality 合併
                 locality_cols = [c for c in ['locality', 'locality_1', 'locality_2', 'locality_3'] if c in df.columns]
                 df['locality'] = df[locality_cols].apply(
                     lambda row: ' '.join(v.strip() for v in row if isinstance(v, str) and v.strip()),
                     axis=1
                 )
-                # 補 mediaLicense（取代原本 row 迴圈裡的補值）
+                # associatedMedia：ImageList 併成分號分隔字串
                 if 'associatedMedia' in df.columns:
-                    df['mediaLicense'] = df['associatedMedia'].map(lambda x: 'OGDL' if x else None)
+                    df['associatedMedia'] = df['associatedMedia'].apply(
+                        lambda x: ';'.join(x) if isinstance(x, list) else (x or '')
+                    )
+                    # mediaLicense 數量對齊 associatedMedia（每張一個 OGDL）
+                    df['mediaLicense'] = df['associatedMedia'].map(
+                        lambda x: ';'.join(['OGDL'] * len(x.split(';'))) if x else None
+                    )
                 df = process_taxon_match(df, sci_cols)
                 df = apply_common_fields(df, group, rights_holder, now)
                 df = apply_record_type(df, mode='col')  # basisOfRecord 無資料
                 df, media_rule_list = apply_media_rule(df, [])
                 # 地理資訊
-                # 目前僅有非維管束學門有經緯度 並且沒有敏感資料
+                # 目前僅有非維管束學門有經緯度(真菌學門可能也有) 並且沒有敏感資料
                 if 'Coordinates' in df.columns:
                     df[['verbatimLatitude', 'verbatimLongitude']] = df['Coordinates'].apply(
                         lambda x: pd.Series(parse_verbatim_coords(x))
@@ -230,8 +256,6 @@ for now_category in category_list[category_index:]:
                     df = df[~df['id'].isin(failed_ids)].reset_index(drop=True)
                     df_for_sql = df_for_sql[~df_for_sql['tbiaID'].isin(failed_ids)].reset_index(drop=True)
                 process_match_log(df, matchlog_processor, existed_records, now, group, info_id, suffix=now_category)
-                # df = prepare_df_for_sql(df, update_version)
-                # records_processor.smart_upsert_records(df, existed_records=existed_records)
                 export_records_with_taxon(df_for_sql,f'/solr/csvs/export/{group}_{info_id}_{now_category}.csv')
                 update_media_rules(media_rules=media_rule_list,rights_holder=rights_holder, now=now)
         # 成功之後 更新update_update_version
