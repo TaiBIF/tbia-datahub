@@ -326,13 +326,14 @@ def resolve_existed_records(df, rights_holder, dedup_tracker):
 
     id_mapping = None
     if len(existed_records):
-        pre_merge_ids = df['id'].copy()
         df = df.merge(existed_records, how='left').replace(to_none_dict)
-        df['id'] = df['tbiaID'].fillna(df['id'])
-        df = df.drop(columns=['tbiaID'])
-        changed = pre_merge_ids != df['id']
+        assigned_ids = df['id']
+        resolved_ids = df['tbiaID'].fillna(df['id'])
+        changed = assigned_ids != resolved_ids          # 同一個 df、index 一致
         if changed.any():
-            id_mapping = dict(zip(pre_merge_ids[changed], df['id'][changed]))
+            id_mapping = dict(zip(assigned_ids[changed], resolved_ids[changed]))
+        df['id'] = resolved_ids
+        df = df.drop(columns=['tbiaID'])
 
     dedup_tracker.flush_duplicates(id_mapping)
 

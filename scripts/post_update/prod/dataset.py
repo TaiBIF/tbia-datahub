@@ -11,7 +11,7 @@ import psycopg2
 import pandas as pd
 
 from app import db_settings
-from solr_helper import solr_reimport_from_csv
+from scripts.post_update.solr_helper import solr_reimport_from_csv
 
 
 parser = argparse.ArgumentParser(description='Update production dataset from CSV')
