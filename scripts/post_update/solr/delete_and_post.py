@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
 """
-依 group + update_version (+ 選用 dataGeneralizations) 刪除 Solr 資料。
-流程：dry-run 確認筆數 → 抽樣檢視 → 備份(JSONL) → 二次確認 → 刪除 → commit。
-python delete_solr_with_dry_run.py --group tbri --version 2 --rights-holder "台灣生物多樣性網絡 TBN" --no-backup --execute
+依 group + rightsHolder / update_version (+ 選用 dataGeneralizations) 刪除 Solr 資料，
+刪除後匯入 [group]_[info_id]_*.csv。
+流程 dry-run 確認筆數 → 抽樣檢視 → 二次確認 → 備份(JSONL) → 刪除 → commit → 匯入 CSV。
+
+使用範例
+python scripts/post_update/solr/delete_and_post.py --group nps --info-id 0 --version 17 --rights-holder "臺灣國家公園生物多樣性資料庫" --no-backup --execute
+python scripts/post_update/solr/delete_and_post.py --group nmns --info-id 0 --version 13 --rights-holder "科博典藏 (NMNS Collection)" --no-backup --execute
+
+背景執行時加上 --yes 略過二次確認：
+python scripts/post_update/solr/delete_and_post.py --group nps --info-id 0 --version 17 --rights-holder "..." --execute --yes
 """
 
 import argparse
@@ -107,19 +114,20 @@ def _xml_escape(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def import_csv(group: str, csv_dir: str = CSV_EXPORT_DIR):
-    """POST csv_dir 底下以 group 開頭的 CSV 到 tbia_records（依 id upsert）。"""
+def import_csv(group: str, info_id: str, csv_dir: str = CSV_EXPORT_DIR):
+    """POST csv_dir 底下符合 [group]_[info_id]_*.csv 的檔案到 tbia_records（依 id upsert）。"""
     csv_path = Path(csv_dir)
     if not csv_path.is_dir():
         print(f"  匯入來源不存在：{csv_dir}，跳過。")
         return
 
+    prefix = f"{group}_{info_id}_"
     files = sorted(
         p for p in csv_path.iterdir()
-        if p.is_file() and p.suffix == ".csv" and p.name.startswith(group)
+        if p.is_file() and p.suffix == ".csv" and p.name.startswith(prefix)
     )
     if not files:
-        print(f"  找不到以 '{group}' 開頭的 CSV（{csv_dir}），跳過匯入。")
+        print(f"  找不到符合 '{prefix}*.csv' 的檔案（{csv_dir}），跳過匯入。")
         return
 
     print(f"  找到 {len(files)} 個 CSV，開始匯入…")
@@ -144,6 +152,7 @@ def import_csv(group: str, csv_dir: str = CSV_EXPORT_DIR):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--group", required=True)
+    ap.add_argument("--info-id", required=True, help="info_id 條件，同時決定 CSV 前綴")
     ap.add_argument("--version", type=float, help="update_version 條件（選用）")
     ap.add_argument("--rights-holder", help="rightsHolder 條件（選用）")
     ap.add_argument("--data-generalizations", choices=["true", "false"],
@@ -154,6 +163,8 @@ def main():
                     help="實際執行刪除；不加則僅 dry-run")
     ap.add_argument("--no-backup", action="store_true", help="刪除前不備份（不建議）")
     ap.add_argument("--no-import", action="store_true", help="刪除後不匯入 CSV")
+    ap.add_argument("--yes", action="store_true",
+                    help="略過二次確認（背景執行時使用）")
     args = ap.parse_args()
 
     if args.version is None and args.rights_holder is None:
@@ -176,15 +187,19 @@ def main():
         return
 
     if total > 0:
-        ans = input(f"\n即將刪除 {total} 筆，輸入 group 名稱再次確認: ")
-        if ans.strip() != args.group:
-            print("確認失敗，中止。")
-            sys.exit(1)
+        if args.yes:
+            print(f"\n[--yes] 略過確認，即將刪除 {total} 筆。")
+        else:
+            ans = input(f"\n即將刪除 {total} 筆，輸入 group 名稱再次確認: ")
+            if ans.strip() != args.group:
+                print("確認失敗，中止。")
+                sys.exit(1)
 
         if not args.no_backup:
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             tag = "_".join(str(x) for x in
-                           [args.group, args.rights_holder, args.version] if x is not None)
+                           [args.group, args.info_id, args.rights_holder, args.version]
+                           if x is not None)
             path = f"backup_{tag}_{ts}.jsonl"
             print(f"\n備份中 → {path}")
             backup(q, total, path)
@@ -197,7 +212,7 @@ def main():
 
     if not args.no_import:
         print("\n匯入 CSV…")
-        import_csv(args.group, args.csv_dir)
+        import_csv(args.group, args.info_id, args.csv_dir)
 
 
 if __name__ == "__main__":
