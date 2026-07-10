@@ -151,9 +151,11 @@ for now_category in category_list[category_index:]:
         all_count += len(resp)
         if len(resp) < 100:
             has_more_data = False
-            offset = 0 
+            batch_tag = offset      # 保留重置前的位置給檔名
+            offset = 0
         else:
             offset += 100
+            batch_tag = offset
         for r in resp:
             now_dict = {'sourceModified': r.get('MDDATE'), 
                         'references': r.get('CollectionUrl'),
@@ -256,7 +258,10 @@ for now_category in category_list[category_index:]:
                     df = df[~df['id'].isin(failed_ids)].reset_index(drop=True)
                     df_for_sql = df_for_sql[~df_for_sql['tbiaID'].isin(failed_ids)].reset_index(drop=True)
                 process_match_log(df, matchlog_processor, existed_records, now, group, info_id, suffix=now_category)
-                export_records_with_taxon(df_for_sql,f'/solr/csvs/export/{group}_{info_id}_{now_category}.csv')
+                export_records_with_taxon(
+                    df_for_sql,
+                    f'/solr/csvs/export/{group}_{info_id}_{now_category}_{batch_tag}.csv'
+                )
                 update_media_rules(media_rules=media_rule_list,rights_holder=rights_holder, now=now)
         # 成功之後 更新update_update_version
         update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=None, note=json.dumps({'category_index': category_index, 'offset': offset}),total_count=records_processor.success_count)
