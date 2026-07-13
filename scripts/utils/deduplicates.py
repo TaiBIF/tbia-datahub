@@ -7,6 +7,7 @@ from numpy import nan
 import concurrent.futures
 from scripts.utils.common import to_none_dict
 from scripts.utils.progress import timed
+import time
 
 class DedupTracker:
     """
@@ -341,7 +342,8 @@ def resolve_existed_records(df, rights_holder, dedup_tracker):
 
 
 def get_existed_records_optimized(occ_ids, rights_holder, get_reference=False, cata_ids=[],
-                                 batch_size=500, max_workers=4):
+                                  batch_size=500, max_workers=4,
+                                  max_retries=3, retry_delay=2):
     get_fields = ['id', 'occurrenceID', 'catalogNumber', 'datasetName']
     if get_reference:
         get_fields.append('references')
@@ -359,17 +361,27 @@ def get_existed_records_optimized(occ_ids, rights_holder, get_reference=False, c
             "limit": len(ids) * 2,
             "fields": get_fields
         }
-        try:
-            resp = requests.post(
-                'http://solr:8983/solr/tbia_records/select',
-                data=json.dumps(query),
-                headers={'content-type': "application/json"},
-                timeout=30
-            ).json()
-            return resp.get('response', {}).get('docs', [])
-        except Exception as e:
-            print(f"Query error: {e}")
-            return []
+        last_error = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                resp = requests.post(
+                    'http://solr:8983/solr/tbia_records/select',
+                    data=json.dumps(query),
+                    headers={'content-type': "application/json"},
+                    timeout=30
+                )
+                resp.raise_for_status()
+                return resp.json().get('response', {}).get('docs', [])
+            except Exception as e:
+                last_error = e
+                print(f"   ⚠️ Solr query 失敗（{field_name}, 第 {attempt}/{max_retries} 次）：{e}")
+                if attempt < max_retries:
+                    time.sleep(retry_delay * attempt)   # 指數/線性退避
+
+        raise RuntimeError(
+            f"Solr query 重試 {max_retries} 次仍失敗（field={field_name}, "
+            f"rightsHolder={rights_holder}, ids={len(ids)} 筆）"
+        ) from last_error
 
     tasks = (
         [(occ_ids[i:i+batch_size], 'occurrenceID') for i in range(0, len(occ_ids), batch_size)] +
@@ -380,10 +392,7 @@ def get_existed_records_optimized(occ_ids, rights_holder, get_reference=False, c
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(query_batch, ids, field) for ids, field in tasks]
         for future in concurrent.futures.as_completed(futures):
-            try:
-                subset_list.extend(future.result())
-            except Exception as e:
-                print(f"Future error: {e}")
+            subset_list.extend(future.result())   # 有例外會直接往外拋，中斷整支程式
 
     if not subset_list:
         return pd.DataFrame(columns=get_fields).rename(columns={'id': 'tbiaID'})
