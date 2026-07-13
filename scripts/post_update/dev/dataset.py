@@ -1,5 +1,9 @@
 # 計算資料集統計
+# 用法：
+#   python -m scripts.post_update.update_dataset_stat --rights-holder 科博典藏
+#   python -m scripts.post_update.update_dataset_stat            # 不指定則更新全部
 import json
+import argparse
 import requests
 import psycopg2
 import pandas as pd
@@ -7,7 +11,7 @@ from datetime import datetime
 from tqdm import tqdm
 
 from app import db_settings
-from scripts.post_update.solr_helper import SOLR_BASE, solr_reimport_from_csv
+from scripts.post_update.solr_helper import SOLR_BASE, solr_import_csv
 
 bio_group_en = {
     '鳥類':       'Birds',
@@ -35,21 +39,48 @@ bio_group_en = {
     '細菌':       'Bacteria',
 }
 
+parser = argparse.ArgumentParser(description='更新 dataset 統計欄位並同步至 Solr')
+parser.add_argument(
+    '--rights-holder', default=None,
+    help='只更新此 rights_holder 底下的 dataset；不給則更新全部',
+)
+args = parser.parse_args()
+RIGHTS_HOLDER = args.rights_holder
 
-# 取得所有未棄用的資料集
+
+# 取得未棄用的資料集（可依 rights_holder 限縮）
 conn = psycopg2.connect(**db_settings)
-query = """SELECT "tbiaDatasetID", "name", "rights_holder" FROM dataset WHERE deprecated = 'f';"""
+
+if RIGHTS_HOLDER:
+    query = """
+        SELECT "tbiaDatasetID", "name", "rights_holder"
+        FROM dataset
+        WHERE deprecated = 'f' AND "rights_holder" = %s;
+    """
+    params = (RIGHTS_HOLDER,)
+else:
+    query = """
+        SELECT "tbiaDatasetID", "name", "rights_holder"
+        FROM dataset
+        WHERE deprecated = 'f';
+    """
+    params = None
+
 with conn.cursor() as cursor:
-    cursor.execute(query)
+    cursor.execute(query, params)
     res = cursor.fetchall()
     df = pd.DataFrame(res, columns=['tbiaDatasetID', 'datasetName', 'rights_holder'])
 
+print(f'本次更新對象：{RIGHTS_HOLDER or "全部 rights_holder"}，共 {len(df)} 個 dataset')
+if df.empty:
+    raise SystemExit('查無符合條件的 dataset，結束。')
 
-# 每個 dataset 查一次 Solr,一次取得所有需要的 facet 與 stats
+
+# 每個 dataset 查一次 Solr，一次取得所有需要的 facet 與 stats
 records = []
 
 for i, row in tqdm(df.iterrows(), total=len(df), desc='fetch dataset stats'):
-    params = {
+    solr_params = {
         'q': '*:*',
         'fq': f'tbiaDatasetID:"{row.tbiaDatasetID}"',
         'rows': 0,
@@ -60,7 +91,7 @@ for i, row in tqdm(df.iterrows(), total=len(df), desc='fetch dataset stats'):
         'facet.mincount': 1,
         'facet.field': ['resourceContacts', 'recordType', 'bioGroup'],
     }
-    resp = requests.get(f'{SOLR_BASE}/tbia_records/select', params=params).json()
+    resp = requests.get(f'{SOLR_BASE}/tbia_records/select', params=solr_params).json()
     occurrence_count = resp['response']['numFound']
 
     # deprecated='f' 但 Solr 查不到任何 record → 印錯誤並跳過，不更新
@@ -109,13 +140,17 @@ update_sql = '''
         "record_type"       = %(record_type)s
     WHERE "tbiaDatasetID" = %(tbiaDatasetID)s;
 '''
-with conn.cursor() as cursor:
-    cursor.executemany(update_sql, records)
+if records:
+    with conn.cursor() as cursor:
+        cursor.executemany(update_sql, records)
+    conn.commit()
+    print(f'✅ 已更新 {len(records)} 筆 dataset 統計')
+else:
+    print('⚠️ 沒有任何 dataset 需要更新統計')
 
-conn.commit()
 
-
-# 從測試站匯出更新檔案給正式站
+# 匯出全表：is_duplicated_name 需全域比較，
+# 且全表 upsert 可順便同步其他 rights_holder 因同名變動而改變的 flag
 with conn.cursor() as cursor:
     cursor.execute("SELECT * FROM dataset;")
     res = cursor.fetchall()
@@ -131,7 +166,7 @@ keys = [
 df = pd.DataFrame(res, columns=keys)
 df = df.drop(columns=['downloadCount'])
 
-# 標記同名資料集(未棄用且 name 重複)
+# 標記同名資料集（未棄用且 name 重複）
 dd = df[df.deprecated == False]
 dd_names = dd[dd.name.duplicated()].name.unique()
 df['is_duplicated_name'] = False
@@ -140,7 +175,11 @@ df.loc[df.name.isin(dd_names) & (df.deprecated == False), 'is_duplicated_name'] 
 now = datetime.now().strftime('%Y%m%d')
 updating_csv = f'/bucket/tbia_updated_dataset_{now}.csv'
 df.to_csv(updating_csv, index=None)
+print(f'📄 已匯出 {updating_csv}（{len(df)} 筆）')
 
 
-# 刪除 Solr dataset core 並從 CSV 重匯
-solr_reimport_from_csv('dataset', updating_csv)
+# 依 uniqueKey (id) upsert 進 Solr dataset core，不刪除、無空窗期
+solr_import_csv('dataset', updating_csv)
+print('✅ Solr dataset core 已同步')
+
+conn.close()

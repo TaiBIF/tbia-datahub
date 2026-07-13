@@ -23,3 +23,15 @@ def solr_reimport_from_csv(core, csv_path, base=SOLR_BASE):
         )
     r.raise_for_status()
     return r.json()
+
+
+def solr_import_csv(core, csv_path, base=SOLR_BASE):
+    """從 CSV 匯入，Solr 依 uniqueKey 覆寫既有文件，不刪除、不影響其他文件。"""
+    with open(csv_path, 'rb') as f:
+        r = requests.post(
+            f'{base}/{core}/update',
+            params={'commit': 'true'},
+            headers={'Content-Type': 'text/csv'},
+            data=f,
+        )
+    r.raise_for_status()
