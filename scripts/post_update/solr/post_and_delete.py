@@ -13,10 +13,10 @@
 先匯入再刪除，避免刪除到匯入完成之間出現「某單位資料全部消失」的空窗
 
 使用範例
-python scripts/post_update/solr/post_and_delete.py \
+python -m scripts.post_update.solr.post_and_delete \
     --group nps --info-id 0 --rights-holder "臺灣國家公園生物多樣性資料庫"
 
-python scripts/post_update/solr/post_and_delete.py \
+python -m scripts.post_update.solr.post_and_delete \
     --group nmns --info-id 0 --rights-holder "科博典藏 (NMNS Collection)" \
     --version 14 --workers 8 --execute --yes
 """
