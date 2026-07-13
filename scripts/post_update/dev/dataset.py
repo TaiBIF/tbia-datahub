@@ -1,7 +1,7 @@
 # 計算資料集統計
 # 用法：
-#   python -m scripts.post_update.update_dataset_stat --rights-holder 科博典藏
-#   python -m scripts.post_update.update_dataset_stat            # 不指定則更新全部
+#   python -m scripts.post_update.dev.dataset --rights-holder "科博典藏 (NMNS Collection)"
+#   python -m scripts.post_update.dev.dataset            # 不指定則更新全部
 import json
 import argparse
 import requests
