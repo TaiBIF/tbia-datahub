@@ -133,7 +133,8 @@ field_map = {
     # 'DNA': 
 }
 
-field_list = sorted(set(field_map.values()))
+field_list = list(set(field_map.values()))
+
 
 for now_category in category_list[category_index:]:
     has_more_data = True
@@ -196,13 +197,9 @@ for now_category in category_list[category_index:]:
         if len(data) > 9999 or not has_more_data:
             print(now_category, len(data), all_count)
             df = pd.DataFrame(data)
-            # 保存原始抓回資料供最後核對筆數（append，每學門一檔）
-            # 固定欄位順序，避免不同 batch / 重跑時欄位集合不同造成錯位
-            raw_field_list = field_list + ['sourceModified', 'references', 'associatedMedia', 'license']
-            df = df.reindex(columns=raw_field_list, fill_value='')
-            raw_path = f'/solr/csvs/raw_{group}_{info_id}_{now_category}.csv'
-            df.to_csv(raw_path, mode='a', header=not os.path.exists(raw_path),
-                index=False, encoding='utf-8-sig')
+            # 存原始抓回資料供最後核對筆數 每個 batch 各自存一個檔案，避免跨 batch 欄位不一致造成錯位
+            raw_path = f'/solr/csvs/raw_{group}_{info_id}_{now_category}_{batch_tag}.csv'
+            df.to_csv(raw_path, index=False, encoding='utf-8-sig')
             df = df.replace(to_quote_dict)
             data = [] # 重新下一個loop
             # 先補上所有欄位 避免後面錯誤
