@@ -18,7 +18,8 @@ class DedupTracker:
     TIME_COLS = {'created', 'modified', 'sourceCreated', 'sourceModified'}
 
     def __init__(self, rights_holder, update_version,
-                 cache_dir='/bucket/dedup_cache'):
+                 cache_dir='/bucket/dedup_cache', cross_batch=True):
+        self.cross_batch = cross_batch
         self.rights_holder = rights_holder
         self.update_version = update_version
         self._pending_duplicates = []
@@ -143,7 +144,11 @@ class DedupTracker:
         查 SQLite 找出已在先前批次處理、但 Solr 尚未收錄的 records。
         依 (datasetName, occurrenceID, catalogNumber) 完整 tuple 比對。
         回傳補充用的 DataFrame（格式同 existed_records）。
-        """
+        """        
+        if not self.cross_batch:
+            return pd.DataFrame(columns=['tbiaID', 'occurrenceID',
+                                         'catalogNumber', 'datasetName'])
+
         empty_cols = ['tbiaID', 'occurrenceID', 'catalogNumber', 'datasetName']
         if df.empty:
             return pd.DataFrame(columns=empty_cols)
@@ -228,6 +233,9 @@ class DedupTracker:
         upsert 成功後，把該批的 key 寫入 SQLite。
         df 此時應有 tbiaID, datasetName, occurrenceID, catalogNumber。
         """
+        if not self.cross_batch:
+            return
+        
         if df.empty:
             return
 
@@ -356,7 +364,7 @@ def get_existed_records_optimized(occ_ids, rights_holder, get_reference=False, c
             "offset": 0,
             "filter": [
                 f'rightsHolder:"{rights_holder}"',
-                f'{{!terms f={field_name}}}{",".join(ids)}'
+                f'{{!terms f={field_name} cache=false}}{",".join(ids)}'
             ],
             "limit": len(ids) * 2,
             "fields": get_fields

@@ -100,13 +100,15 @@ def get_next_update_version(rights_holder):
             return version + 1 if is_finished else version
 
 
-def init_update_session(rights_holder, records_batch_size=200, matchlog_batch_size=300):
+def init_update_session(rights_holder, records_batch_size=200,
+                        matchlog_batch_size=300, cross_batch=True):
     """初始化 update session：取得 version、續跑 checkpoint、now、processors、dedup_tracker"""
     update_version = get_next_update_version(rights_holder)
     current_page, note = insert_new_update_version(
         rights_holder=rights_holder, update_version=update_version
     )
-    dedup_tracker = DedupTracker(rights_holder, update_version)
+    dedup_tracker = DedupTracker(rights_holder, update_version,
+                                 cross_batch=cross_batch)  
     # 結束時自動匯出重複紀錄 CSV（含 within_batch 與 cross_batch）
     atexit.register(dedup_tracker.export_duplicates_csv)
     return UpdateSession(

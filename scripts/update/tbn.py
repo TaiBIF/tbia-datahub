@@ -25,7 +25,7 @@ rights_holder = '台灣生物多樣性網絡 TBN'
 info_id = 0
 
 # 更新紀錄
-session = init_update_session(rights_holder)
+session = init_update_session(rights_holder, cross_batch=False)
 update_version = session.update_version
 current_page = session.current_page
 note = session.note 
