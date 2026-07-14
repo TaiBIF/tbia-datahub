@@ -4,8 +4,8 @@ import time
 from app import engine
 from scripts.utils.common import *
 from scripts.utils.deduplicates import resolve_existed_records
-from scripts.utils.records import OptimizedRecordsProcessor, prepare_df_for_sql, delete_records
-from scripts.utils.match import OptimizedMatchLogProcessor, process_match_log, process_taxon_match, zip_match_log
+from scripts.utils.records import prepare_df_for_sql, delete_records
+from scripts.utils.match import process_match_log, process_taxon_match, zip_match_log
 from scripts.utils.geography import process_geo_batch, geo_keys
 from scripts.utils.export import export_records_with_taxon
 from scripts.utils.update_version import init_update_session, update_update_version
@@ -31,9 +31,6 @@ def fetch_class_list():
 
 class_list = fetch_class_list()
 unmatched_iconic = set()  # 收集不在 kingdom_list / class_list 的 iconic 值
-
-records_processor = OptimizedRecordsProcessor(engine, batch_size=200)
-matchlog_processor = OptimizedMatchLogProcessor(engine, batch_size=300)
 
 # 比對學名時使用的欄位
 sci_cols = ['sourceScientificName','sourceVernacularName','sourceClass','sourceKingdom']
@@ -122,8 +119,9 @@ while has_more_data:
             df = apply_common_fields(df, group, rights_holder, now)
             # 如果sensitiveCategory為重度 只保留年份
             df.loc[df['coordinates_obscured'] == True, ['standardDate', 'month', 'day']] = None
-            df.loc[df['coordinates_obscured'] == True, 'eventDate'] = df['year']
+            df.loc[df['coordinates_obscured'] == True, 'eventDate'] = df['year'].astype('Int64').astype(str)
             df = apply_record_type(df, mode='occ')  # basisOfRecord 無資料
+            df['associatedMedia'] = df['image_url'] # 缺media license
             df, media_rule_list = apply_media_rule(df, [])
             # 地理資訊
             # 未模糊化座標請看private_longtitude、private_latitude，如果出現空值才使用longtitude、latitude

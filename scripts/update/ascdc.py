@@ -1,11 +1,12 @@
 import requests
 import pandas as pd
 import time
+import json
 from app import engine
 from scripts.utils.common import *
 from scripts.utils.deduplicates import resolve_existed_records
-from scripts.utils.records import OptimizedRecordsProcessor, prepare_df_for_sql, delete_records
-from scripts.utils.match import OptimizedMatchLogProcessor, process_match_log, process_taxon_match, zip_match_log
+from scripts.utils.records import prepare_df_for_sql, delete_records
+from scripts.utils.match import process_match_log, process_taxon_match, zip_match_log
 from scripts.utils.geography import process_geo_batch, geo_keys
 from scripts.utils.export import export_records_with_taxon
 from scripts.utils.update_version import init_update_session, update_update_version
@@ -13,9 +14,6 @@ from scripts.utils.dataset import process_dataset, update_dataset_deprecated
 from tqdm import tqdm
 from scripts.utils.progress import timer
 import atexit
-
-records_processor = OptimizedRecordsProcessor(engine, batch_size=200)
-matchlog_processor = OptimizedMatchLogProcessor(engine, batch_size=300)
 
 # 比對學名時使用的欄位
 sci_cols = ['sourceScientificName','sourceVernacularName']
@@ -25,6 +23,10 @@ group = 'ascdc'
 rights_holder = '臺灣魚類資料庫'
 info_id = 0
 
+base_url_list = [
+    'https://datahub.openmuseum.tw/api/v2/fishdb_occurrence/list',
+    'https://datahub.openmuseum.tw/api/v2/fa_occurrence/list',
+]
 
 # 更新紀錄
 session = init_update_session(rights_holder)
@@ -42,81 +44,97 @@ atexit.register(records_processor.export_failed_records,
 atexit.register(matchlog_processor.export_failed_records, 
                 f'failed_match_logs_{group}_{info_id}.csv')
 
-c = current_page if current_page != 0 else 1
-has_more_data = True
+if not note:
+    url_index = 0
+else:
+    url_index = note.get('url_index', 0)
+
 should_stop = False
-total_count = None
 
-while has_more_data:
-    data = []
-    p = c + 10
-    while c < p: # 每次處理10頁 還沒到十頁的時候不中斷
-        print('page:',c)
-        time.sleep(1)
-        url = f"https://datahub.openmuseum.tw/api/v2/fishdb_occurrence/list?token={os.getenv('ASCDC_KEY')}&page={c}&per_page=100"
-        response = requests.get(url, verify=False, headers={'user-agent':"TBIA"})
-        if response.status_code == 200:
-            result = response.json()
-            data += result.get('data')
-            if total_count is None:
-                total_count = result['meta']['total'] if result['meta']['total'] else 0
+for u_idx in range(url_index, len(base_url_list)):
+    base_url = base_url_list[u_idx]
+    c = current_page if current_page != 0 else 1
+    has_more_data = True
+    total_count = None
+
+    while has_more_data:
+        data = []
+        p = c + 10
+        while c < p:  # 每次處理10頁 還沒到十頁的時候不中斷
+            print(base_url, '/ page:', c)
+            time.sleep(1)
+            url = f"{base_url}?token={os.getenv('ASCDC_KEY')}&page={c}&per_page=100"
+            response = requests.get(url, verify=False, headers={'user-agent': "TBIA"})
+            if response.status_code == 200:
+                result = response.json()
+                data += result.get('data')
+                if total_count is None:
+                    total_count = result['meta']['total'] if result['meta']['total'] else 0
+                else:
+                    if isinstance(result['meta']['total'], int):
+                        if result['meta']['total'] > total_count:
+                            total_count = result['meta']['total']
+                if c * 100 >= total_count:  # 當前的頁數已經超過總數
+                    has_more_data = False
+                    break
+                c += 1
             else:
-                if isinstance(result['meta']['total'], int):
-                    if result['meta']['total'] > total_count:
-                        total_count = result['meta']['total']
-            if c*100 >= total_count: # 當前的頁數已經超過總數
-                has_more_data = False
-                break
-            c+=1
-        else:
-            print(f"Error: HTTP {response.status_code}")
-            should_stop = True
-            break  # 跳出內層 while
-    if should_stop:
-        break # 跳出外層 while
-    if len(data):
-        df = pd.DataFrame(data)
-        df = df.replace(to_quote_dict)
-        df = filter_by_license_and_sensitivity(df)
-        if len(df):
-            df = df.reset_index(drop=True)
+                print(f"Error: HTTP {response.status_code}")
+                should_stop = True
+                break  # 跳出最內層 while
+        if should_stop:
+            break  # 跳出中層 while
+        if len(data):
+            df = pd.DataFrame(data)
             df = df.replace(to_quote_dict)
-            df = df.rename(columns={'created': 'sourceCreated', 
-                                    'modified': 'sourceModified', 
-                                    'scientificName': 'sourceScientificName'})
-            df = df.drop(columns=['subject','planningAgency','executiveAgency','provider'], errors='ignore')
-            df['sourceVernacularName'] = '' # 補上
-            df = process_taxon_match(df, sci_cols)
-            df = apply_common_fields(df, group, rights_holder, now)
-            df = apply_record_type(df, mode='occ')  # basisOfRecord 無資料
-            df, media_rule_list = apply_media_rule(df, [])
-            df[geo_keys] = process_geo_batch(df, skip_blur=True)
-            df = df.replace(to_quote_dict)
-            df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
-            df = process_dataset(df, group, rights_holder, update_version, now)
-            df, existed_records = resolve_existed_records(df, rights_holder, dedup_tracker)
-            df = df.replace(to_none_dict)
-            df_for_sql = prepare_df_for_sql(df, update_version)
-            failed_ids = records_processor.smart_upsert_records(
-                df_for_sql, existed_records=existed_records, dedup_tracker=dedup_tracker
-            )
-            if failed_ids:
-                df = df[~df['id'].isin(failed_ids)].reset_index(drop=True)
-                df_for_sql = df_for_sql[~df_for_sql['tbiaID'].isin(failed_ids)].reset_index(drop=True)
-            process_match_log(df, matchlog_processor, existed_records, now, group, info_id, suffix=c)
-            # df = prepare_df_for_sql(df, update_version)
-            # records_processor.smart_upsert_records(df, existed_records=existed_records)
-            export_records_with_taxon(df_for_sql,f'/solr/csvs/export/{group}_{info_id}_{c}.csv')
-            update_media_rules(media_rules=media_rule_list,rights_holder=rights_holder, now=now)
-    # 成功之後 更新update_update_version
-    update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None,total_count=records_processor.success_count)
+            df = filter_by_license_and_sensitivity(df)
+            if len(df):
+                df = df.reset_index(drop=True)
+                df = df.replace(to_quote_dict)
+                df = df.rename(columns={'created': 'sourceCreated',
+                                        'modified': 'sourceModified',
+                                        'scientificName': 'sourceScientificName'})
+                df = df.drop(columns=['subject', 'planningAgency', 'executiveAgency', 'provider'], errors='ignore')
+                df['sourceVernacularName'] = ''  # 補上
+                df = process_taxon_match(df, sci_cols)
+                df = apply_common_fields(df, group, rights_holder, now)
+                df = apply_record_type(df, mode='occ')  # basisOfRecord 無資料
+                df, media_rule_list = apply_media_rule(df, [])
+                df[geo_keys] = process_geo_batch(df, skip_blur=True)
+                df = df.replace(to_quote_dict)
+                df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
+                df = process_dataset(df, group, rights_holder, update_version, now)
+                df, existed_records = resolve_existed_records(df, rights_holder, dedup_tracker)
+                df = df.replace(to_none_dict)
+                df_for_sql = prepare_df_for_sql(df, update_version)
+                failed_ids = records_processor.smart_upsert_records(
+                    df_for_sql, existed_records=existed_records, dedup_tracker=dedup_tracker
+                )
+                if failed_ids:
+                    df = df[~df['id'].isin(failed_ids)].reset_index(drop=True)
+                    df_for_sql = df_for_sql[~df_for_sql['tbiaID'].isin(failed_ids)].reset_index(drop=True)
+                process_match_log(df, matchlog_processor, existed_records, now, group, info_id, suffix=f"{u_idx}_{c}")
+                export_records_with_taxon(df_for_sql, f'/solr/csvs/export/{group}_{info_id}_{u_idx}_{c}.csv')
+                update_media_rules(media_rules=media_rule_list, rights_holder=rights_holder, now=now)
+        # 成功之後 更新update_update_version
+        update_update_version(update_version=update_version, rights_holder=rights_holder,
+                              current_page=c, note=json.dumps({'url_index': u_idx}),
+                              total_count=records_processor.success_count)
+        print('saved', c)
 
-if not has_more_data:
+    if should_stop:
+        break  # 跳出最外層 for
+
+    current_page = 0  # 換成新的url時要重新開始
+    update_update_version(update_version=update_version, rights_holder=rights_holder,
+                          current_page=0, note=json.dumps({'url_index': u_idx + 1}),
+                          total_count=records_processor.success_count)
+
+if not should_stop:
     failed_tbia_ids = {r['tbiaID'] for r in records_processor.failed_records if r.get('tbiaID')}
-    delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version),exclude_ids=failed_tbia_ids)
-    # delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version))
-    zip_match_log(group=group,info_id=info_id)
-    update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder,total_count=records_processor.success_count)
+    delete_records(rights_holder=rights_holder, group=group, update_version=int(update_version), exclude_ids=failed_tbia_ids)
+    zip_match_log(group=group, info_id=info_id)
+    update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder, total_count=records_processor.success_count)
     update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
 
 print('done!')

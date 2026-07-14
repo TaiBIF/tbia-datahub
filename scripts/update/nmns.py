@@ -5,8 +5,8 @@ import json
 from app import engine
 from scripts.utils.common import *
 from scripts.utils.deduplicates import resolve_existed_records
-from scripts.utils.records import OptimizedRecordsProcessor, prepare_df_for_sql, delete_records
-from scripts.utils.match import OptimizedMatchLogProcessor, process_match_log, process_taxon_match, zip_match_log, clean_html_tags
+from scripts.utils.records import prepare_df_for_sql, delete_records
+from scripts.utils.match import process_match_log, process_taxon_match, zip_match_log, clean_html_tags
 from scripts.utils.geography import process_geo_batch, geo_keys, parse_verbatim_coords
 from scripts.utils.export import export_records_with_taxon
 from scripts.utils.update_version import init_update_session, update_update_version
@@ -15,9 +15,6 @@ from tqdm import tqdm
 from scripts.utils.progress import timer
 import atexit
 import os
-
-records_processor = OptimizedRecordsProcessor(engine, batch_size=200)
-matchlog_processor = OptimizedMatchLogProcessor(engine, batch_size=300)
 
 # 比對學名時使用的欄位
 sci_cols = ['sourceScientificName', 'sourceVernacularName', 'sourceOrder', 'sourceFamily', 'sourceClass', 'sourceKingdom']
