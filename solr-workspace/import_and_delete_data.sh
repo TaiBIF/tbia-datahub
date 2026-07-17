@@ -12,6 +12,8 @@ MAX_JOBS="${MAX_JOBS:-6}"      # 控制平行寫入的線程數
 DRY_RUN="${DRY_RUN:-true}"
 CUTOFF="${CUTOFF:-}"           # 直接傳入時優先使用，否則讀檔
 ACTION="${ACTION:-all}"        # all | import | delete
+FAIL_LOG="${FAIL_LOG:-/bucket/tbia_import_failures.txt}"
+PROGRESS_STEPS="${PROGRESS_STEPS:-50}"   # 進度大約更新幾次(檔案少時每個都更新)
 
 # ===== 決定 cutoff =====
 if [ -z "$CUTOFF" ]; then
@@ -40,26 +42,49 @@ if [ "$ACTION" = "import" ] || [ "$ACTION" = "all" ]; then
     fi
 
     echo "Importing csv files using $MAX_JOBS concurrent jobs..."
-    
-    # 速度優化與 Log 簡化核心：
-    # 1. 拿掉 -n 1 避免 xargs 警告
-    # 2. curl 加上 -o /dev/null 隱藏 JSON，加上 -w "1\n" 讓每個成功任務印出數字 1
-    # 3. 透過 awk 每累計 100 個檔案印出一次進度
+
+    : > "$FAIL_LOG"                         # 清空失敗清單
+    export SOLR_HOST CORE FAIL_LOG
+
+    # 進度間隔依檔案數自動調整，至少為 1
+    STEP=$(( CSV_COUNT / PROGRESS_STEPS ))
+    if [ "$STEP" -lt 1 ]; then STEP=1; fi
+
+    # 失敗的檔案略過並記錄到 $FAIL_LOG，單檔失敗不會中止整批
+    # 進度改用 while read 即時輸出(避開 mawk 導向檔案時 fflush 不生效的問題)
     find . -maxdepth 1 -name "$CSV_PATTERN" -print0 \
-        | xargs -0 -P "$MAX_JOBS" -I {} \
-        curl -s -o /dev/null -w "1\n" -f -X POST -H 'Content-Type: text/csv' \
-        --data-binary @{} "${SOLR_HOST}/solr/${CORE}/update" \
-        | awk -v total="$CSV_COUNT" '{
-            count++;
-            if (count % 100 == 0 || count == total) {
-                printf "目前匯入進度: %d / %d\n", count, total;
-                fflush();
-            }
-        }'
+        | xargs -0 -P "$MAX_JOBS" -I {} bash -c '
+            f="$1"
+            if curl -s -o /dev/null -f -X POST -H "Content-Type: text/csv" \
+                 --data-binary @"$f" "${SOLR_HOST}/solr/${CORE}/update"; then
+                printf "OK\n"
+            else
+                printf "%s\n" "$f" >> "$FAIL_LOG"   # O_APPEND 短行為原子寫入，平行安全
+                printf "FAIL\n"
+            fi
+        ' _ {} \
+        | {
+            count=0; ok=0; fail=0
+            while IFS= read -r line; do
+                count=$((count + 1))
+                case "$line" in
+                    OK)   ok=$((ok + 1));;
+                    FAIL) fail=$((fail + 1));;
+                esac
+                if [ $((count % STEP)) -eq 0 ] || [ "$count" -eq "$CSV_COUNT" ]; then
+                    echo "目前匯入進度: $count / $CSV_COUNT (成功 $ok, 失敗 $fail)"
+                fi
+            done
+        }
+
+    # 匯入失敗回報
+    FAIL_TOTAL=$(wc -l < "$FAIL_LOG" | tr -d ' ')
+    if [ "$FAIL_TOTAL" -gt 0 ]; then
+        echo "WARNING: $FAIL_TOTAL 個檔案匯入失敗，清單見 $FAIL_LOG"
+    fi
 
     # ===== 2. Commit =====
     echo "Committing..."
-    # 改用 API 進行 commit 並隱藏回應
     curl -s "${SOLR_HOST}/solr/${CORE}/update?commit=true" > /dev/null
 
     # ===== 3. Sanity check =====
