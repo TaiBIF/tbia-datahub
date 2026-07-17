@@ -8,7 +8,7 @@ SOLR_HOST="${SOLR_HOST:-http://solr:8983}"
 CORE="${CORE:-tbia_records}"
 CUTOFF_FILE="${CUTOFF_FILE:-/bucket/tbia_cutoff.txt}"
 MIN_EXPECTED_COUNT="${MIN_EXPECTED_COUNT:-1000000}"
-MAX_JOBS="${MAX_JOBS:-4}"      # 新增：控制平行寫入的線程數 (建議為 CPU 核心數的 1~2 倍)
+MAX_JOBS="${MAX_JOBS:-6}"      # 控制平行寫入的線程數
 DRY_RUN="${DRY_RUN:-true}"
 CUTOFF="${CUTOFF:-}"           # 直接傳入時優先使用，否則讀檔
 ACTION="${ACTION:-all}"        # all | import | delete
@@ -41,16 +41,25 @@ if [ "$ACTION" = "import" ] || [ "$ACTION" = "all" ]; then
 
     echo "Importing csv files using $MAX_JOBS concurrent jobs..."
     
-    # 速度優化核心：移除 post，使用 xargs -P 搭配 curl 進行平行多線程上傳
-    # 加上 -f (fail-fast) 確保遇到 HTTP 錯誤時 xargs 會捕捉到並報錯
+    # 速度優化與 Log 簡化核心：
+    # 1. 拿掉 -n 1 避免 xargs 警告
+    # 2. curl 加上 -o /dev/null 隱藏 JSON，加上 -w "1\n" 讓每個成功任務印出數字 1
+    # 3. 透過 awk 每累計 100 個檔案印出一次進度
     find . -maxdepth 1 -name "$CSV_PATTERN" -print0 \
-        | xargs -0 -n 1 -P "$MAX_JOBS" -I {} \
-        curl -s -f -X POST -H 'Content-Type: text/csv' \
-        --data-binary @{} "${SOLR_HOST}/solr/${CORE}/update"
+        | xargs -0 -P "$MAX_JOBS" -I {} \
+        curl -s -o /dev/null -w "1\n" -f -X POST -H 'Content-Type: text/csv' \
+        --data-binary @{} "${SOLR_HOST}/solr/${CORE}/update" \
+        | awk -v total="$CSV_COUNT" '{
+            count++;
+            if (count % 100 == 0 || count == total) {
+                printf "目前匯入進度: %d / %d\n", count, total;
+                fflush();
+            }
+        }'
 
     # ===== 2. Commit =====
     echo "Committing..."
-    # 錯誤修復：改用 API 進行 commit
+    # 改用 API 進行 commit 並隱藏回應
     curl -s "${SOLR_HOST}/solr/${CORE}/update?commit=true" > /dev/null
 
     # ===== 3. Sanity check =====
@@ -66,6 +75,7 @@ fi
 
 # ===== 4. 刪除 stale records =====
 if [ "$ACTION" = "delete" ] || [ "$ACTION" = "all" ]; then
+    # 若是單獨 delete，COUNT 還沒被設定，補抓一次
     if [ -z "${COUNT:-}" ]; then
         COUNT=$(curl -s "${SOLR_HOST}/solr/${CORE}/select?q=*:*&rows=0" \
             | grep -oP '"numFound":\s*\K\d+')
@@ -77,6 +87,7 @@ if [ "$ACTION" = "delete" ] || [ "$ACTION" = "all" ]; then
         fi
     fi
 
+    # URL encode 的 query (用於 GET 預覽)
     PREVIEW_QUERY="modified:%5B*+TO+${CUTOFF}%5D"
     PREVIEW_COUNT=$(curl -s "${SOLR_HOST}/solr/${CORE}/select?q=${PREVIEW_QUERY}&rows=0" \
         | grep -oP '"numFound":\s*\K\d+')
