@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # 資料更新後再更新台灣網格
-# python update_tw_grid.py
+#  python -m scripts.post_update.common.tw_grid.py
 # 或指定網格清單
-# python update_tw_grid.py --grid-csv TW_grid_5.csv
+# python -m scripts.post_update.common.tw_grid.py --grid-csv TW_grid_5.csv
 # 資料空缺圖台使用
 
 import argparse
