@@ -41,21 +41,25 @@ def fetch_docs(match_value, rows):
     query = f"(-taxonID:*) OR (taxonID:* AND match_higher_taxon:{match_value})"
     url = SOLR_URL.rstrip("/") + "/select"
     cursor = "*"
+    fetched = 0
     while True:
         params = {
             "q": query,
             "fl": ",".join(FIELDS),
             "rows": rows,
-            "sort": "id asc",  # cursorMark 需搭配唯一鍵排序
+            "sort": "id asc",
             "cursorMark": cursor,
             "wt": "json",
         }
         resp = requests.get(url, params=params, timeout=60)
         resp.raise_for_status()
         data = resp.json()
+        total = data["response"]["numFound"]
         docs = data["response"]["docs"]
         for doc in docs:
             yield doc
+        fetched += len(docs)
+        print(f"已抓取 {fetched}/{total}", file=sys.stderr)
         next_cursor = data.get("nextCursorMark")
         if not docs or next_cursor == cursor:
             break
