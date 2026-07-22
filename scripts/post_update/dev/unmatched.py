@@ -17,7 +17,7 @@ import sys
 
 import requests
 
-SOLR_URL = "http://localhost:8983/solr/tbia_records"
+SOLR_URL = "http://solr:8983/solr/tbia_records"
 
 FIELDS = [
     "sourceScientificName",
