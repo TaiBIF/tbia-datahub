@@ -26,6 +26,7 @@ FIELDS = [
     "sourceFamily",
     "sourceOrder",
     "sourceClass",
+    "sourceKingdom"
 ]
 # 需要清除 HTML tag 的欄位
 HTML_FIELDS = {"sourceScientificName", "sourceVernacularName"}
