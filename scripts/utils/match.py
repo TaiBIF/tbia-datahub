@@ -187,6 +187,25 @@ def _disambiguating_fields(specific_rank):
     return [f for (lvl, f) in _HIER_SOURCE_FIELDS if _LEVEL_ORDER[lvl] < cutoff]
 
 
+def _request_json_with_retry(url, tag, max_retries=3, backoff=2):
+    """回傳 (ok, data)。ok=False 代表重試用盡仍失敗。"""
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = requests.get(url, timeout=30)
+            if resp.status_code != 200:
+                raise requests.HTTPError(f"status {resp.status_code}")
+            return True, resp.json()
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries:
+                wait = backoff ** (attempt - 1)
+                print(f"[{tag}] retry {attempt}/{max_retries} after {wait}s: {e}", flush=True)
+                time.sleep(wait)
+    print(f"[{tag}] failed after {max_retries} retries: {last_error}", flush=True)
+    return False, None
+
+
 def _col_is_ambiguous(name, specific_rank=None):
     """用 COL 來源查同名/相似名:若指定 specific_rank,只計算同 rank 的結果,
     再依 accepted_namecode 去重;去重後 > 1 筆 → 視為歧義(True)。
@@ -250,6 +269,47 @@ def _col_has_exact(name):
                         result = any(isinstance(r, dict) and r.get('score') == 1 for r in rs)
     except Exception as e:
         print(f"COL exact check error for {key}: {e}")
+    _col_ambiguity_cache[cache_key] = result
+    return result
+
+
+def _col_single_exact(name, specific_rank=None):
+    """COL 是否正好有一筆完全相同(score == 1)的結果。
+    回傳 'single' / 'none' / 'multiple' / 'error'。
+    用於階層 fallback 的守門:只有 'single' 才放行。
+    與 _col_is_ambiguous 相反,查詢失敗回 'error'(不放行,退回較嚴的行為)。"""
+    if not name or not isinstance(name, str) or name.strip() == '':
+        return 'none'
+    key = name.strip()
+    cache_key = f'single_exact::{key}::{specific_rank}'
+    if cache_key in _col_ambiguity_cache:
+        return _col_ambiguity_cache[cache_key]
+
+    url = (f"{COL_MATCH_BASE_URL}api.php?names={urllib.parse.quote(key)}"
+           f"&format=json&source=col")
+    ok, data = _request_json_with_retry(url, f'COL single-exact {key}')
+    if not ok:
+        return 'error'          # 不寫入 cache,下次有機會重試
+
+    result = 'none'
+    rows = (data or {}).get('data')
+    if isinstance(rows, list) and rows and isinstance(rows[0], list) and rows[0]:
+        best = rows[0][0]
+        if isinstance(best, dict):
+            rs = best.get('results', [])
+            if isinstance(rs, list):
+                exact = [
+                    r for r in rs
+                    if isinstance(r, dict) and r.get('score') == 1
+                    # COL 缺 rank 資訊時不當否定證據,故允許 None
+                    and (not specific_rank
+                         or normalize_rank(r.get('taxon_rank')) in (None, specific_rank))
+                ]
+                codes = {r.get('accepted_namecode') for r in exact}
+                if len(codes) == 1:
+                    result = 'single'
+                elif len(codes) > 1:
+                    result = 'multiple'
     _col_ambiguity_cache[cache_key] = result
     return result
 
@@ -354,8 +414,9 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
     5. 早期退出機制（已匹配的不再處理）
     """
     
-    def batch_match_names(names_list, is_parent, match_stage, specific_rank):
-        """批次處理名稱匹配"""
+    def batch_match_names(names_list, is_parent, match_stage, specific_rank,
+                          max_retries=3, backoff=2):
+        """批次處理名稱匹配。重試用盡仍失敗時拋出例外,不靜默回 []。"""
         if not names_list:
             return []
 
@@ -365,43 +426,50 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
             mid = len(names_list) // 2
             return (batch_match_names(names_list[:mid], is_parent, match_stage, specific_rank) +
                     batch_match_names(names_list[mid:], is_parent, match_stage, specific_rank))
-  
-        try:
-            request_url = f"http://host.docker.internal:8080/api.php?names={urllib.parse.quote(('|').join(names_list))}&format=json&source=taicol"
-            response = requests.get(request_url, timeout=30)
-            
-            if response.status_code == 200:
+
+        request_url = (f"http://host.docker.internal:8080/api.php"
+                       f"?names={urllib.parse.quote('|'.join(names_list))}"
+                       f"&format=json&source=taicol")
+
+        last_error = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = requests.get(request_url, timeout=30)
+                if response.status_code != 200:
+                    raise requests.HTTPError(f"status {response.status_code}")
+
                 result = response.json()
-                processed_results = []
-                
-                # 確保 result['data'] 存在且是 list
+                # 有回應但格式不符 → 視為無結果,不重試
                 if 'data' not in result or not isinstance(result['data'], list):
                     return []
-                
-                # 處理每個名稱的結果
+
+                processed_results = []
                 for i, r in enumerate(result['data']):
-                    # r 應該是一個 list，包含該名稱的匹配結果
                     if r and isinstance(r, list) and len(r) > 0:
-                        # 取第一個（最佳）匹配結果
                         best_match = r[0]
-                        
                         if isinstance(best_match, dict):
-                            search_term = best_match.get('search_term', names_list[i] if i < len(names_list) else '')
+                            search_term = best_match.get(
+                                'search_term', names_list[i] if i < len(names_list) else '')
                             api_results = best_match.get('results', [])
-                            
-                            # 確保 results 是 list
                             if isinstance(api_results, list):
                                 processed_results.append({
                                     'search_term': search_term,
                                     'results': api_results
                                 })
-                
                 return processed_results
-                
-        except Exception as e:
-            print(f"API request error: {e}")
-            
-        return []
+
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries:
+                    wait = backoff ** (attempt - 1)
+                    print(f"[stage {match_stage}] TaiCOL API retry {attempt}/{max_retries} "
+                          f"({len(names_list)} names) after {wait}s: {e}", flush=True)
+                    time.sleep(wait)
+
+        raise RuntimeError(
+            f"TaiCOL match API failed at stage {match_stage} after {max_retries} retries "
+            f"({len(names_list)} names, first={names_list[0]}): {last_error}"
+        )
     
     def process_stage_vectorized(sci_names, stage_num, column_name, is_parent=False, 
                                specific_rank=None, transform_func=None):
@@ -476,13 +544,9 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
                 )
                 futures.append((future, batch_names))
             
-            # 收集結果
+            # 收集結果（不吞例外,API 失敗直接中斷,避免污染 match_stage）
             for future, batch_names in futures:
-                try:
-                    batch_results = future.result()
-                    results.extend(batch_results)
-                except Exception as e:
-                    print(f"Batch processing error: {e}")
+                results.extend(future.result())
         
         # 處理API結果
         if results:
@@ -621,11 +685,13 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
         parts = [p for p in name.strip().split() if p.lower() not in _OPEN_NOMEN_TOKENS]
         return len(parts) == 1
 
-    def _check_hierarchy_match_vectorized(results_dict, row, is_parent, specific_rank):
+    def _check_hierarchy_match_vectorized(results_dict, row, is_parent, specific_rank,
+                                          fallback_on_conflict=True):
         """階層檢查(規則 A):由上而下取「來源與候選都有值」的可比較層,
         任一層相符即通過;只有單一可比較層時等同該層須完全相符。
         有相符但也有不符的層 → 標記 _higher_partial 供稽核。
-        來源完全無上階層資訊 → 退回 COL 單候選歧義判斷。"""
+        來源完全無上階層資訊 → 退回 COL 單候選歧義判斷。
+        來源有上階層但全數淘汰 → 若 TaiCOL 唯一 exact 命中且 COL 唯一,放行(fallback)。"""
         if not results_dict:
             return []
 
@@ -637,20 +703,20 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
                 return None
             return s.casefold()
 
-        # 由上而下的上階層來源欄位(界→綱→目→科),僅取比 matched rank 更上階者
         disambig_fields = _disambiguating_fields(specific_rank)
         src_vals = [(f, _norm(row.get(f))) for f in disambig_fields]
         has_any_src = any(sv for _, sv in src_vals)
 
-        # rank 僅在非 is_parent 階段作為輔助維度
         src_rank = normalize_rank(row.get('sourceTaxonRank')) if not is_parent else None
 
         matched = []
+        unverifiable = []   # (a) 候選無任何可比較層
+        conflicting = []    # (b) 有可比較層但全不符
+
         for result in results_dict:
             if src_rank and not _rank_match(src_rank, normalize_rank(result.get('taxon_rank'))):
                 continue
 
-            # 來源與候選皆有值的層(可比較層)
             comparable = [
                 (sv, _norm(result.get(_FIELD_TO_CAND[f])))
                 for f, sv in src_vals
@@ -659,22 +725,21 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
 
             if not comparable:
                 if has_any_src:
-                    # 來源有上階層、但此候選無任何可比較層 → 無法驗證,淘汰
+                    # 來源有上階層、但此候選無任何可比較層 → 無法驗證,留待 fallback
+                    unverifiable.append(result)
                     continue
-                # 來源本身無上階層資訊 → 收集,交給 COL 判斷
                 result['_higher_partial'] = False
                 matched.append(result)
                 continue
 
             # 規則 A:任一可比較層相符即通過
             if not any(cv == sv for sv, cv in comparable):
+                conflicting.append(result)   # 明確衝突,留待 fallback
                 continue
 
-            # 有相符、但也有不符的層 → partial
             is_partial = any(cv != sv for sv, cv in comparable)
 
-            # 單名 COL 否決:名字為單名 + TaiCOL 為 fuzzy(score<1) + 高階層未全對(partial)
-            # + COL 有完全相同 → 視為 TaiCOL fuzzy 湊錯(如 Cerceis/Cerceris),否決此候選
+            # 單名 COL 否決(Cerceis/Cerceris)
             if (is_partial
                     and _is_single_name(row.get('now_matching_name'))
                     and float(result.get('score') or 0) < 1.0
@@ -683,9 +748,23 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
 
             result['_higher_partial'] = is_partial
             matched.append(result)
-        # 來源有上階層資訊:回傳通過者(0/1/多筆由呼叫端處理)
+
+        # 來源有上階層資訊
         if has_any_src:
-            return matched
+            if matched:
+                return matched
+
+            # 階層檢查全數淘汰 → 只救「TaiCOL 唯一 exact 命中 + COL 唯一 exact」
+            pool = list(unverifiable)
+            if fallback_on_conflict:
+                pool += conflicting
+            pool = [p for p in pool if float(p.get('score') or 0) >= 1.0]
+            if len(pool) != 1:
+                return []
+            if _col_single_exact(row.get('now_matching_name'), specific_rank) != 'single':
+                return []
+            pool[0]['_higher_partial'] = True   # 未經階層驗證,標記供稽核
+            return pool
 
         # 來源無上階層資訊:沿用 COL 單候選 + 相似名歧義判斷
         if len(matched) != 1:
