@@ -21,6 +21,7 @@ TAIEOL_URL = 'https://data.taieol.tw/api/v2/taieol_object/taxon_id/{}?token={}'
 SOLR_BATCH = 500       # Solr 一次拉的筆數
 MAX_WORKERS = 20       # TaiEOL 併發數
 HTTP_TIMEOUT = 30
+CHECKPOINT = '.image_update_cursor'   # 斷點檔
 
 # 共用 Session：keep-alive + 連線池 + 5xx 自動重試
 session = requests.Session()
@@ -33,6 +34,18 @@ adapter = HTTPAdapter(max_retries=retry,
                       pool_maxsize=MAX_WORKERS)
 session.mount('http://', adapter)
 session.mount('https://', adapter)
+
+
+def load_cursor():
+    if os.path.exists(CHECKPOINT):
+        with open(CHECKPOINT) as f:
+            return f.read().strip() or '*'
+    return '*'
+
+
+def save_cursor(cursor):
+    with open(CHECKPOINT, 'w') as f:
+        f.write(cursor)
 
 
 def get_solr_total():
@@ -87,9 +100,9 @@ def upsert_batch(cur, rows):
     execute_values(cur, sql, rows, template='(%s, %s, %s, NOW())')
 
 
-def iter_solr_ids():
-    """用 cursorMark 走訪 Solr 全部 taxon id，每次 yield 一個 batch。"""
-    cursor = '*'
+def iter_solr_ids(start_cursor='*'):
+    """用 cursorMark 走訪 Solr 全部 taxon id，每次 yield (batch, next_cursor)。"""
+    cursor = start_cursor
     while True:
         params = {
             'q': '*:*',
@@ -103,9 +116,9 @@ def iter_solr_ids():
         r.raise_for_status()
         resp = r.json()
         docs = resp['response']['docs']
-        if docs:
-            yield [d['id'] for d in docs]
         next_cursor = resp.get('nextCursorMark')
+        if docs:
+            yield [d['id'] for d in docs], next_cursor
         if not next_cursor or next_cursor == cursor:
             break
         cursor = next_cursor
@@ -115,14 +128,18 @@ def main():
     conn = psycopg2.connect(**db_settings)
     cur = conn.cursor()
     total_count = get_solr_total()
+    start_cursor = load_cursor()
     try:
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool, \
              tqdm(total=total_count, desc='taxa', unit='筆') as pbar:
-            for ids in iter_solr_ids():
+            for ids, next_cursor in iter_solr_ids(start_cursor):
                 results = list(pool.map(fetch_taieol, ids))
                 upsert_batch(cur, results)
                 conn.commit()
+                save_cursor(next_cursor)       # commit 成功後才記斷點
                 pbar.update(len(results))
+        if os.path.exists(CHECKPOINT):
+            os.remove(CHECKPOINT)              # 全部完成才清斷點
     finally:
         cur.close()
         conn.close()
