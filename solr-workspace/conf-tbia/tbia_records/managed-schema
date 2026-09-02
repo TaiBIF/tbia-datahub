@@ -447,6 +447,14 @@
       <tokenizer class="solr.WhitespaceTokenizerFactory"/>
     </analyzer>
   </fieldType>
+  <fieldType name="text_ngram" class="solr.TextField" positionIncrementGap="100">
+    <analyzer>
+      <charFilter class="solr.MappingCharFilterFactory" mapping="variant_mapping.txt"/>
+      <tokenizer class="solr.NGramTokenizerFactory" minGramSize="1" maxGramSize="1"/>
+      <filter class="solr.CJKWidthFilterFactory"/>
+      <filter class="solr.LowerCaseFilterFactory"/>
+    </analyzer>
+  </fieldType>
   <field name="_nest_path_" type="_nest_path_"/>
   <field name="_root_" type="string" docValues="false" indexed="true" stored="false"/>
   <field name="_text_" type="text_general" multiValued="true" indexed="true" stored="false"/>
@@ -913,5 +921,33 @@
   <copyField source="tribe_c" dest="_text_"/>
   <copyField source="variety" dest="_text_"/>
   <copyField source="variety_c" dest="_text_"/>
+  
+  <!-- ngram 比對用欄位：只索引不儲存 -->
+  <field name="sourceScientificName_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="sourceVernacularName_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="originalScientificName_ngram" type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="locality_ngram"       type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="recordedBy_ngram"     type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="datasetName_ngram"    type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="basisOfRecord_ngram"  type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="license_ngram"        type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="rightsHolder_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="sensitiveCategory_ngram" type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="eventDate_ngram"      type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="typeStatus_ngram"     type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="preservation_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
 
+  <copyField source="sourceScientificName"   dest="sourceScientificName_ngram"/>
+  <copyField source="sourceVernacularName"   dest="sourceVernacularName_ngram"/>
+  <copyField source="originalScientificName" dest="originalScientificName_ngram"/>
+  <copyField source="locality"       dest="locality_ngram"/>
+  <copyField source="recordedBy"     dest="recordedBy_ngram"/>
+  <copyField source="datasetName"    dest="datasetName_ngram"/>
+  <copyField source="basisOfRecord"  dest="basisOfRecord_ngram"/>
+  <copyField source="license"        dest="license_ngram"/>
+  <copyField source="rightsHolder"   dest="rightsHolder_ngram"/>
+  <copyField source="sensitiveCategory" dest="sensitiveCategory_ngram"/>
+  <copyField source="eventDate"      dest="eventDate_ngram"/>
+  <copyField source="typeStatus"     dest="typeStatus_ngram"/>
+  <copyField source="preservation"   dest="preservation_ngram"/>
 </schema>
