@@ -1,5 +1,6 @@
 import atexit
 import time
+import sys
 from collections import defaultdict
 from contextlib import contextmanager
 from functools import wraps
@@ -47,7 +48,22 @@ class StepTimer:
             print(f"  {name:<28} {total:>8.2f}s  (平均 {total/len(ts):>5.2f}s × {len(ts)})")
 
 timer = StepTimer()
-atexit.register(timer.summary)
+
+# 只有正常跑完（沒有未捕捉的例外）才印累計耗時；中途 raise error 中斷時不印
+_interrupted = False
+_orig_excepthook = sys.excepthook
+
+def _excepthook(exc_type, exc_value, exc_tb):
+    global _interrupted
+    _interrupted = True
+    _orig_excepthook(exc_type, exc_value, exc_tb)
+
+sys.excepthook = _excepthook
+
+@atexit.register
+def _final_summary():
+    if not _interrupted:
+        timer.summary()
 
 def timed(name=None):
     def deco(fn):

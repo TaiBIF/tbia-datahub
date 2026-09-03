@@ -22,30 +22,30 @@ def fetch_tbn_datasets(modified_since: str = '1900-01-01') -> pd.DataFrame:
     """
 
     # 自產資料 + eBird
-    url_list = ['https://www.tbn.org.tw/api/v25/occurrence?selfProduced=y', 'https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=4fa7b334-ce0d-4e88-aaae-2e0c138d049e']
+    url_list = ['https://www.tbn.org.tw/api/v26/occurrence?selfProduced=y', 'https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=4fa7b334-ce0d-4e88-aaae-2e0c138d049e']
 
     # 從ipt上傳的tbri資料
-    url_list += ["https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=4410edca-3bdd-4475-98a2-de823b2266bc",
-            "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=e0b8cb67-6667-423d-ab71-08021b6485f3",
-            "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=f170f056-3f8a-4ef3-ac9f-4503cc854ce0",
-            "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=4daa291b-0e9d-4e21-b78d-6b4e96093adc",
-            "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=f3f25fcf-2930-4cf1-a495-6b31d7fa0252",
-            "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=3f9cd7e5-6d7b-40a8-8062-a18d2f2ca599",
-            "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=db09684b-0fd1-431e-b5fa-4c1532fbdb14",
-            "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=54eaea55-f346-442e-9414-039c25658877",
-            "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=617e5387-3122-47b7-b639-c9fafc35bf13",
-            "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=346c95be-c7b3-41dc-99c9-e88a18d8884a",
-            "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=f464cad8-531e-4d53-ad36-2e4430f6765e",
-            "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=cb6e756a-c56a-4dc4-bbfa-2002a0a754dd",
-            "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=cb382c4d-7b6c-40c2-9e2d-e8167380cec5",
-            "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=0528b82f-bebb-49b0-ad2e-5082ae002823",
-            "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=a1f3b9e3-60d5-49fe-a6d1-2d22a154e2b2",
-            "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=7bff8305-a1e3-4e5b-bbc3-4afe04006b88",
-            "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=3a3aae4c-5895-4ba5-b3ba-d5f7d924478d",
-            "https://www.tbn.org.tw/api/v25/occurrence?datasetUUID=6ef6360c-c904-4eab-87fe-7bd234cb5c42",
+    url_list += ["https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=4410edca-3bdd-4475-98a2-de823b2266bc",
+            "https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=e0b8cb67-6667-423d-ab71-08021b6485f3",
+            "https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=f170f056-3f8a-4ef3-ac9f-4503cc854ce0",
+            "https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=4daa291b-0e9d-4e21-b78d-6b4e96093adc",
+            "https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=f3f25fcf-2930-4cf1-a495-6b31d7fa0252",
+            "https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=3f9cd7e5-6d7b-40a8-8062-a18d2f2ca599",
+            "https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=db09684b-0fd1-431e-b5fa-4c1532fbdb14",
+            "https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=54eaea55-f346-442e-9414-039c25658877",
+            "https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=617e5387-3122-47b7-b639-c9fafc35bf13",
+            "https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=346c95be-c7b3-41dc-99c9-e88a18d8884a",
+            "https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=f464cad8-531e-4d53-ad36-2e4430f6765e",
+            "https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=cb6e756a-c56a-4dc4-bbfa-2002a0a754dd",
+            "https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=cb382c4d-7b6c-40c2-9e2d-e8167380cec5",
+            "https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=0528b82f-bebb-49b0-ad2e-5082ae002823",
+            "https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=a1f3b9e3-60d5-49fe-a6d1-2d22a154e2b2",
+            "https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=7bff8305-a1e3-4e5b-bbc3-4afe04006b88",
+            "https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=3a3aae4c-5895-4ba5-b3ba-d5f7d924478d",
+            "https://www.tbn.org.tw/api/v26/occurrence?datasetUUID=6ef6360c-c904-4eab-87fe-7bd234cb5c42",
             ]
     
-    url = f'https://www.tbn.org.tw/api/v25/dataset?modified={modified_since}'
+    url = f'https://www.tbn.org.tw/api/v26/dataset?modified={modified_since}'
     records = []
     while url:
         resp = requests.get(url)

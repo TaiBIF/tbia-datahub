@@ -40,38 +40,38 @@ atexit.register(matchlog_processor.export_failed_records,
 
 c = current_page if current_page != 0 else 1
 has_more_data = True
-should_stop = False
+pbar = None
 total_count = None
 
 while has_more_data:
     data = []
     p = c + 10
     while c < p: # 每次處理10頁 還沒到十頁的時候不中斷
-        print('page:',c)
         time.sleep(5)
         url = f"https://brmas.openmuseum.tw/api/v2/specimen_brmas/list?token={os.getenv('ASIZ_KEY')}&page={c}&per_page=1000"
         response = requests.get(url, verify=False, headers={'user-agent':"TBIA"})
         if response.status_code == 200:
             result = response.json()
-            data += result.get('data')
+            batch = result.get('data')
+            data += batch
             if total_count is None:
                 total_count = result['meta']['total'] if result['meta']['total'] else 0
+            elif isinstance(result['meta']['total'], int) and result['meta']['total'] > total_count:
+                total_count = result['meta']['total']
+            if pbar is None:
+                pbar = tqdm(total=total_count, unit='筆', desc=group)
+                if c > 0:
+                    pbar.update(c * 1000)
             else:
-                if isinstance(result['meta']['total'], int):
-                    if result['meta']['total'] > total_count:
-                        total_count = result['meta']['total']
-            if c*1000 >= total_count: # 當前的頁數已經超過總數
+                pbar.total = total_count            # 總數若被更新，同步刷新
+            pbar.update(len(batch))
+            if c * 1000 >= total_count:
                 has_more_data = False
                 break
-            c+=1
+            c += 1
         else:
-            print(f"Error: HTTP {response.status_code}")
-            should_stop = True
-            break  # 跳出內層 while
-    if should_stop:
-        break # 跳出外層 while
+            raise Exception(f"API failed: {response.status_code} - {url}")
     if len(data):
-        print(len(data))
         df = pd.DataFrame(data)
         df = df.replace(to_quote_dict)
         # 有些資料沒有 補上
@@ -117,17 +117,17 @@ while has_more_data:
             process_match_log(df, matchlog_processor, existed_records, now, group, info_id, suffix=c)
             export_records_with_taxon(df_for_sql,f'/solr/csvs/export/{group}_{info_id}_{c}.csv')
             update_media_rules(media_rules=media_rule_list,rights_holder=rights_holder, now=now)
+            timer.batch_summary(label=f"批次 c={c}")
     # 成功之後 更新update_update_version
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None, total_count=records_processor.success_count)
 
+if pbar:
+    pbar.close()
 
 if not has_more_data:
     failed_tbia_ids = {r['tbiaID'] for r in records_processor.failed_records if r.get('tbiaID')}
     delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version),exclude_ids=failed_tbia_ids)
-    # delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version))
     zip_match_log(group=group,info_id=info_id)
     update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder, total_count=records_processor.success_count)
     update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
-
-
-print('done!')
+    print('done!')

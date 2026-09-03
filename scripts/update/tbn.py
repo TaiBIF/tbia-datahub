@@ -17,7 +17,7 @@ from scripts.utils.progress import timer
 import atexit
 
 # 比對學名時使用的欄位
-sci_cols = ['taxonID','sourceScientificName','sourceVernacularName','originalVernacularName','sourceTaxonID','sourceFamily']
+sci_cols = ['taxonID','sourceScientificName','sourceVernacularName','originalVernacularName','sourceTaxonID','sourceFamily','sourceKingdom']
 
 # 單位資訊 (在portal.Partner.info裡面的id)
 group = 'tbri'
@@ -61,7 +61,6 @@ for url in url_list[url_index:]:
         if response.status_code == 200:
             result = response.json()
             total_count = result['meta']['total']
-            # print(c, ',', (c+1)*1000, '/', total_count, ',', request_url)
             if pbar is None:
                 pbar = tqdm(total=total_count, unit='筆',
                             desc=f"URL {url_index+1}/{len(url_list)}")
@@ -93,7 +92,8 @@ for url in url_list[url_index:]:
                     'taxonRank': 'sourceTaxonRank',
                     'vernacularName': 'sourceVernacularName',
                     'familyScientificName': 'sourceFamily',
-                    'datasetUUID': 'sourceDatasetID'
+                    'datasetUUID': 'sourceDatasetID',
+                    'kingdomScientificName': 'sourceKingdom'
                 })
                 df['locality'] = df.apply(lambda x: x.county + x.municipality if not x.sensitiveCategory == '座標不開放' else '', axis = 1) #
                 # 若沒有individualCount 則用organismQuantity 
@@ -102,8 +102,8 @@ for url in url_list[url_index:]:
                                     'county','municipality','hour','minute','protectedStatusTW',
                                         'categoryIUCN', 'categoryRedlistTW', 'endemism', 'nativeness',
                                         'taxonGroup','scientificName','taiCOLNameCode','familyVernacularName', 'datasetAuthor', 
-                                        'resourceCitationIdentifier','establishmentMeans','individualCount','partner',
-                                        'identificationVerificationStatus', 'identifiedBy', 'dataSensitiveCategory',
+                                        'resourceCitationIdentifier','degreeOfEstablishment','individualCount','partner',
+                                        'identificationVerificationStatus', 'identifiedBy', 'dataSensitiveCategory',                                        
                                         'eventID', 'samplingProtocol','source','selfProduced',
                                         'collectionID','verbatimEventDate','eventTime', 'eventPlaceAdminarea',
                                         'countyCode','tfNameCode', 'scientificNameID'],errors='ignore')
@@ -117,6 +117,9 @@ for url in url_list[url_index:]:
                 df[geo_keys] = process_geo_batch(df, is_full_hidden='auto')
                 df = df.replace(to_quote_dict)
                 df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
+                df['datasetURL'] = df['datasetURL'].apply(
+                    lambda x: f"https://www.tbn.org.tw{x}" if isinstance(x, str) and x.startswith('/') else x
+                )
                 df = process_dataset(df, group, rights_holder, update_version, now,
                       extra_cols=None,
                       dataset=dataset,

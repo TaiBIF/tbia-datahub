@@ -435,6 +435,7 @@ def update_media_rules(media_rules, rights_holder, now):
         conn.close()
 
 
+# deprecated
 def filter_by_taxon_fields(df, required_cols):
     """
     排除「指定欄位全部為空字串」的 row。

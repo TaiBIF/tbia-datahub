@@ -59,7 +59,7 @@ atexit.register(matchlog_processor.export_failed_records,
 
 c = current_page
 has_more_data = True
-should_stop = False
+pbar = None
 
 kingdom_list = ['Plantae','Archaea','Bacteria','Protozoa','Chromista','Fungi','Animalia','Viruses','Zilligvirae','Heunggongvirae','Loebvirae','Sangervirae','Shotokuvirae','Trapavirae','Orthornavirae','Pararnavirae','Bamfordvirae','Helvetiavirae']
 
@@ -71,14 +71,21 @@ while has_more_data:
     while c < p and has_more_data: # 每次處理10頁 還沒到十頁的時候不中斷
         time.sleep(0.5)
         offset = c*300
-        print('offset:',offset)
         url = f"https://api.inaturalist.tw/api/v1/observations/?skip={offset}&limit=300&key={os.getenv('INAT_KEY')}"
         response = requests.get(url)
         if response.status_code == 200:
             result = response.json()
-            data += result['data']
-            if len(result['data']) < 300:
+            batch = result.get('data')
+            data += batch
+            if pbar is None:
+                pbar = tqdm(unit='筆', desc=group)   # 無總數
+                if c > 0:
+                    pbar.update(c * 300)             # resume 快進
+            pbar.update(len(batch))
+            if len(batch) < 300:
                 has_more_data = False
+        else:
+            raise Exception(f"API failed: {response.status_code} - {url}")
         c += 1
     if len(data):
         df = pd.DataFrame(data)
@@ -152,10 +159,9 @@ while has_more_data:
                 df = df[~df['id'].isin(failed_ids)].reset_index(drop=True)
                 df_for_sql = df_for_sql[~df_for_sql['tbiaID'].isin(failed_ids)].reset_index(drop=True)
             process_match_log(df, matchlog_processor, existed_records, now, group, info_id, suffix=c)
-            # df = prepare_df_for_sql(df, update_version)
-            # records_processor.smart_upsert_records(df, existed_records=existed_records)
             export_records_with_taxon(df_for_sql,f'/solr/csvs/export/{group}_{info_id}_{c}.csv')
             update_media_rules(media_rules=media_rule_list,rights_holder=rights_holder, now=now)
+            timer.batch_summary(label=f"批次 c={c}")
     # 成功之後 更新update_update_version 也有可能這批page 沒有資料 一樣從下一個c開始
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None,total_count=records_processor.success_count)
 
@@ -166,14 +172,13 @@ if unmatched_iconic:
     )
     print(f'未歸類的 iconic 值 {len(unmatched_iconic)} 個 -> unmatched_iconic_{group}_{info_id}.csv')
 
+if pbar:
+    pbar.close()
 
 if not has_more_data:
     failed_tbia_ids = {r['tbiaID'] for r in records_processor.failed_records if r.get('tbiaID')}
     delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version),exclude_ids=failed_tbia_ids)
-    # delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version))
     zip_match_log(group=group,info_id=info_id)
     update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder,total_count=records_processor.success_count)
     update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
-
-
-print('done!')
+    print('done!')

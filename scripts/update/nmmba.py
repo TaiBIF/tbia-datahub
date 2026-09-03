@@ -42,7 +42,7 @@ token = os.getenv('NMMBA_TOKEN')
 headers = {"Authorization": f"Bearer {token}"}
 c = current_page if current_page != 0 else 1
 has_more_data = True
-should_stop = False
+pbar = None
 
 import re
 
@@ -128,17 +128,17 @@ while has_more_data:
             now_mediaLicense = result['mediaLicense']
             now_license = result['license']
             data += result.get('data')
-            print('page:',c , 'total page:', total_page)
+            if pbar is None:
+                pbar = tqdm(total=total_page, unit='頁', desc=group)
+                if c > 1:
+                    pbar.update(c - 1)      # resume 快進
+            pbar.update(1)
             if c >= total_page:
                 has_more_data = False
                 break
-            c+=1
+            c += 1
         else:
-            print(f"Error: HTTP {response.status_code}")
-            should_stop = True
-            break  # 跳出內層 while
-    if should_stop:
-        break # 跳出外層 while
+            raise Exception(f"API failed: {response.status_code} - {url}")
     if len(data):
         df = pd.DataFrame(data)
         df = df.replace(to_quote_dict)
@@ -193,19 +193,20 @@ while has_more_data:
             # records_processor.smart_upsert_records(df, existed_records=existed_records)
             export_records_with_taxon(df_for_sql,f'/solr/csvs/export/{group}_{info_id}_{c}.csv')
             update_media_rules(media_rules=media_rule_list,rights_holder=rights_holder, now=now)
+            timer.batch_summary(label=f"批次 c={c}")
     # 成功之後 更新update_update_version
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None,total_count=records_processor.success_count)
+
+if pbar:
+    pbar.close()
 
 if not has_more_data:
     failed_tbia_ids = {r['tbiaID'] for r in records_processor.failed_records if r.get('tbiaID')}
     delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version),exclude_ids=failed_tbia_ids)
-    # delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version))
     zip_match_log(group=group,info_id=info_id)
     update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder,total_count=records_processor.success_count)
     update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
-
-
-print('done!')
+    print('done!')
 
 
 

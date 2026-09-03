@@ -49,40 +49,39 @@ else:
 
 # 取得台博館發布資料集
 dataset, dataset_list = fetch_taibif_datasets(publisher_id='c57cd401-ff9e-43bd-9403-089b88a97dea')
-should_stop = False
 
 for d in dataset_list[d_list_index:]:
     c = current_page
     has_more_data = True
     total_count = None
+    pbar = None
     while has_more_data: # 尚未到資料集的總數
         data = []
         p = c + 10
         while c < p: # 每次處理10頁 還沒到十頁的時候不中斷
             time.sleep(1)
             offset = 1000 * c
-            print(d[0], d[1], '/ page:',c , ' , offset:', offset)
             url = f"https://portal.taibif.tw/api/v3/occurrence?taibifDatasetID={d[0]}&rows=1000&offset={offset}"
             response = requests.get(url)
             if response.status_code == 200:
                 result = response.json()
-                data += result.get('data')
+                batch = result.get('data')
+                data += batch
                 if total_count is None:
                     total_count = result.get('count') if result.get('count') else 0
-                else:
-                    if isinstance(result.get('count'), int):
-                        if result.get('count') > total_count:
-                            total_count = result.get('count')
+                elif isinstance(result.get('count'), int) and result.get('count') > total_count:
+                    total_count = result.get('count')
+                if pbar is None:
+                    pbar = tqdm(total=total_count, unit='筆', desc=str(d[1])[:20])
+                    if c > 0:
+                        pbar.update(c * 1000)
+                pbar.update(len(batch))
                 if offset + 1000 >= total_count:
                     has_more_data = False
                     break
-                c+=1
+                c += 1
             else:
-                print(f"Error: HTTP {response.status_code}")
-                should_stop = True
-                break  # 跳出內層 while
-        if should_stop:
-            break # 跳出外層 while
+                raise Exception(f"API failed: {response.status_code} - {url}")
         if len(data):
             df = pd.DataFrame(data)
             df = df.replace(to_quote_dict)
@@ -137,19 +136,19 @@ for d in dataset_list[d_list_index:]:
                 process_match_log(df, matchlog_processor, existed_records, now, group, info_id, suffix=f"{d_list_index}_{c}")
                 export_records_with_taxon(df_for_sql,f'/solr/csvs/export/{group}_{info_id}_{d_list_index}_{c}.csv')
                 update_media_rules(media_rules=media_rule_list,rights_holder=rights_holder, now=now)
+                timer.batch_summary(label=f"{str(d[1])[:20]} c={c}")
         # 成功之後 更新update_update_version
         update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}),total_count=records_processor.success_count)
+    if pbar: pbar.close()
     d_list_index += 1
     current_page = 0 # 換成新的url時要重新開始
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=0, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}),total_count=records_processor.success_count)
 
-if not has_more_data:
+# 所有 dataset 都處理完才收尾（含續跑到最後、for 空轉的情況）
+if len(dataset_list) > 0 and d_list_index >= len(dataset_list):
     failed_tbia_ids = {r['tbiaID'] for r in records_processor.failed_records if r.get('tbiaID')}
     delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version),exclude_ids=failed_tbia_ids)
-    # delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version))
     zip_match_log(group=group,info_id=info_id)
     update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder, total_count=records_processor.success_count)
     update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
-
-
-print('done!')
+    print('done!')

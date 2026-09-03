@@ -44,7 +44,8 @@ resp = requests.get(url)
 data = []
 # 目前總數不多 可以一次取得所有資料就好
 
-for r in resp.json():
+projects = resp.json()
+for r in tqdm(projects, unit=' 資料集', desc=group):
     now_url = r.get('AccessURL')
     now_resp = requests.get(now_url)
     data += now_resp.json()
@@ -107,6 +108,7 @@ if len(data):
         # records_processor.smart_upsert_records(df, existed_records=existed_records)
         export_records_with_taxon(df_for_sql,f'/solr/csvs/export/{group}_{info_id}.csv')
         update_media_rules(media_rules=media_rule_list,rights_holder=rights_holder, now=now)
+        timer.batch_summary(label=group)
 
 
 failed_tbia_ids = {r['tbiaID'] for r in records_processor.failed_records if r.get('tbiaID')}

@@ -40,20 +40,28 @@ atexit.register(matchlog_processor.export_failed_records,
 
 c = current_page
 has_more_data = True
+pbar = None
 
 while has_more_data:
     data = []
     p = c + 10
     while c < p and has_more_data:
         offset = c*300
-        print('offset:',offset)
         url = f"https://taifdb.tfri.gov.tw/apis/data.php?limit=300&offset={offset}&k={os.getenv('TAIF_KEY')}"
         response = requests.get(url, verify=False)
         if response.status_code == 200:
             result = response.json()
-            data += result.get('data')
-            if len(result.get('data')) < 300:
+            batch = result.get('data')
+            data += batch
+            if pbar is None:
+                pbar = tqdm(unit='筆', desc=group)   # 無總數
+                if c > 0:
+                    pbar.update(c * 300)             # resume 快進
+            pbar.update(len(batch))
+            if len(batch) < 300:
                 has_more_data = False
+        else:
+            raise Exception(f"API failed: {response.status_code} - {url}")
         c += 1
     if len(data):
         df = pd.DataFrame(data)
@@ -89,16 +97,17 @@ while has_more_data:
             process_match_log(df, matchlog_processor, existed_records, now, group, info_id, suffix=c)
             export_records_with_taxon(df_for_sql,f'/solr/csvs/export/{group}_{info_id}_{c}.csv')
             update_media_rules(media_rules=media_rule_list,rights_holder=rights_holder, now=now)
+            timer.batch_summary(label=f"批次 c={c}")
     # 成功之後 更新update_update_version 也有可能這批page 沒有資料 一樣從下一個c開始
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=p, note=None, total_count=records_processor.success_count)
+
+if pbar:
+    pbar.close()
 
 if not has_more_data:
     failed_tbia_ids = {r['tbiaID'] for r in records_processor.failed_records if r.get('tbiaID')}
     delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version),exclude_ids=failed_tbia_ids)
-    # delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version))
     zip_match_log(group=group,info_id=info_id)
     update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder, total_count=records_processor.success_count)
     update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
-
-
-print('done!')
+    print('done!')

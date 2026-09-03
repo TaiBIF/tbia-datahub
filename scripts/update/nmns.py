@@ -137,15 +137,21 @@ for now_category in category_list[category_index:]:
     has_more_data = True
     data = []
     all_count = 0
+    pbar = tqdm(unit='筆', desc=now_category)
+    if offset:
+        pbar.update(offset)   # resume 快進
     while has_more_data:
         # 須在server上執行
         url = 'https://collections.culture.tw/getMetadataList.aspx?FORMAT=NMNS&DEPARTMENT={}&LIMIT=100&OFFSET={}'.format(now_category, offset)
         resp = requests.get(url)
+        if resp.status_code != 200:
+            raise Exception(f"API failed: {resp.status_code} - {url}")
         try:
             resp = resp.json()
-        except:
-            resp = []
+        except Exception:
+            raise Exception(f"invalid JSON response (HTTP 200) - {url}")
         all_count += len(resp)
+        pbar.update(len(resp))
         if len(resp) < 100:
             has_more_data = False
             batch_tag = offset      # 保留重置前的位置給檔名
@@ -192,7 +198,6 @@ for now_category in category_list[category_index:]:
                         if len(tax_parts) > 2: now_dict['sourceFamily'] = tax_parts[2]
             data.append(now_dict)
         if len(data) > 9999 or not has_more_data:
-            print(now_category, len(data), all_count)
             df = pd.DataFrame(data)
             # 存原始抓回資料供最後核對筆數 每個 batch 各自存一個檔案，避免跨 batch 欄位不一致造成錯位
             raw_path = f'/solr/csvs/raw_{group}_{info_id}_{now_category}_{batch_tag}.csv'
@@ -259,19 +264,20 @@ for now_category in category_list[category_index:]:
                     f'/solr/csvs/export/{group}_{info_id}_{now_category}_{batch_tag}.csv'
                 )
                 update_media_rules(media_rules=media_rule_list,rights_holder=rights_holder, now=now)
-        # 成功之後 更新update_update_version
-        update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=None, note=json.dumps({'category_index': category_index, 'offset': offset}),total_count=records_processor.success_count)
+                timer.batch_summary(label=f"{now_category} offset={batch_tag}")
+            # 只有實際寫入這批後才存 checkpoint，確保斷點與已寫入資料對齊（raise 後重跑不會漏）
+            update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=None, note=json.dumps({'category_index': category_index, 'offset': offset}),total_count=records_processor.success_count)
+    if pbar:
+        pbar.close()
     category_index += 1
     offset = 0
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=None, note=json.dumps({'category_index': category_index, 'offset': offset}),total_count=records_processor.success_count)
 
-if not has_more_data:
+# 所有學門都處理完才收尾（含續跑到最後、for 空轉的情況）
+if len(category_list) > 0 and category_index >= len(category_list):
     failed_tbia_ids = {r['tbiaID'] for r in records_processor.failed_records if r.get('tbiaID')}
     delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version),exclude_ids=failed_tbia_ids)
-    # delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version))
     zip_match_log(group=group,info_id=info_id)
     update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder,total_count=records_processor.success_count)
     update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
-
-
-print('done!')
+    print('done!')

@@ -136,9 +136,8 @@ unused_keys = ['界中文名','門中文名','綱中文名','目中文名','科�
                '所屬計畫類別', '採樣所屬季節', '鑒定者', '覆蓋率', '潮帶位置', '重量', '重量單位', '體長', '體長單位', '體寬', '體寬單位', '性別', '生活史階段',
                 '行為', '深度(公尺)', '高度(公尺)', '環境溫度(°C)','觀察記錄起始時間', '觀察記錄結束時間','鑑定者']
 
-for i in ocas.index:
+for i in tqdm(ocas.index, unit=' 資料集', desc=group):
     row = ocas.iloc[i]
-    print(row.project_name)
     df = pd.DataFrame()
     if row.data_type == 'api':
         url = f"https://iocean.oca.gov.tw/oca_datahub/WebService/GetData.ashx?id={row.d_id}"
@@ -159,7 +158,6 @@ for i in ocas.index:
         except:
             pass
     if len(df):
-        # print(df.keys())
         df = df.replace({nan: None, '#N/A': None, 'nan': None})
         df = df.rename(columns={'經度': 'verbatimLongitude', '緯度': 'verbatimLatitude', 
                                 '東經（E）': 'verbatimLongitude', '北緯（N）': 'verbatimLatitude', 
@@ -239,6 +237,7 @@ if len(df):
     process_match_log(df, matchlog_processor, existed_records, now, group, info_id, suffix=None)
     export_records_with_taxon(df_for_sql,f'/solr/csvs/export/{group}_{info_id}.csv')
     update_media_rules(media_rules=media_rule_list,rights_holder=rights_holder, now=now)
+    timer.batch_summary(label=group)
 
 failed_tbia_ids = {r['tbiaID'] for r in records_processor.failed_records if r.get('tbiaID')}
 delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version),exclude_ids=failed_tbia_ids)
