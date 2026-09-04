@@ -11,6 +11,8 @@ from app import db_settings
 import numpy as np
 import requests
 from numpy import nan
+from urllib.parse import urlparse
+from concurrent.futures import ThreadPoolExecutor
 from scripts.utils.progress import timed
 
 
@@ -253,6 +255,7 @@ def apply_common_fields(df, group, rights_holder, now):
 
     if 'sourceCreated' in df.keys():
         df['sourceCreated'] = df['sourceCreated'].apply(convert_date)
+
     if 'sourceModified' in df.keys():
         df['sourceModified'] = df['sourceModified'].apply(convert_date)
 
@@ -274,8 +277,10 @@ def apply_common_fields(df, group, rights_holder, now):
     return df
 
 
- 
-# 取得影像網址前綴
+# ---------------------------------------------------------------------------
+# Media 判斷相關
+# ---------------------------------------------------------------------------
+
 MEDIA_TYPE_MAPPING = {
     # image
     'jpg': 'image', 'jpeg': 'image', 'png': 'image', 'gif': 'image',
@@ -287,8 +292,8 @@ MEDIA_TYPE_MAPPING = {
     'mp3': 'audio', 'wav': 'audio', 'ogg': 'audio', 'flac': 'audio',
     'm4a': 'audio', 'aac': 'audio', 'wma': 'audio',
 }
- 
- 
+
+
 def _get_media_extension(media_url):
     """
     從 URL 取出副檔名 (lowercase, 不含點)。
@@ -305,18 +310,19 @@ def _get_media_extension(media_url):
     if not ext or len(ext) > 5 or not ext.isalnum():
         return ''
     return ext
- 
- 
+
+
 def _get_media_type(media_url):
-    """從 URL 推斷類別 (image / video / audio)；無法判斷回傳 'unknown'"""
+    """從 URL 副檔名推斷類別 (image / video / audio)；無法判斷回傳 'unknown'"""
     ext = _get_media_extension(media_url)
     return MEDIA_TYPE_MAPPING.get(ext, 'unknown')
- 
- 
+
+
 def _compute_media_types(media_str):
     """
     從 '|' 或 ';' 分隔的 URL 字串對應出 ';' 分隔的類別字串。
     每個 URL 對應一個類別 (image/video/audio/unknown)，位置與原 URL 對齊。
+    (僅用副檔名判斷；需要 HEAD fallback 請改用 resolve_media_types + _compute_media_types_with_map)
     """
     if not media_str:
         return ''
@@ -325,8 +331,143 @@ def _compute_media_types(media_str):
         url = url.strip()
         types.append(_get_media_type(url) if url else 'unknown')
     return ';'.join(types)
- 
- 
+
+
+# --- 探測 fallback：副檔名判不出來時實際發請求 --------------------------------
+
+# domain -> (media_type, media_rules) 快取，跨 batch / 同次執行共用，
+# 避免對同來源重複打 HEAD。
+_media_type_cache = {}
+_media_type_cache_lock = threading.Lock()
+
+# 打 HEAD 時帶個 UA，避免部分伺服器擋掉預設的 python-requests
+_MEDIA_HEAD_HEADERS = {'User-Agent': 'Mozilla/5.0 (compatible; TBIA-media-bot)'}
+
+
+def _get_domain(media_url):
+    """取出 domain（小寫），失敗回 ''。"""
+    try:
+        return urlparse(media_url).netloc.lower()
+    except Exception:
+        return ''
+
+
+def _split_urls(media_str):
+    """把 '|' 或 ';' 分隔的字串切成乾淨的 URL list。"""
+    return [u.strip() for u in re.split(r'[|;]', media_str) if u.strip()]
+
+
+def _url_to_rule(url):
+    """把 URL 轉成 media_rule 前綴 (scheme://host)，失敗回 None。"""
+    try:
+        parts = urlparse(url)
+        if parts.scheme and parts.netloc:
+            return f"{parts.scheme}://{parts.netloc}"
+    except Exception:
+        pass
+    return None
+
+
+def _probe_media(media_url, timeout=5):
+    """
+    對單一 URL 發請求，一次取得兩件事：
+      1. media type（依最終回應的 Content-Type）
+      2. 轉址鏈上所有 host 的 media_rule（含來源與最終目標）
+    HEAD 不支援 (4xx/5xx 或無 Content-Type) 時退成 GET Range: bytes=0-0。
+    失敗回 ('unknown', set())。
+    """
+    try:
+        resp = requests.head(media_url, allow_redirects=True,
+                             timeout=timeout, headers=_MEDIA_HEAD_HEADERS)
+        if resp.status_code >= 400 or not resp.headers.get('Content-Type'):
+            resp = requests.get(media_url, allow_redirects=True, timeout=timeout,
+                                headers={**_MEDIA_HEAD_HEADERS, 'Range': 'bytes=0-0'})
+    except Exception:
+        return 'unknown', set()
+
+    # resp.history 是導向過程的每個回應，resp 是最終；逐一取 host
+    rules = set()
+    for r in list(resp.history) + [resp]:
+        rule = _url_to_rule(r.url)
+        if rule:
+            rules.add(rule)
+
+    content_type = (resp.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+    media_type = 'unknown'
+    for prefix in ('image', 'video', 'audio'):
+        if content_type.startswith(prefix + '/'):
+            media_type = prefix
+            break
+
+    return media_type, rules
+
+
+def resolve_media_types(urls, max_workers=10):
+    """
+    對一批 URL 解析 media type，並收集轉址鏈上的真實 host（非 wildcard）。
+    回傳 (type_map, observed_rules)：
+      type_map:       {url: 'image'|'video'|'audio'|'unknown'}
+      observed_rules: set，探測實際觀察到的 scheme://host（含轉址目標）
+
+    流程（選項 B：每個 domain 都探測一次）：
+      1. 每個 URL 先用副檔名判 type（免連網），判得出來就直接用作 type。
+      2. 不論副檔名判不判得出來，每個 domain 都抽一個代表 URL 探測一次，
+         目的在確認轉址目標 host（轉址與有無副檔名無關）。
+         - 探測回傳的 type 只在副檔名判不出來時採用。
+         - 探測回傳的 host 一律併入 observed_rules。
+    以 domain 為快取 / 去重單位，假設同來源型別與轉址目標一致
+    （生多媒體來源通常成立）；per-domain 只探一次，成本可控。
+    """
+    type_map = {}
+    observed_rules = set()
+    ext_type = {}       # url -> 副檔名判出的 type（判不出為 'unknown'）
+    pending = {}        # domain -> 代表 url（每個 domain 都要探一次）
+
+    for url in urls:
+        if not url or url in ext_type:
+            continue
+        ext_type[url] = _get_media_type(url)  # 副檔名快路徑
+        domain = _get_domain(url)
+        with _media_type_cache_lock:
+            cached = _media_type_cache.get(domain)
+        if cached is not None:
+            observed_rules.update(cached[1])
+        else:
+            pending.setdefault(domain, url)
+
+    if pending:
+        def worker(item):
+            domain, sample_url = item
+            t, rules = _probe_media(sample_url)
+            return domain, t, rules
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            for domain, t, rules in ex.map(worker, pending.items()):
+                with _media_type_cache_lock:
+                    _media_type_cache[domain] = (t, rules)
+                observed_rules.update(rules)
+
+    # 決定每個 url 最終 type：副檔名優先，判不出來才用該 domain 的探測結果
+    for url in urls:
+        if not url or url in type_map:
+            continue
+        t = ext_type.get(url, 'unknown')
+        if t != 'unknown':
+            type_map[url] = t          # 副檔名判得出來，直接採用
+        else:
+            with _media_type_cache_lock:
+                cached = _media_type_cache.get(_get_domain(url))
+            type_map[url] = cached[0] if cached else 'unknown'
+
+    return type_map, observed_rules
+
+
+def _compute_media_types_with_map(media_str, type_map):
+    """用預先解析好的 type_map 組出 ';' 分隔的型別字串，位置與 URL 對齊。"""
+    if not media_str:
+        return ''
+    return ';'.join(type_map.get(u, 'unknown') for u in _split_urls(media_str))
+
+
 # 取得影像網址前綴
 def _get_media_rule(media_url):
     full_rule = None
@@ -380,6 +521,10 @@ def apply_media_rule(df, media_rule_list):
     處理 mediaLicense + associatedMedia 區塊。
     若 mediaLicense 為空（或根本沒有該欄位）則清空 associatedMedia，並蒐集所有出現過的 media_rule。
     associatedMedia 支援 '|' 或 ';' 分隔多 URL，跨 domain 也能正確收集。
+
+    media_rule 來源有兩類，都會併入：
+      - 靜態抽出：從 associatedMedia 直接取來源 host（_extract_media_rules）
+      - 探測觀察：副檔名判不出 type 時發請求，順便收集轉址鏈上的目標 host
     """
     # 1. 如果根本沒有 associatedMedia 欄位，直接回傳即可
     if 'associatedMedia' not in df.keys():
@@ -398,19 +543,26 @@ def apply_media_rule(df, media_rule_list):
             lambda x: x.associatedMedia if x.mediaLicense else '', axis=1
         )
 
-    # 3. 從最終的 associatedMedia 統一重算 associatedMediaType (覆蓋來源原值)
-    df['associatedMediaType'] = df['associatedMedia'].apply(_compute_media_types)
+    # 3. 批次解析 media type（副檔名 → 探測 fallback），同時取得轉址目標 host
+    all_urls = set()
+    for media_str in df['associatedMedia']:
+        if media_str:
+            all_urls.update(_split_urls(media_str))
+    type_map, probed_rules = resolve_media_types(all_urls)
+    df['associatedMediaType'] = df['associatedMedia'].apply(
+        lambda s: _compute_media_types_with_map(s, type_map)
+    )
 
-    # 4. 展平所有 row 的 media_rule，跨 row 去重後再合進累積 list
-    new_rules = set()
+    # 4. 收集 media_rule：靜態抽出的來源 host + 探測觀察到的轉址目標 host
+    new_rules = set(probed_rules)
     for media_str in df['associatedMedia']:
         if media_str:
             new_rules.update(_extract_media_rules(media_str))
-            
+
     for rule in new_rules:
         if rule not in media_rule_list:
             media_rule_list.append(rule)
-            
+
     return df, list(new_rules)
 
 
@@ -513,9 +665,6 @@ def calculate_data_quality(row):
         data_quality = 1
     return data_quality
 
-
-
-from concurrent.futures import ThreadPoolExecutor
 
 @timed()
 def update_gbif_references(df, existed_records, max_workers=10):
