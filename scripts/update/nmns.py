@@ -1,3 +1,4 @@
+# API 有限制ip使用
 import requests
 import pandas as pd
 import time
@@ -267,7 +268,7 @@ for now_category in category_list[category_index:]:
                 timer.batch_summary(label=f"{now_category} offset={batch_tag}")
             # 只有實際寫入這批後才存 checkpoint，確保斷點與已寫入資料對齊（raise 後重跑不會漏）
             update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=None, note=json.dumps({'category_index': category_index, 'offset': offset}),total_count=records_processor.success_count)
-    if pbar:
+    if pbar is not None:
         pbar.close()
     category_index += 1
     offset = 0

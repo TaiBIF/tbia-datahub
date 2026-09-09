@@ -105,7 +105,7 @@ while has_more_data:
     # 成功之後 更新update_update_version 也有可能這批page 沒有資料 一樣從下一個c開始
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=p, note=None, total_count=records_processor.success_count)
 
-if pbar:
+if pbar is not None:
     pbar.close()
 
 if not has_more_data:

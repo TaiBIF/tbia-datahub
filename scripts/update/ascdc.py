@@ -1,3 +1,4 @@
+# API 有限制ip使用
 import requests
 import pandas as pd
 import time
@@ -125,7 +126,7 @@ for u_idx in range(url_index, len(base_url_list)):
                               current_page=c, note=json.dumps({'url_index': u_idx}),
                               total_count=records_processor.success_count)
 
-    if pbar:
+    if pbar is not None:
         pbar.close()
 
     current_page = 0  # 換成新的url時要重新開始

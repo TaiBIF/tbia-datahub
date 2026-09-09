@@ -197,7 +197,7 @@ while has_more_data:
     # 成功之後 更新update_update_version
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=None,total_count=records_processor.success_count)
 
-if pbar:
+if pbar is not None:
     pbar.close()
 
 if not has_more_data:

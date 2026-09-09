@@ -73,7 +73,7 @@ for d in dataset_list[d_list_index:]:
                     total_count = result.get('count') if result.get('count') else 0
                 elif isinstance(result.get('count'), int) and result.get('count') > total_count:
                     total_count = result.get('count')
-                    if pbar: pbar.total = total_count
+                    if pbar is not None: pbar.total = total_count
                 if pbar is None:
                     pbar = tqdm(total=total_count, unit='筆', desc=str(d[1])[:20])
                     if c > 0:
@@ -142,7 +142,7 @@ for d in dataset_list[d_list_index:]:
                 timer.batch_summary(label=f"{str(d[1])[:20]} c={c}")
         # 成功之後 更新update_update_version
         update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}),total_count=records_processor.success_count)
-    if pbar: pbar.close()
+    if pbar is not None: pbar.close()
     d_list_index += 1
     current_page = 0 # 換成新的url時要重新開始
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=0, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}),total_count=records_processor.success_count)

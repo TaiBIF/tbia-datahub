@@ -172,7 +172,7 @@ if unmatched_iconic:
     )
     print(f'未歸類的 iconic 值 {len(unmatched_iconic)} 個 -> unmatched_iconic_{group}_{info_id}.csv')
 
-if pbar:
+if pbar is not None:
     pbar.close()
 
 if not has_more_data:

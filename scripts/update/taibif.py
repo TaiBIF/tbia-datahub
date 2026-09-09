@@ -179,7 +179,7 @@ for d in dataset_list[d_list_index:]:
                 timer.batch_summary(label=f"{str(d[1])[:20]} c={c}")
         # 成功之後 更新update_update_version (有可能某次的data完全沒有符合的資料 那也要紀錄已經跑過了c)
         update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}),total_count=records_processor.success_count)
-    if pbar: pbar.close()
+    if pbar is not None: pbar.close()
     d_list_index += 1
     current_page = 0 # 換成新的url時要重新開始
     update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=0, note=json.dumps({'d_list_index': d_list_index, 'dataset_list': dataset_list}), total_count=records_processor.success_count)
