@@ -76,6 +76,7 @@ if df.empty:
 
 # 每個 dataset 查一次 Solr，一次取得所有需要的 facet 與 stats
 records = []
+to_deprecate = []
 
 for i, row in tqdm(df.iterrows(), total=len(df), desc='fetch dataset stats'):
     solr_params = {
@@ -94,8 +95,9 @@ for i, row in tqdm(df.iterrows(), total=len(df), desc='fetch dataset stats'):
 
     # deprecated='f' 但 Solr 查不到任何 record → 印錯誤並跳過，不更新
     if occurrence_count == 0:
-        print(f'❌ Solr 查無資料，跳過：{row.tbiaDatasetID} / '
+        print(f'❌ Solr 查無資料,標記 deprecated:{row.tbiaDatasetID} / '
               f'{row.datasetName} / {row.rights_holder}')
+        to_deprecate.append(row.tbiaDatasetID)
         continue
 
     date_stats = resp['stats']['stats_fields']['standardDate']
@@ -146,6 +148,15 @@ if records:
 else:
     print('⚠️ 沒有任何 dataset 需要更新統計')
 
+# 將 occurrenceCount=0 的 dataset 標記為 deprecated
+if to_deprecate:
+    with conn.cursor() as cursor:
+        cursor.execute(
+            'UPDATE dataset SET deprecated = TRUE WHERE "tbiaDatasetID" = ANY(%s);',
+            (to_deprecate,),
+        )
+    conn.commit()
+    print(f'🚫 已將 {len(to_deprecate)} 筆 occurrenceCount=0 的 dataset 標記為 deprecated')
 
 # 匯出全表：is_duplicated_name 需全域比較，
 # 且全表 upsert 可順便同步其他 rights_holder 因同名變動而改變的 flag
