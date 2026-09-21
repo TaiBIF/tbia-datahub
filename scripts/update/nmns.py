@@ -57,7 +57,7 @@ else:
 # v 維管束學門 - 中文名 Chinese Common Name, 科名(英文+空格+中文) 學名, 
 # v 真菌學門 - 中文名 Chinese Common Name, 學名 Scientific Name(含<i>), 分類資訊 Taxonomy(門 (Phylum) ， 綱 (Class) ， 目 (Order) ， 科 (Family) 全形逗號分隔 但有可能有前後多餘空格)
 # v 兩棲爬蟲學門 - 中文名 Chinese Common Name, 目名 (英文+空格＋中文), 科名(英文+空格＋中文), 屬名(含<i>), 種名(實際上是種小名, 含<i>), 
-# v 古生物學門 - 學名 Scientific Name, 名稱 Chinese Common Name, 科名 Family(英文),	目名 Order(英文), 綱名 Class(英文),	門名 Phylum(英文), 界名 Kingdom(英文)
+# v 古生物學門 202609先移除, 未經授權 - 學名 Scientific Name, 名稱 Chinese Common Name, 科名 Family(英文),	目名 Order(英文), 綱名 Class(英文),	門名 Phylum(英文), 界名 Kingdom(英文)
 # 兩爬學門(魚類蒐藏) - 沒有資料
 
 # 依據學門給kingdom
@@ -74,7 +74,7 @@ kingdom_map = {
 }
 
 category_list = ['昆蟲學門', '兩棲爬蟲學門', '非維管束學門', '維管束學門', '真菌學門',
-                 '無脊椎動物學門', '古生物學門', '鳥獸學門(哺乳類蒐藏)', '鳥獸學門(鳥類蒐藏)']
+                 '無脊椎動物學門', '鳥獸學門(哺乳類蒐藏)', '鳥獸學門(鳥類蒐藏)']
 
 field_map = {
     # --- 學名 ---
@@ -88,11 +88,11 @@ field_map = {
     '目名': 'sourceOrder',
     '科名': 'sourceFamily',
     # '中文科名': '', 統一用英文科名
-    # --- 古生物學門專屬階層 (caption 名稱不同，不衝突可直接對應) ---
-    '界名 Kingdom': 'sourceKingdom',
-    '綱名 Class':   'sourceClass',
-    '目名 Order':   'sourceOrder',
-    '科名 Family':  'sourceFamily',
+    # # --- 古生物學門專屬階層 (caption 名稱不同，不衝突可直接對應) ---
+    # '界名 Kingdom': 'sourceKingdom',
+    # '綱名 Class':   'sourceClass',
+    # '目名 Order':   'sourceOrder',
+    # '科名 Family':  'sourceFamily',
     # '門名 Phylum': 'sourcePhylum',  # 現行流程不比對門，需要才開
     # --- 館藏編號 ---
     '館號/編目號 Catalog No.':  'catalogNumber',

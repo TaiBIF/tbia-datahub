@@ -640,6 +640,17 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
                 elif any(m.get('name_status') == 'not-accepted' for m in matched_results):
                     matched_results = [m for m in matched_results if m.get('name_status') == 'not-accepted']
 
+            # 同分無法決定:取最高分候選,若仍有多個不同 taxon → 標 multiple、不寫 taxonID,
+            # 退回後續中文名 stage 再嘗試
+            if matched_results:
+                top_score = max(float(m.get('score') or 0) for m in matched_results)
+                top = [m for m in matched_results
+                       if float(m.get('score') or 0) == top_score]
+                if len({m.get('accepted_namecode') for m in top}) > 1:
+                    sci_names.loc[sci_names.sci_index == sci_idx, f'stage_{stage_num}'] = 4  # multiple
+                    continue
+                matched_results = top
+
             if matched_results:
                 # 更新sci_names
                 best_match = matched_results[0]
