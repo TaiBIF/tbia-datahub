@@ -39,7 +39,7 @@ def strip_html(value: str) -> str:
 
 def fetch_docs(match_value, rows):
     """用 cursorMark 分頁抓取符合條件的所有 docs。"""
-    query = f"(-taxonID:*) OR (taxonID:* AND match_higher_taxon:{match_value})"
+    query = f"(*:* -taxonID:*) OR (taxonID:* AND match_higher_taxon:{match_value})"
     url = SOLR_URL.rstrip("/") + "/select"
     cursor = "*"
     fetched = 0
