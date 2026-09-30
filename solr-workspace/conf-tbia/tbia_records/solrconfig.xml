@@ -417,9 +417,9 @@
                       to occupy. Note that when this option is specified, the size
                       and initialSize parameters are ignored.
       -->
-    <filterCache size="512"
-                 initialSize="512"
-                 autowarmCount="0"/>
+    <filterCache maxRamMB="512"
+             initialSize="256"
+             autowarmCount="0"/>
 
     <!-- Query Result Cache
 
@@ -429,9 +429,9 @@
             maxRamMB - the maximum amount of RAM (in MB) that this cache is allowed
                        to occupy
       -->
-    <queryResultCache size="512"
-                      initialSize="512"
-                      autowarmCount="0"/>
+    <queryResultCache maxRamMB="128"
+                  initialSize="256"
+                  autowarmCount="0"/>
 
     <!-- Document Cache
 
