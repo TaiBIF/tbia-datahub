@@ -936,6 +936,27 @@
   <field name="eventDate_ngram"      type="text_ngram" indexed="true" stored="false" multiValued="true"/>
   <field name="typeStatus_ngram"     type="text_ngram" indexed="true" stored="false" multiValued="true"/>
   <field name="preservation_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="resourceContacts_ngram" type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+
+  <!-- 名稱欄位 ngram（option A：col/occ 全站搜尋名稱比對改走 ngram，需重灌） -->
+  <field name="scientificName_ngram"     type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="common_name_c_ngram"      type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="alternative_name_c_ngram" type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="synonyms_ngram"           type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="misapplied_ngram"         type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="kingdom_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="phylum_ngram"    type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="class_ngram"     type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="order_ngram"     type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="family_ngram"    type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="genus_ngram"     type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="species_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="kingdom_c_ngram" type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="phylum_c_ngram"  type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="class_c_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="order_c_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="family_c_ngram"  type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="genus_c_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
 
   <copyField source="sourceScientificName"   dest="sourceScientificName_ngram"/>
   <copyField source="sourceVernacularName"   dest="sourceVernacularName_ngram"/>
@@ -950,4 +971,24 @@
   <copyField source="eventDate"      dest="eventDate_ngram"/>
   <copyField source="typeStatus"     dest="typeStatus_ngram"/>
   <copyField source="preservation"   dest="preservation_ngram"/>
+  <copyField source="resourceContacts" dest="resourceContacts_ngram"/>
+
+  <copyField source="scientificName"     dest="scientificName_ngram"/>
+  <copyField source="common_name_c"      dest="common_name_c_ngram"/>
+  <copyField source="alternative_name_c" dest="alternative_name_c_ngram"/>
+  <copyField source="synonyms"           dest="synonyms_ngram"/>
+  <copyField source="misapplied"         dest="misapplied_ngram"/>
+  <copyField source="kingdom"   dest="kingdom_ngram"/>
+  <copyField source="phylum"    dest="phylum_ngram"/>
+  <copyField source="class"     dest="class_ngram"/>
+  <copyField source="order"     dest="order_ngram"/>
+  <copyField source="family"    dest="family_ngram"/>
+  <copyField source="genus"     dest="genus_ngram"/>
+  <copyField source="species"   dest="species_ngram"/>
+  <copyField source="kingdom_c" dest="kingdom_c_ngram"/>
+  <copyField source="phylum_c"  dest="phylum_c_ngram"/>
+  <copyField source="class_c"   dest="class_c_ngram"/>
+  <copyField source="order_c"   dest="order_c_ngram"/>
+  <copyField source="family_c"  dest="family_c_ngram"/>
+  <copyField source="genus_c"   dest="genus_c_ngram"/>
 </schema>
