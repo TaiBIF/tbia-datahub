@@ -447,6 +447,14 @@
       <tokenizer class="solr.WhitespaceTokenizerFactory"/>
     </analyzer>
   </fieldType>
+  <fieldType name="text_ngram_bi" class="solr.TextField" positionIncrementGap="100">
+    <analyzer>
+      <charFilter class="solr.MappingCharFilterFactory" mapping="variant_mapping.txt"/>
+      <tokenizer class="solr.NGramTokenizerFactory" minGramSize="2" maxGramSize="2"/>
+      <filter class="solr.CJKWidthFilterFactory"/>
+      <filter class="solr.LowerCaseFilterFactory"/>
+    </analyzer>
+  </fieldType>
   <fieldType name="text_ngram" class="solr.TextField" positionIncrementGap="100">
     <analyzer>
       <charFilter class="solr.MappingCharFilterFactory" mapping="variant_mapping.txt"/>
@@ -972,4 +980,8 @@
   <copyField source="family" dest="family_txt"/>
   <copyField source="genus" dest="genus_txt"/>
   <copyField source="species" dest="species_txt"/>
+  <field name="common_name_c_bi"      type="text_ngram_bi" indexed="true" stored="false" multiValued="true"/>
+  <field name="alternative_name_c_bi" type="text_ngram_bi" indexed="true" stored="false" multiValued="true"/>
+  <copyField source="common_name_c"      dest="common_name_c_bi"/>
+  <copyField source="alternative_name_c" dest="alternative_name_c_bi"/>
 </schema>

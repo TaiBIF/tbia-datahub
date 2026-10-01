@@ -1001,6 +1001,12 @@
   <field name="synonyms_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
   <field name="misapplied_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
   <field name="datasetName_bi" type="text_ngram_bi" indexed="true" stored="false" multiValued="true"/>
+  <field name="locality_bi" type="text_ngram_bi" indexed="true" stored="false" multiValued="true"/>
+  <field name="recordedBy_bi" type="text_ngram_bi" indexed="true" stored="false" multiValued="true"/>
+  <field name="resourceContacts_bi" type="text_ngram_bi" indexed="true" stored="false" multiValued="true"/>
+  <field name="sourceVernacularName_bi" type="text_ngram_bi" indexed="true" stored="false" multiValued="true"/>
+  <field name="common_name_c_bi" type="text_ngram_bi" indexed="true" stored="false" multiValued="true"/>
+  <field name="alternative_name_c_bi" type="text_ngram_bi" indexed="true" stored="false" multiValued="true"/>
   <copyField source="scientificName" dest="scientificName_txt"/>
   <copyField source="sourceScientificName" dest="sourceScientificName_txt"/>
   <copyField source="originalScientificName" dest="originalScientificName_txt"/>
@@ -1014,4 +1020,10 @@
   <copyField source="synonyms" dest="synonyms_txt"/>
   <copyField source="misapplied" dest="misapplied_txt"/>
   <copyField source="datasetName" dest="datasetName_bi"/>
+  <copyField source="locality" dest="locality_bi"/>
+  <copyField source="recordedBy" dest="recordedBy_bi"/>
+  <copyField source="resourceContacts" dest="resourceContacts_bi"/>
+  <copyField source="sourceVernacularName" dest="sourceVernacularName_bi"/>
+  <copyField source="common_name_c" dest="common_name_c_bi"/>
+  <copyField source="alternative_name_c" dest="alternative_name_c_bi"/>
 </schema>
