@@ -921,18 +921,8 @@
   <copyField source="variety_c" dest="_text_"/>
 
   <!-- ngram 比對用欄位：只索引不儲存 -->
-  <field name="scientificName_ngram"     type="text_ngram" indexed="true" stored="false" multiValued="true"/>
   <field name="common_name_c_ngram"      type="text_ngram" indexed="true" stored="false" multiValued="true"/>
   <field name="alternative_name_c_ngram" type="text_ngram" indexed="true" stored="false" multiValued="true"/>
-  <field name="synonyms_ngram"           type="text_ngram" indexed="true" stored="false" multiValued="true"/>
-  <field name="misapplied_ngram"         type="text_ngram" indexed="true" stored="false" multiValued="true"/>
-  <field name="kingdom_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
-  <field name="phylum_ngram"    type="text_ngram" indexed="true" stored="false" multiValued="true"/>
-  <field name="class_ngram"     type="text_ngram" indexed="true" stored="false" multiValued="true"/>
-  <field name="order_ngram"     type="text_ngram" indexed="true" stored="false" multiValued="true"/>
-  <field name="family_ngram"    type="text_ngram" indexed="true" stored="false" multiValued="true"/>
-  <field name="genus_ngram"     type="text_ngram" indexed="true" stored="false" multiValued="true"/>
-  <field name="species_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
   <field name="kingdom_c_ngram" type="text_ngram" indexed="true" stored="false" multiValued="true"/>
   <field name="phylum_c_ngram"  type="text_ngram" indexed="true" stored="false" multiValued="true"/>
   <field name="class_c_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
@@ -940,18 +930,8 @@
   <field name="family_c_ngram"  type="text_ngram" indexed="true" stored="false" multiValued="true"/>
   <field name="genus_c_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
 
-  <copyField source="scientificName"     dest="scientificName_ngram"/>
   <copyField source="common_name_c"      dest="common_name_c_ngram"/>
   <copyField source="alternative_name_c" dest="alternative_name_c_ngram"/>
-  <copyField source="synonyms"           dest="synonyms_ngram"/>
-  <copyField source="misapplied"         dest="misapplied_ngram"/>
-  <copyField source="kingdom"   dest="kingdom_ngram"/>
-  <copyField source="phylum"    dest="phylum_ngram"/>
-  <copyField source="class"     dest="class_ngram"/>
-  <copyField source="order"     dest="order_ngram"/>
-  <copyField source="family"    dest="family_ngram"/>
-  <copyField source="genus"     dest="genus_ngram"/>
-  <copyField source="species"   dest="species_ngram"/>
   <copyField source="kingdom_c" dest="kingdom_c_ngram"/>
   <copyField source="phylum_c"  dest="phylum_c_ngram"/>
   <copyField source="class_c"   dest="class_c_ngram"/>
@@ -959,4 +939,37 @@
   <copyField source="family_c"  dest="family_c_ngram"/>
   <copyField source="genus_c"   dest="genus_c_ngram"/>
 
+
+  <!-- A+ 拉丁分詞+前綴、datasetName bigram（效率優化）-->
+  <fieldType name="text_latin" class="solr.TextField" positionIncrementGap="100">
+    <analyzer type="index">
+      <tokenizer class="solr.StandardTokenizerFactory"/>
+      <filter class="solr.LowerCaseFilterFactory"/>
+      <filter class="solr.EdgeNGramFilterFactory" minGramSize="2" maxGramSize="25" preserveOriginal="true"/>
+    </analyzer>
+    <analyzer type="query">
+      <tokenizer class="solr.StandardTokenizerFactory"/>
+      <filter class="solr.LowerCaseFilterFactory"/>
+    </analyzer>
+  </fieldType>
+  <field name="scientificName_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
+  <field name="synonyms_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
+  <field name="misapplied_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
+  <field name="kingdom_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
+  <field name="phylum_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
+  <field name="class_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
+  <field name="order_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
+  <field name="family_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
+  <field name="genus_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
+  <field name="species_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
+  <copyField source="scientificName" dest="scientificName_txt"/>
+  <copyField source="synonyms" dest="synonyms_txt"/>
+  <copyField source="misapplied" dest="misapplied_txt"/>
+  <copyField source="kingdom" dest="kingdom_txt"/>
+  <copyField source="phylum" dest="phylum_txt"/>
+  <copyField source="class" dest="class_txt"/>
+  <copyField source="order" dest="order_txt"/>
+  <copyField source="family" dest="family_txt"/>
+  <copyField source="genus" dest="genus_txt"/>
+  <copyField source="species" dest="species_txt"/>
 </schema>
