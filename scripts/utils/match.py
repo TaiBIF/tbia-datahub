@@ -46,7 +46,8 @@ match_issue_map = {
     1: 'higherrank',
     2: 'none',
     3: 'fuzzy',
-    4: 'multiple'
+    4: 'multiple',
+    5: 'vetoed'
 }
 
 # TODO rank map待新增47之後的
@@ -631,7 +632,7 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
             results_dict = results_df.to_dict(orient='records')
 
             # 向量化階層檢查(含 rank 消歧義;無上階層時用 COL 偵測歧義)
-            matched_results = _check_hierarchy_match_vectorized(results_dict, row, is_parent, specific_rank)
+            matched_results, veto_reason = _check_hierarchy_match_vectorized(results_dict, row, is_parent, specific_rank)
 
             # 在通過階層比對的候選中做狀態過濾:accepted 優先,其次 not-accepted
             if matched_results:
@@ -678,6 +679,9 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
                 
                 successful_matches += 1
                 
+            elif veto_reason == 'vetoed':
+                # 有候選但被保守規則主動否決（COL 歧義／單名否決）→ 非「未收錄」
+                sci_names.loc[sci_names.sci_index == sci_idx, f'stage_{stage_num}'] = 5  # vetoed
             elif len(results_dict) > 1:
                 # 有多個結果但階層不匹配
                 sci_names.loc[sci_names.sci_index == sci_idx, f'stage_{stage_num}'] = 4  # multiple
@@ -704,7 +708,7 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
         來源完全無上階層資訊 → 退回 COL 單候選歧義判斷。
         來源有上階層但全數淘汰 → 若 TaiCOL 唯一 exact 命中且 COL 唯一,放行(fallback)。"""
         if not results_dict:
-            return []
+            return [], None
 
         def _norm(v):
             if v is None:
@@ -723,6 +727,7 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
         matched = []
         unverifiable = []   # (a) 候選無任何可比較層
         conflicting = []    # (b) 有可比較層但全不符
+        vetoed = False      # 曾因保守規則主動否決候選（COL 歧義／單名否決）
 
         for result in results_dict:
             if src_rank and not _rank_match(src_rank, normalize_rank(result.get('taxon_rank'))):
@@ -755,6 +760,7 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
                     and _is_single_name(row.get('now_matching_name'))
                     and float(result.get('score') or 0) < 1.0
                     and _col_has_exact(row.get('now_matching_name'))):
+                vetoed = True
                 continue
 
             result['_higher_partial'] = is_partial
@@ -763,7 +769,7 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
         # 來源有上階層資訊
         if has_any_src:
             if matched:
-                return matched
+                return matched, None
 
             # 階層檢查全數淘汰 → 只救「TaiCOL 唯一 exact 命中 + COL 唯一 exact」
             pool = list(unverifiable)
@@ -771,19 +777,27 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
                 pool += conflicting
             pool = [p for p in pool if float(p.get('score') or 0) >= 1.0]
             if len(pool) != 1:
-                return []
+                return [], ('vetoed' if vetoed else None)
             if _col_single_exact(row.get('now_matching_name'), specific_rank) != 'single':
-                return []
+                return [], ('vetoed' if vetoed else None)
             pool[0]['_higher_partial'] = True   # 未經階層驗證,標記供稽核
-            return pool
+            return pool, None
 
         # 來源無上階層資訊:沿用 COL 單候選 + 相似名歧義判斷
-        if len(matched) != 1:
-            return []
-        if _col_is_ambiguous(row.get('now_matching_name'), specific_rank):
-            return []
-        return matched
+        # 候選皆屬同一界時才依狀態過濾,跨界同名(如動物/植物)維持 multiple
+        kingdoms = {_norm(m.get('kingdom')) for m in matched}
+        if len(kingdoms) == 1 and None not in kingdoms:
+            if any(m.get('name_status') == 'accepted' for m in matched):
+                matched = [m for m in matched if m.get('name_status') == 'accepted']
+            elif any(m.get('name_status') == 'not-accepted' for m in matched):
+                matched = [m for m in matched if m.get('name_status') == 'not-accepted']
 
+        if len(matched) != 1:
+            return [], ('vetoed' if vetoed else None)
+        if _col_is_ambiguous(row.get('now_matching_name'), specific_rank):
+            return [], 'vetoed'
+        return matched, None
+    
     # 主要處理流程
     # print("=== Optimized Matching Flow ===")
     
