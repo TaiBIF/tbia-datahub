@@ -15,20 +15,22 @@ ACTION="${ACTION:-all}"        # all | import | delete
 FAIL_LOG="${FAIL_LOG:-/bucket/tbia_import_failures.txt}"
 PROGRESS_STEPS="${PROGRESS_STEPS:-50}"   # 進度大約更新幾次(檔案少時每個都更新)
 
-# ===== 決定 cutoff =====
-if [ -z "$CUTOFF" ]; then
-    if [ ! -f "$CUTOFF_FILE" ]; then
-        echo "ERROR: cutoff not provided and cutoff file not found: $CUTOFF_FILE"
-        echo "       set CUTOFF=YYYY-MM-DDTHH:MM:SSZ or create $CUTOFF_FILE"
-        exit 1
-    fi
-    CUTOFF=$(cat "$CUTOFF_FILE")
-    echo "Cutoff (from file): $CUTOFF"
-else
-    echo "Cutoff (from env): $CUTOFF"
-fi
-
 echo "Action: $ACTION"
+
+# ===== 決定 cutoff (只有需要刪除時才檢查) =====
+if [ "$ACTION" = "delete" ] || [ "$ACTION" = "all" ]; then
+    if [ -z "$CUTOFF" ]; then
+        if [ ! -f "$CUTOFF_FILE" ]; then
+            echo "ERROR: cutoff not provided and cutoff file not found: $CUTOFF_FILE"
+            echo "       set CUTOFF=YYYY-MM-DDTHH:MM:SSZ or create $CUTOFF_FILE"
+            exit 1
+        fi
+        CUTOFF=$(cat "$CUTOFF_FILE")
+        echo "Cutoff (from file): $CUTOFF"
+    else
+        echo "Cutoff (from env): $CUTOFF"
+    fi
+fi
 
 # ===== 1. 匯入 csv =====
 if [ "$ACTION" = "import" ] || [ "$ACTION" = "all" ]; then
