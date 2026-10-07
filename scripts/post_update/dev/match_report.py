@@ -4,7 +4,8 @@
 放在 datahub 專案，月更新後執行。分類在 SQL 端聚合，不把原始資料拉進 Python，
 故單位再大（數千萬筆）也只回傳幾列。
 
-每個單位輸出（/portal/media/match_report/<YYYY-MM>/<group>/）：
+每個資料庫（單位）輸出（/portal/media/match_report/<YYYY-MM>/<group>_<info_id>/）：
+  同一個 group 可能有多個資料庫（info_id 不同，如 nps_0 國家公園、nps_1 濕地），各自一份報告
   snapshot.json          各分類筆數／學名數
   unmatched_partner.csv  給夥伴：可由夥伴修正的未對到學名（含說明、來源階層、格式提醒）
   for_taicol.csv         給 TaiCOL：尚未收錄 + 僅對到上階
@@ -15,9 +16,10 @@
   email.png              給夥伴的摘要圖
 
 用法（在 /code 下以模組方式執行，才找得到專案根目錄的 app）：
-  python -m scripts.post_update.dev.match_report --year-month 2026-11 --group namr   # 只跑單一單位（驗證用）
-  python -m scripts.post_update.dev.match_report --year-month 2026-11                # 全部單位
-  python -m scripts.post_update.dev.match_report --year-month 2026-11 --no-delta     # 比對邏輯變更後的首次產出
+  python -m scripts.post_update.dev.match_report --year-month 2026-11 --group nps     # 只跑某 group 的資料庫
+  python -m scripts.post_update.dev.match_report --year-month 2026-11 --unit nps_1    # 只跑單一資料庫
+  python -m scripts.post_update.dev.match_report --year-month 2026-11                 # 全部
+  python -m scripts.post_update.dev.match_report --year-month 2026-11 --no-delta      # 比對邏輯變更後的首次產出
 """
 import argparse
 import csv
@@ -105,64 +107,94 @@ END
 
 
 # ── 查詢 ────────────────────────────────────────────────────
-def list_groups(conn):
-    rows = conn.execute(text('SELECT DISTINCT "group" FROM match_log ORDER BY "group"'))
-    return [r[0] for r in rows if r[0]]
+# ── 資料庫（單位）對照：rights_holder → (group, info_id) ─────────────
+# 同 rematch_all 的 HOLDERS；info_id 對應 portal Partner.info 的 id，輸出目錄為 {group}_{info_id}
+# 新增資料庫時要一併補上，否則該資料庫不會產出報告（執行時會提示）
+UNITS = [
+    # (rights_holder, group, info_id)
+    ('集水區友善環境生態資料庫',                'ardswc',      0),
+    ('臺灣魚類資料庫',                          'ascdc',       0),
+    ('中央研究院生物多樣性中心動物標本館',        'asiz',        0),
+    ('中油生態地圖',                            'cpc',         0),
+    ('林業試驗所昆蟲標本館',                     'fact',        0),
+    ('生態調查資料庫系統',                       'forest',      0),
+    ('GBIF',                                   'gbif',        0),
+    ('中央研究院生物多樣性中心植物標本資料庫',     'hast',        0),
+    ('愛自然-臺灣(iNaturalist Taiwan)',         'ntuforestry', 0),
+    ('國立海洋生物博物館生物典藏管理系統',        'nmmba',       0),
+    ('科博典藏 (NMNS Collection)',              'nmns',        0),
+    ('國家海洋資料庫及共享平台',                  'namr',        0),
+    ('作物種原資訊系統',                         'npgrc',       0),
+    ('臺灣國家公園生物多樣性資料庫',              'nps',         0),
+    ('國立臺灣博物館典藏',                       'ntm',         0),
+    ('海洋保育資料倉儲系統',                     'oca',         0),
+    ('臺灣生物多樣性資訊機構 TaiBIF',             'brcas',       0),
+    ('林業試驗所植物標本資料庫',                  'taif',        0),
+    ('台灣生物多樣性網絡 TBN',                   'tbri',        0),
+    ('濕地環境資料庫',                           'nps',         1),
+    ('河川環境資料庫',                           'wra',         0),
+]
 
 
-def rights_holder_of(conn, group):
-    r = conn.execute(text(
-        'SELECT "rights_holder" FROM match_log WHERE "group" = :g LIMIT 1'), {"g": group}
-    ).first()
-    return r[0] if r else group
+def unit_key(group, info_id):
+    return f"{group}_{info_id}"
 
 
-def aggregate(conn, group):
+def warn_unknown_holders(conn):
+    """match_log 中有、但 UNITS 沒列到的 rights_holder → 提示補上。"""
+    rows = conn.execute(text('SELECT DISTINCT "rights_holder" FROM match_log'))
+    known = {u[0] for u in UNITS}
+    for (rh,) in rows:
+        if rh and rh not in known:
+            print(f"⚠️ UNITS 未包含 rights_holder：{rh}（不會產出報告）", file=sys.stderr)
+
+
+def aggregate(conn, rh):
     """回傳 [(category_key, records, unique_names), ...]，SQL 端聚合。"""
     sql = text(f"""
         SELECT {CATEGORY_CASE} AS cat,
                COUNT(*) AS records,
                COUNT(DISTINCT "sourceScientificName") AS unique_names
         FROM match_log
-        WHERE "group" = :g
+        WHERE "rights_holder" = :g
         GROUP BY 1
     """)
-    return [(r[0], r[1], r[2]) for r in conn.execute(sql, {"g": group})]
+    return [(r[0], r[1], r[2]) for r in conn.execute(sql, {"g": rh})]
 
 
-def unmatched_names(conn, group):
+def unmatched_names(conn, rh):
     """未對到的唯一學名清單（給 CSV），SQL 端去重。"""
     sql = text(f"""
         SELECT "sourceScientificName" AS name,
                {CATEGORY_CASE} AS cat,
                COUNT(*) AS records
         FROM match_log
-        WHERE "group" = :g AND NOT "is_matched"
+        WHERE "rights_holder" = :g AND NOT "is_matched"
         GROUP BY "sourceScientificName", 2
         ORDER BY records DESC
     """)
-    return list(conn.execute(sql, {"g": group}))
+    return list(conn.execute(sql, {"g": rh}))
 
 
-def higher_names(conn, group):
+def higher_names(conn, rh):
     """有對到但只退到上階的唯一學名，帶對到的 taxonID。
     排除 sp./spp./indet. 以屬名對到者（已算 atrank，與 CATEGORY_CASE 一致）。"""
     sql = text(f"""
         SELECT "sourceScientificName" AS name, "taxonID" AS taxon_id, COUNT(*) AS records
         FROM match_log
-        WHERE "group" = :g AND "is_matched" AND "match_higher_taxon"
+        WHERE "rights_holder" = :g AND "is_matched" AND "match_higher_taxon"
           AND NOT ("match_stage" = 4
                    AND COALESCE("sourceScientificName", '') ~* '{_OPEN_RANK_RE}')
         GROUP BY "sourceScientificName", "taxonID"
         ORDER BY records DESC
     """)
-    return list(conn.execute(sql, {"g": group}))
+    return list(conn.execute(sql, {"g": rh}))
 
 
 _SRC_EMPTY = {"vern": "", "rank": "", "fam": "", "ord": "", "cls": "", "kin": ""}
 
 
-def source_fields_of(conn, group, names):
+def source_fields_of(conn, rh, names):
     """從 records 為每個唯一學名取一筆代表的 source 欄位（中文名、階層、各上階）。
     只查未對到的列（taxonID 為空），一名一列。"""
     names = [n for n in dict.fromkeys(names) if n]
@@ -178,12 +210,12 @@ def source_fields_of(conn, group, names):
                "sourceClass"          AS cls,
                "sourceKingdom"        AS kin
         FROM records
-        WHERE "group" = :g AND "taxonID" IS NULL
+        WHERE "rightsHolder" = :g AND "taxonID" IS NULL
           AND "sourceScientificName" IN :names
         ORDER BY "sourceScientificName"
     """).bindparams(bindparam("names", expanding=True))
     return {r.name: {k: (getattr(r, k) or "") for k in _SRC_EMPTY}
-            for r in conn.execute(sql, {"g": group, "names": names})}
+            for r in conn.execute(sql, {"g": rh, "names": names})}
 
 
 def _first(v):
@@ -253,13 +285,13 @@ def _format_hints(name, s):
 
 
 # ── 產出 ────────────────────────────────────────────────────
-def write_snapshot(agg, group, rights_holder, year_month, out_dir):
+def write_snapshot(agg, group, info_id, rights_holder, year_month, out_dir):
     rows = []
     for key, records, uniq in agg:
         axis, label, resp = CATEGORY_META.get(key, ("unmatched", key, None))
         rows.append({
-            "group": group, "rights_holder": rights_holder, "year_month": year_month,
-            "axis": axis, "category_key": key, "category": label, "responsibility": resp,
+            "group": group, "info_id": info_id, "rights_holder": rights_holder,
+            "year_month": year_month, "axis": axis, "category_key": key, "category": label, "responsibility": resp,
             "records": int(records), "unique_names": int(uniq),
         })
     (out_dir / "snapshot.json").write_text(
@@ -267,14 +299,14 @@ def write_snapshot(agg, group, rights_holder, year_month, out_dir):
     return rows
 
 
-def write_csvs(conn, group, rights_holder, out_dir):
+def write_csvs(conn, rh, rights_holder, out_dir):
     """拆兩份：unmatched_partner.csv（夥伴可修）＋ for_taicol.csv（回報 TaiCOL）。
     兩份都附來源階層與格式提醒，方便判斷是否為格式問題。"""
-    un = unmatched_names(conn, group)      # (name, catkey, records)
-    hi = higher_names(conn, group)         # (name, taxon_id, records)
+    un = unmatched_names(conn, rh)      # (name, catkey, records)
+    hi = higher_names(conn, rh)         # (name, taxon_id, records)
     label = {k: v[1] for k, v in CATEGORY_META.items()}
 
-    src = source_fields_of(conn, group, [n for n, _, _ in un])
+    src = source_fields_of(conn, rh, [n for n, _, _ in un])
     by_tid = _solr_lookup("id", [r[1] for r in hi],  # taxa core 主鍵為 id，值即 taxonID
                           ["common_name_c", "family", "family_c"])
 
@@ -312,25 +344,26 @@ def write_csvs(conn, group, rights_holder, out_dir):
 
 
 # ── 前後比較 ────────────────────────────────────────────────
-def prev_dir_of(group, year_month):
-    """找本次之前、最近一次有該單位快照的月份；回 (year_month, 目錄) 或 (None, None)。"""
+def prev_dir_of(unit, year_month):
+    """找本次之前、最近一次有該資料庫快照的月份；回 (year_month, 目錄) 或 (None, None)。
+    unit 為 {group}_{info_id}；舊格式（以 group 為目錄）的報告不列入比較。"""
     if not OUT_BASE.exists():
         return None, None
     cands = sorted(p.name for p in OUT_BASE.iterdir()
                    if re.fullmatch(r"\d{4}-\d{2}", p.name) and p.name < year_month
-                   and (p / group / "snapshot.json").exists())
-    return (cands[-1], OUT_BASE / cands[-1] / group) if cands else (None, None)
+                   and (p / unit / "snapshot.json").exists())
+    return (cands[-1], OUT_BASE / cands[-1] / unit) if cands else (None, None)
 
 
-def name_states(conn, group):
+def name_states(conn, rh):
     """每個學名的主要分類（筆數最多者）與總筆數：{name: (cat, records)}。"""
     sql = text(f"""
         SELECT "sourceScientificName" AS name, {CATEGORY_CASE} AS cat, COUNT(*) AS records
-        FROM match_log WHERE "group" = :g
+        FROM match_log WHERE "rights_holder" = :g
         GROUP BY 1, 2
     """)
     acc = {}   # name -> (主要分類, 主要分類筆數, 總筆數)
-    for name, cat, records in conn.execute(sql, {"g": group}):
+    for name, cat, records in conn.execute(sql, {"g": rh}):
         name = name or ""
         prev = acc.get(name)
         total = records + (prev[2] if prev else 0)
@@ -425,10 +458,12 @@ def write_compare(snapshot, states, prev_ym, prev_dir, out_dir):
     return summary
 
 
-def write_meta(out_dir, group, year_month, prev_ym, logic_changed, compare_summary):
+def write_meta(out_dir, group, info_id, rights_holder, year_month, prev_ym,
+               logic_changed, compare_summary):
     """本次產出資訊，供 stat_match 匯入 MatchReport。"""
     meta = {
-        "group": group, "year_month": year_month,
+        "group": group, "info_id": info_id, "rights_holder": rights_holder,
+        "year_month": year_month,
         "prev_year_month": prev_ym,          # 無前次為 None
         "logic_changed": logic_changed,      # True：比對邏輯變更，差值不具比較意義
         "compare": compare_summary,          # 學名變化摘要；無前次 name_state 為 None
@@ -547,32 +582,35 @@ def render_png(snapshot_rows, rights_holder, year_month, prev_atrank_rate, prev_
 
 
 # ── 主流程 ──────────────────────────────────────────────────
-def process_group(conn, group, year_month, show_delta=True):
-    rh = rights_holder_of(conn, group)
-    out_dir = OUT_BASE / year_month / group
+def process_unit(conn, rh, group, info_id, year_month, show_delta=True):
+    unit = unit_key(group, info_id)
+    out_dir = OUT_BASE / year_month / unit
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    agg = aggregate(conn, group)
-    snapshot = write_snapshot(agg, group, rh, year_month, out_dir)
-    write_csvs(conn, group, rh, out_dir)
+    agg = aggregate(conn, rh)
+    if not agg:
+        print(f"[{unit}] {rh}｜match_log 無資料，略過", file=sys.stderr)
+        return
+    snapshot = write_snapshot(agg, group, info_id, rh, year_month, out_dir)
+    write_csvs(conn, rh, rh, out_dir)
 
-    states = name_states(conn, group)
+    states = name_states(conn, rh)
     write_name_state(states, out_dir)
 
-    prev_ym, prev_dir = prev_dir_of(group, year_month)
+    prev_ym, prev_dir = prev_dir_of(unit, year_month)
     prev_rate, compare_summary = None, None
     if prev_dir:
         compare_summary = write_compare(snapshot, states, prev_ym, prev_dir, out_dir)
         if show_delta:
             prev_rate = _atrank_rate(json.loads(
                 (prev_dir / "snapshot.json").read_text(encoding="utf-8")))
-    write_meta(out_dir, group, year_month, prev_ym, not show_delta, compare_summary)
+    write_meta(out_dir, group, info_id, rh, year_month, prev_ym, not show_delta, compare_summary)
     render_png(snapshot, rh, year_month, prev_rate, prev_ym, out_dir)
 
     total = sum(r["records"] for r in snapshot)
     matched = sum(r["records"] for r in snapshot if r["axis"] == "matched")
     rate = round(matched / total * 100, 1) if total else 0.0
-    print(f"[{group}] {rh}｜比對率 {rate}%｜{total} 筆｜前次 {prev_ym or '無'} → {out_dir}",
+    print(f"[{unit}] {rh}｜比對率 {rate}%｜{total} 筆｜前次 {prev_ym or '無'} → {out_dir}",
           file=sys.stderr)
 
 
@@ -580,17 +618,25 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--year-month", default=f"{datetime.date.today():%Y-%m}",
                    help="YYYY-MM，預設本月")
-    p.add_argument("--group", help="只處理單一單位（省略則全部）")
+    p.add_argument("--group", help="只處理該 group 的資料庫（如 nps → nps_0、nps_1）")
+    p.add_argument("--unit", help="只處理單一資料庫，格式 {group}_{info_id}，如 nps_1")
     p.add_argument("--no-delta", action="store_true",
                    help="比對邏輯變更後的首次產出：PNG 不顯示差值，meta.json 標記 logic_changed，"
                         "網頁同樣隱藏差值；比較檔仍會產出")
     args = p.parse_args()
 
+    units = [u for u in UNITS
+             if (not args.group or u[1] == args.group)
+             and (not args.unit or unit_key(u[1], u[2]) == args.unit)]
+    if not units:
+        sys.exit(f"找不到符合的資料庫：group={args.group} unit={args.unit}")
+
     with engine.connect() as conn:
-        groups = [args.group] if args.group else list_groups(conn)
-        for g in groups:
-            process_group(conn, g, args.year_month, show_delta=not args.no_delta)
-    print(f"完成 {len(groups)} 個單位", file=sys.stderr)
+        if not args.group and not args.unit:
+            warn_unknown_holders(conn)
+        for rh, group, info_id in units:
+            process_unit(conn, rh, group, info_id, args.year_month, show_delta=not args.no_delta)
+    print(f"完成 {len(units)} 個資料庫", file=sys.stderr)
 
 
 if __name__ == "__main__":
