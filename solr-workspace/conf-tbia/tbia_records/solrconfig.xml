@@ -174,6 +174,12 @@
           <double name="noCFSRatio">0.1</double>
         </mergePolicyFactory>
       -->
+    <!-- TBIA：datahub 以刪除再寫入更新資料，已刪除文件曾累積到近 3 成。
+         deletesPctAllowed 預設 33，調到 20（允許的最小值），讓 merge 更積極回收已刪除文件；
+         代價是平時 merge 的 IO 增加。 -->
+    <mergePolicyFactory class="org.apache.solr.index.TieredMergePolicyFactory">
+      <double name="deletesPctAllowed">20</double>
+    </mergePolicyFactory>
 
     <!-- Expert: Merge Scheduler
          The Merge Scheduler in Lucene controls how merges are
@@ -378,6 +384,9 @@
          of user specified boolean queries.
       -->
     <maxBooleanClauses>${solr.max.booleanClauses:1024}</maxBooleanClauses>
+
+    <!-- TBIA：超過 3 秒的查詢以 WARN 記錄到 solr.log（訊息開頭為 slow:），用來找出正式站的慢查詢 -->
+    <slowQueryThresholdMillis>3000</slowQueryThresholdMillis>
 
     <!-- Solr Internal Query Caches
 
