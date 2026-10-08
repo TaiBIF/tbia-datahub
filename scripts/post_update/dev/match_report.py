@@ -9,6 +9,7 @@
   snapshot.json          各分類筆數／學名數
   unmatched_partner.csv  給夥伴：可由夥伴修正的未對到學名（含說明、來源階層、格式提醒）
   for_taicol.csv         給 TaiCOL：尚未收錄 + 僅對到上階
+  noname_records.zip     給夥伴：無學名（sourceScientificName 空白）且未對到的逐筆紀錄（有才產出）
   name_state.csv.gz      每個學名的分類與筆數（供下次學名層級比較）
   compare_category.csv   與前次快照的分類層級比較（有前次才產出）
   compare_names.csv      與前次快照的學名層級比較（前次有 name_state 才產出）
@@ -25,6 +26,8 @@ import argparse
 import csv
 import datetime
 import gzip
+import io
+import zipfile
 import json
 import re
 import sys
@@ -297,6 +300,45 @@ def write_snapshot(agg, group, info_id, rights_holder, year_month, out_dir):
     (out_dir / "snapshot.json").write_text(
         json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
     return rows
+
+
+def write_noname_records(conn, rh, out_dir):
+    """無學名（資料缺漏）且未對到的逐筆清單，供夥伴補學名。
+    條件與 CATEGORY_CASE 的 noname 一致；逐批寫出，不一次載入記憶體。沒有資料時不產出檔案。"""
+    path = out_dir / "noname_records.zip"      # 內含 noname_records.csv
+    if path.exists():
+        path.unlink()
+    sql = text("""
+        SELECT m."tbiaID", m."occurrenceID", m."catalogNumber",
+               r."sourceVernacularName", r."sourceTaxonRank", r."sourceFamily",
+               r."sourceKingdom", r."datasetName"
+        FROM match_log m
+        LEFT JOIN records r ON r."tbiaID" = m."tbiaID"
+        WHERE m."rights_holder" = :g AND NOT m."is_matched"
+          AND (m."sourceScientificName" IS NULL OR btrim(m."sourceScientificName") = '')
+        ORDER BY m."tbiaID"
+    """)
+    head = ["tbiaID", "occurrenceID", "catalogNumber", "中文名", "階層",
+            "科", "界", "資料集名稱"]
+    n, zf, f, w = 0, None, None, None
+    result = conn.execution_options(stream_results=True).execute(sql, {"g": rh})
+    try:
+        for rows in iter(lambda: result.fetchmany(10000), []):
+            if zf is None:
+                # 直接以串流寫進 zip，不先產生大型 csv
+                zf = zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED)
+                f = io.TextIOWrapper(zf.open("noname_records.csv", "w"),
+                                     encoding="utf-8-sig", newline="")
+                w = csv.writer(f)
+                w.writerow(head)
+            w.writerows([[v if v is not None else "" for v in r] for r in rows])
+            n += len(rows)
+    finally:
+        if f:
+            f.close()
+        if zf:
+            zf.close()
+    return n
 
 
 def write_csvs(conn, rh, rights_holder, out_dir):
@@ -593,6 +635,7 @@ def process_unit(conn, rh, group, info_id, year_month, show_delta=True):
         return
     snapshot = write_snapshot(agg, group, info_id, rh, year_month, out_dir)
     write_csvs(conn, rh, rh, out_dir)
+    write_noname_records(conn, rh, out_dir)
 
     states = name_states(conn, rh)
     write_name_state(states, out_dir)
