@@ -595,6 +595,18 @@ def _atrank_rate(rows):
     return round(at / total * 100, 1)
 
 
+def _pct_text(n, total):
+    """有資料但不到 0.1% 顯示「<0.1%」，未滿 100% 但四捨五入成 100 顯示「>99.9%」（同網頁）。"""
+    if not total:
+        return "0%"
+    p = n / total * 100
+    if n > 0 and p < 0.1:
+        return "<0.1%"
+    if n < total and p >= 99.95:
+        return ">99.9%"
+    return f"{p:.1f}%"
+
+
 def render_png(snapshot_rows, rights_holder, year_month, prev_atrank_rate, prev_ym, out_dir):
     total = sum(r["records"] for r in snapshot_rows) or 1
     matched = sum(r["records"] for r in snapshot_rows if r["axis"] == "matched")
@@ -619,9 +631,10 @@ def render_png(snapshot_rows, rights_holder, year_month, prev_atrank_rate, prev_
     ax.text(5, 89, f"學名比對狀況 · {year_month}", fontproperties=SANS, fontsize=9, color=MUTED)
 
     # 主數字：對到來源階層（以來源自己的階層為基準，非「種」）
-    ax.text(5, 74, f"{atrank_rate:.1f}%", fontproperties=BOLD, fontsize=38, color=INK)
+    atrank_n = prec.get("對到（來源階層）", 0)
+    ax.text(5, 74, _pct_text(atrank_n, total), fontproperties=BOLD, fontsize=38, color=INK)
     ax.text(5, 67.5, "對到來源提供的階層", fontproperties=SANS, fontsize=9.5, color=MUTED)
-    ax.text(42, 77, f"整體對到 {overall:.1f}%", fontproperties=SANS, fontsize=9, color=MUTED)
+    ax.text(42, 77, f"整體對到 {_pct_text(matched, total)}", fontproperties=SANS, fontsize=9, color=MUTED)
     if delta is not None:
         arrow, col = ("▲", GREEN) if delta >= 0 else ("▼", "#c0533f")
         ax.text(42, 71, f"{arrow} {delta:+.1f}% 較前次（{prev_ym}）",
@@ -642,9 +655,8 @@ def render_png(snapshot_rows, rights_holder, year_month, prev_atrank_rate, prev_
     # 光譜圖例
     lx = 5
     for short, val, color in seg:
-        pct = val / total * 100
         ax.add_patch(plt.Rectangle((lx, 41), 2, 2, color=color))
-        t = f"{short} {pct:.1f}%"
+        t = f"{short} {_pct_text(val, total)}"
         ax.text(lx + 2.8, 42, t, fontproperties=SANS, fontsize=8, color=MUTED, va="center")
         lx += 3.5 + len(t) * 1.75
 
@@ -668,9 +680,8 @@ def render_png(snapshot_rows, rights_holder, year_month, prev_atrank_rate, prev_
                     fontproperties=SANS, fontsize=7.6, color=MUTED)
     else:
         higher = prec.get("僅對到上階（較來源退階）", 0)
-        hpct = higher / total * 100
         if higher:
-            ax.text(5, 27, f"本次資料全數對到 TaiCOL，其中 {hpct:.1f}% 較來源退階（僅對到上階）。",
+            ax.text(5, 27, f"本次資料全數對到 TaiCOL，其中 {_pct_text(higher, total)} 較來源退階（僅對到上階）。",
                     fontproperties=SANS, fontsize=9, color=INK)
             ax.text(5, 21, "多因 TaiCOL 尚未收錄該物種、或來源缺上階資訊；名單詳見附件。",
                     fontproperties=SANS, fontsize=9, color=MUTED)
