@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """彙整 match_log → 快照 JSON + 各類 CSV + 前後比較 + email PNG，輸出到共享 volume。
 
-放在 datahub 專案，月更新後執行。分類在 SQL 端聚合，不把原始資料拉進 Python，
-故單位再大（數千萬筆）也只回傳幾列。
+放在 datahub 專案，月更新後執行。分類在 SQL 端聚合，不把原始資料拉進 Python。
+
+效能：開始時只掃 match_log 一次、records 一次，彙總成兩張暫存表（_mr_agg、_mr_src），
+各資料庫的報告都從暫存表產出，不需替 match_log / records 另建索引。
+
+學名的判斷：依比對流程的順序（stage 1 → 3 → 5）取 sourceScientificName →
+sourceVernacularName → originalVernacularName 第一個非空值；三者皆空才算「無學名」。
 
 每個資料庫（單位）輸出（/portal/media/match_report/<YYYY-MM>/<group>_<info_id>/）：
   同一個 group 可能有多個資料庫（info_id 不同，如 nps_0 國家公園、nps_1 濕地），各自一份報告
   snapshot.json          各分類筆數／學名數
   unmatched_partner.csv  給夥伴：可由夥伴修正的未對到學名（含說明、來源階層、格式提醒）
   for_taicol.csv         給 TaiCOL：尚未收錄 + 僅對到上階
-  noname_records.zip     給夥伴：無學名（sourceScientificName 空白）且未對到的逐筆紀錄（有才產出）
+  noname_records.zip     給夥伴：無學名（學名、中文名、原始名稱皆空白）且未對到的逐筆紀錄（有才產出）
   name_state.csv.gz      每個學名的分類與筆數（供下次學名層級比較）
   compare_category.csv   與前次快照的分類層級比較（有前次才產出）
   compare_names.csv      與前次快照的學名層級比較（前次有 name_state 才產出）
@@ -82,24 +87,43 @@ _OPEN_RANK_RE = r'(^|[[:space:]])(sp|spp|indet)\.?([[:space:]]|$)'
 # GTDB 等暫定名：sp 後接 6 位以上數字
 _PLACEHOLDER_RE = r'[[:space:]]sp[0-9]{6,}'
 
+# 每筆紀錄的「學名」：依比對流程順序 學名(stage 1) → 中文名(stage 3) → 原始名稱(stage 5)，
+# 取第一個非空值（皆空為 NULL）
+# originalVernacularName / sourceVernacularName 只在 records，且只有學名空白時才需要，
+# 故用相關子查詢以 tbiaID（唯一索引）查找；COALESCE 會短路，學名有值時不會查 records。
+NAME_EXPR = """
+COALESCE(
+  NULLIF(btrim(m."sourceScientificName"), ''),
+  (SELECT COALESCE(NULLIF(btrim(r."sourceVernacularName"), ''),
+                   NULLIF(btrim(r."originalVernacularName"), ''))
+   FROM records r WHERE r."tbiaID" = m."tbiaID")
+)
+"""
+# records 端的同一定義（取來源欄位時使用）
+NAME_EXPR_REC = """
+COALESCE(NULLIF(btrim(r."sourceScientificName"), ''),
+         NULLIF(btrim(r."sourceVernacularName"), ''),
+         NULLIF(btrim(r."originalVernacularName"), ''))
+"""
+
 # 品質以「來源自己的階層」為基準：match_higher_taxon=True 才算較來源退階；
 # 但 sp./spp./indet. 以屬名（stage 4）對到時，對到的即為來源鑑定的階層，算 atrank。
 # 未對到時，stage_1~8 多個 issue code 並存的優先序：vetoed > fuzzy > multiple > none
+# （作用在已算好 name 欄的子查詢上）
 CATEGORY_CASE = f"""
 CASE
   WHEN "is_matched" THEN
     CASE
       WHEN "match_higher_taxon" AND "match_stage" = 4
-           AND "sourceScientificName" ~* '{_OPEN_RANK_RE}' THEN 'atrank'
+           AND name ~* '{_OPEN_RANK_RE}' THEN 'atrank'
       WHEN "match_higher_taxon" THEN 'higher'
       ELSE 'atrank'
     END
   ELSE
     CASE
-      WHEN "sourceScientificName" IS NULL
-        OR btrim("sourceScientificName") = ''            THEN 'noname'
-      WHEN "sourceScientificName" ~  '{_PLACEHOLDER_RE}' THEN 'placeholder'
-      WHEN "sourceScientificName" ~* '{_NONSTD_RE}'      THEN 'nonstandard'
+      WHEN name IS NULL                    THEN 'noname'
+      WHEN name ~  '{_PLACEHOLDER_RE}'     THEN 'placeholder'
+      WHEN name ~* '{_NONSTD_RE}'          THEN 'nonstandard'
       WHEN 'vetoed'   IN ({_STAGES}) THEN 'vetoed'
       WHEN 'fuzzy'    IN ({_STAGES}) THEN 'fuzzy'
       WHEN 'multiple' IN ({_STAGES}) THEN 'multiple'
@@ -123,7 +147,7 @@ UNITS = [
     ('生態調查資料庫系統',                       'forest',      0),
     ('GBIF',                                   'gbif',        0),
     ('中央研究院生物多樣性中心植物標本資料庫',     'hast',        0),
-    ('愛自然-臺灣(iNaturalist Taiwan)',         'ntuforestry', 0),
+    ('愛自然-臺灣(iNaturalist Taiwan)',         'ntuforestry', 1),
     ('國立海洋生物博物館生物典藏管理系統',        'nmmba',       0),
     ('科博典藏 (NMNS Collection)',              'nmns',        0),
     ('國家海洋資料庫及共享平台',                  'namr',        0),
@@ -152,73 +176,103 @@ def warn_unknown_holders(conn):
             print(f"⚠️ UNITS 未包含 rights_holder：{rh}（不會產出報告）", file=sys.stderr)
 
 
+def prepare(conn, rhs):
+    """一次掃描 match_log、records，建立暫存表供各資料庫使用（同一連線內有效）。
+
+    _mr_agg：依 (資料庫, 學名, 分類, taxonID[僅 higher], 逐筆欄位[僅 noname]) 彙總的筆數
+    _mr_src：未對到紀錄的來源欄位，每個 (資料庫, 學名) 取一筆代表
+    """
+    conn.execute(text("SET work_mem = '256MB'"))
+    conn.execute(text("DROP TABLE IF EXISTS _mr_agg, _mr_src"))
+
+    print("彙整 match_log（掃描一次）...", file=sys.stderr)
+    conn.execute(text(f"""
+        CREATE TEMP TABLE _mr_agg AS
+        SELECT rh, name, cat,
+               CASE WHEN cat = 'higher' THEN "taxonID" END        AS taxon_id,
+               CASE WHEN cat = 'noname' THEN "tbiaID" END         AS tbia_id,
+               CASE WHEN cat = 'noname' THEN "occurrenceID" END   AS occurrence_id,
+               CASE WHEN cat = 'noname' THEN "catalogNumber" END  AS catalog_number,
+               COUNT(*) AS records
+        FROM (
+            SELECT rh, name, "taxonID", "tbiaID", "occurrenceID", "catalogNumber",
+                   {CATEGORY_CASE} AS cat
+            FROM (
+                SELECT m."rights_holder" AS rh, {NAME_EXPR} AS name,
+                       m."is_matched", m."match_higher_taxon", m."match_stage",
+                       {", ".join(f'm."stage_{i}"' for i in range(1, 9))},
+                       m."taxonID", m."tbiaID", m."occurrenceID", m."catalogNumber"
+                FROM match_log m
+                WHERE m."rights_holder" = ANY(:rhs)
+            ) a
+        ) b
+        GROUP BY 1, 2, 3, 4, 5, 6, 7
+    """), {"rhs": list(rhs)})
+    conn.execute(text("CREATE INDEX ON _mr_agg (rh, cat)"))
+
+    print("彙整 records 來源欄位（掃描一次）...", file=sys.stderr)
+    conn.execute(text(f"""
+        CREATE TEMP TABLE _mr_src AS
+        SELECT DISTINCT ON (rh, name) rh, name, vern, rank, fam, ord, cls, kin
+        FROM (
+            SELECT r."rightsHolder" AS rh, {NAME_EXPR_REC} AS name,
+                   r."sourceVernacularName" AS vern, r."sourceTaxonRank" AS rank,
+                   r."sourceFamily" AS fam, r."sourceOrder" AS ord,
+                   r."sourceClass" AS cls, r."sourceKingdom" AS kin
+            FROM records r
+            WHERE r."taxonID" IS NULL AND r."rightsHolder" = ANY(:rhs)
+        ) s
+        WHERE name IS NOT NULL
+        ORDER BY rh, name
+    """), {"rhs": list(rhs)})
+    conn.execute(text("CREATE INDEX ON _mr_src (rh)"))
+    conn.execute(text("ANALYZE _mr_agg; ANALYZE _mr_src"))
+    conn.commit()
+
+
 def aggregate(conn, rh):
-    """回傳 [(category_key, records, unique_names), ...]，SQL 端聚合。"""
-    sql = text(f"""
-        SELECT {CATEGORY_CASE} AS cat,
-               COUNT(*) AS records,
-               COUNT(DISTINCT "sourceScientificName") AS unique_names
-        FROM match_log
-        WHERE "rights_holder" = :g
-        GROUP BY 1
+    """回傳 [(category_key, records, unique_names), ...]。"""
+    sql = text("""
+        SELECT cat, SUM(records) AS records, COUNT(DISTINCT name) AS unique_names
+        FROM _mr_agg WHERE rh = :g
+        GROUP BY cat
     """)
-    return [(r[0], r[1], r[2]) for r in conn.execute(sql, {"g": rh})]
+    return [(r[0], int(r[1]), int(r[2])) for r in conn.execute(sql, {"g": rh})]
 
 
 def unmatched_names(conn, rh):
-    """未對到的唯一學名清單（給 CSV），SQL 端去重。"""
-    sql = text(f"""
-        SELECT "sourceScientificName" AS name,
-               {CATEGORY_CASE} AS cat,
-               COUNT(*) AS records
-        FROM match_log
-        WHERE "rights_holder" = :g AND NOT "is_matched"
-        GROUP BY "sourceScientificName", 2
+    """未對到的唯一學名清單（給 CSV），依影響筆數排序。"""
+    sql = text("""
+        SELECT name, cat, SUM(records) AS records
+        FROM _mr_agg
+        WHERE rh = :g AND cat NOT IN ('atrank', 'higher')
+        GROUP BY name, cat
         ORDER BY records DESC
     """)
-    return list(conn.execute(sql, {"g": rh}))
+    return [(r[0], r[1], int(r[2])) for r in conn.execute(sql, {"g": rh})]
 
 
 def higher_names(conn, rh):
     """有對到但只退到上階的唯一學名，帶對到的 taxonID。
-    排除 sp./spp./indet. 以屬名對到者（已算 atrank，與 CATEGORY_CASE 一致）。"""
-    sql = text(f"""
-        SELECT "sourceScientificName" AS name, "taxonID" AS taxon_id, COUNT(*) AS records
-        FROM match_log
-        WHERE "rights_holder" = :g AND "is_matched" AND "match_higher_taxon"
-          AND NOT ("match_stage" = 4
-                   AND COALESCE("sourceScientificName", '') ~* '{_OPEN_RANK_RE}')
-        GROUP BY "sourceScientificName", "taxonID"
+    （sp./spp./indet. 以屬名對到者在 CATEGORY_CASE 已算 atrank，不會出現在這裡）"""
+    sql = text("""
+        SELECT name, taxon_id, SUM(records) AS records
+        FROM _mr_agg
+        WHERE rh = :g AND cat = 'higher'
+        GROUP BY name, taxon_id
         ORDER BY records DESC
     """)
-    return list(conn.execute(sql, {"g": rh}))
+    return [(r[0], r[1], int(r[2])) for r in conn.execute(sql, {"g": rh})]
 
 
 _SRC_EMPTY = {"vern": "", "rank": "", "fam": "", "ord": "", "cls": "", "kin": ""}
 
 
-def source_fields_of(conn, rh, names):
-    """從 records 為每個唯一學名取一筆代表的 source 欄位（中文名、階層、各上階）。
-    只查未對到的列（taxonID 為空），一名一列。"""
-    names = [n for n in dict.fromkeys(names) if n]
-    if not names:
-        return {}
-    sql = text("""
-        SELECT DISTINCT ON ("sourceScientificName")
-               "sourceScientificName" AS name,
-               "sourceVernacularName" AS vern,
-               "sourceTaxonRank"      AS rank,
-               "sourceFamily"         AS fam,
-               "sourceOrder"          AS ord,
-               "sourceClass"          AS cls,
-               "sourceKingdom"        AS kin
-        FROM records
-        WHERE "rightsHolder" = :g AND "taxonID" IS NULL
-          AND "sourceScientificName" IN :names
-        ORDER BY "sourceScientificName"
-    """).bindparams(bindparam("names", expanding=True))
+def source_fields_of(conn, rh):
+    """該資料庫每個未對到學名的代表來源欄位（中文名、階層、各上階）。"""
+    sql = text("SELECT name, vern, rank, fam, ord, cls, kin FROM _mr_src WHERE rh = :g")
     return {r.name: {k: (getattr(r, k) or "") for k in _SRC_EMPTY}
-            for r in conn.execute(sql, {"g": rh, "names": names})}
+            for r in conn.execute(sql, {"g": rh})}
 
 
 def _first(v):
@@ -274,6 +328,12 @@ def _format_hints(name, s):
     """回傳格式提醒字串（多項以「；」分隔）。僅供參考，不影響原因分類。"""
     name = name or ""
     hints = []
+    if _CJK.search(name):
+        # 沒有學名、以中文名比對：學名格式相關的檢查不適用
+        hints.append("無學名（以中文名比對）")
+        if not any(s.get(k) for k in ("fam", "ord", "cls", "kin")):
+            hints.append("無上階層資訊")
+        return "；".join(hints)
     if _AUTHOR.search(name):
         hints.append("學名含作者／年份")
     if _is_hybrid(name):
@@ -303,29 +363,27 @@ def write_snapshot(agg, group, info_id, rights_holder, year_month, out_dir):
 
 
 def write_noname_records(conn, rh, out_dir):
-    """無學名（資料缺漏）且未對到的逐筆清單，供夥伴補學名。
-    條件與 CATEGORY_CASE 的 noname 一致；逐批寫出，不一次載入記憶體。沒有資料時不產出檔案。"""
+    """無學名（學名、中文名、原始名稱皆空白）且未對到的逐筆清單，供夥伴補學名。
+    以 tbiaID 回查 records 補欄位；串流寫進 zip，不一次載入記憶體。沒有資料時不產出檔案。"""
     path = out_dir / "noname_records.zip"      # 內含 noname_records.csv
     if path.exists():
         path.unlink()
     sql = text("""
-        SELECT m."tbiaID", m."occurrenceID", m."catalogNumber",
-               r."sourceVernacularName", r."sourceTaxonRank", r."sourceFamily",
+        SELECT a.tbia_id, a.occurrence_id, a.catalog_number,
+               r."sourceTaxonRank", r."sourceFamily", r."sourceOrder", r."sourceClass",
                r."sourceKingdom", r."datasetName"
-        FROM match_log m
-        LEFT JOIN records r ON r."tbiaID" = m."tbiaID"
-        WHERE m."rights_holder" = :g AND NOT m."is_matched"
-          AND (m."sourceScientificName" IS NULL OR btrim(m."sourceScientificName") = '')
-        ORDER BY m."tbiaID"
+        FROM _mr_agg a
+        LEFT JOIN records r ON r."tbiaID" = a.tbia_id
+        WHERE a.rh = :g AND a.cat = 'noname'
+        ORDER BY a.tbia_id
     """)
-    head = ["tbiaID", "occurrenceID", "catalogNumber", "中文名", "階層",
-            "科", "界", "資料集名稱"]
+    head = ["tbiaID", "occurrenceID", "catalogNumber", "階層(來源)",
+            "科(來源)", "目(來源)", "綱(來源)", "界(來源)", "資料集名稱"]
     n, zf, f, w = 0, None, None, None
     result = conn.execution_options(stream_results=True).execute(sql, {"g": rh})
     try:
         for rows in iter(lambda: result.fetchmany(10000), []):
             if zf is None:
-                # 直接以串流寫進 zip，不先產生大型 csv
                 zf = zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED)
                 f = io.TextIOWrapper(zf.open("noname_records.csv", "w"),
                                      encoding="utf-8-sig", newline="")
@@ -348,7 +406,7 @@ def write_csvs(conn, rh, rights_holder, out_dir):
     hi = higher_names(conn, rh)         # (name, taxon_id, records)
     label = {k: v[1] for k, v in CATEGORY_META.items()}
 
-    src = source_fields_of(conn, rh, [n for n, _, _ in un])
+    src = source_fields_of(conn, rh)
     by_tid = _solr_lookup("id", [r[1] for r in hi],  # taxa core 主鍵為 id，值即 taxonID
                           ["common_name_c", "family", "family_c"])
 
@@ -399,14 +457,14 @@ def prev_dir_of(unit, year_month):
 
 def name_states(conn, rh):
     """每個學名的主要分類（筆數最多者）與總筆數：{name: (cat, records)}。"""
-    sql = text(f"""
-        SELECT "sourceScientificName" AS name, {CATEGORY_CASE} AS cat, COUNT(*) AS records
-        FROM match_log WHERE "rights_holder" = :g
-        GROUP BY 1, 2
+    sql = text("""
+        SELECT name, cat, SUM(records) AS records
+        FROM _mr_agg WHERE rh = :g
+        GROUP BY name, cat
     """)
     acc = {}   # name -> (主要分類, 主要分類筆數, 總筆數)
     for name, cat, records in conn.execute(sql, {"g": rh}):
-        name = name or ""
+        name, records = name or "", int(records)
         prev = acc.get(name)
         total = records + (prev[2] if prev else 0)
         if prev is None or records > prev[1]:
@@ -677,6 +735,7 @@ def main():
     with engine.connect() as conn:
         if not args.group and not args.unit:
             warn_unknown_holders(conn)
+        prepare(conn, [u[0] for u in units])
         for rh, group, info_id in units:
             process_unit(conn, rh, group, info_id, args.year_month, show_delta=not args.no_delta)
     print(f"完成 {len(units)} 個資料庫", file=sys.stderr)
