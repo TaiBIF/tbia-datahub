@@ -150,7 +150,7 @@ UNITS = [
     ('生態調查資料庫系統',                       'forest',      0),
     ('GBIF',                                   'gbif',        0),
     ('中央研究院生物多樣性中心植物標本資料庫',     'hast',        0),
-    ('愛自然-臺灣(iNaturalist Taiwan)',         'ntuforestry', 1),
+    ('愛自然-臺灣(iNaturalist Taiwan)',         'ntuforestry', 0),
     ('國立海洋生物博物館生物典藏管理系統',        'nmmba',       0),
     ('科博典藏 (NMNS Collection)',              'nmns',        0),
     ('國家海洋資料庫及共享平台',                  'namr',        0),
