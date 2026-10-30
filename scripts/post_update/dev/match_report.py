@@ -71,9 +71,10 @@ CATEGORY_META = {
 # 給夥伴 CSV 的補充說明（PNG 標籤空間有限，詳細說明放這裡）
 CATEGORY_NOTE = {
     "fuzzy":       "學名與 TaiCOL 收錄名稱相近但不完全相同，請確認是否有錯字或格式問題。",
-    "multiple":    "此學名在 TaiCOL 對應到多個分類群（如同名異物），無法判斷是哪一個。"
+    "multiple":    "此學名對應到多個分類群（如同名異物），無法判斷是哪一個。"
                    "建議增加上階層資訊（如界、綱、目、科）以利比對。",
-    "nonstandard": "學名含 sp.、cf. 等開放命名標記，僅能對到上階層；若已鑑定到種，請更新學名。",
+    "nonstandard": "學名含 sp.、cf. 等開放命名標記，且未找到可對應的名稱；"
+                   "請確認標記前的屬名／科名是否正確，若已鑑定到種，請更新學名。",
 }
 
 # 夥伴可修/需知的未對到類別（none→TaiCOL、vetoed→內部檢討、noname/placeholder 僅計數不列名）
@@ -108,7 +109,9 @@ COALESCE(NULLIF(btrim(r."sourceScientificName"), ''),
 
 # 品質以「來源自己的階層」為基準：match_higher_taxon=True 才算較來源退階；
 # 但 sp./spp./indet. 以屬名（stage 4）對到時，對到的即為來源鑑定的階層，算 atrank。
-# 未對到時，stage_1~8 多個 issue code 並存的優先序：vetoed > fuzzy > multiple > none
+#   （2026-10 起比對端開放命名單名已不走 stage 4；此條保留給尚未重新比對的舊 match_log）
+# 未對到時，stage_1~8 多個 issue code 並存的優先序：vetoed > fuzzy > multiple > nonstandard > none
+#   比對端已給出具體原因者優先，沒有其他原因時才歸為非正規學名
 # （作用在已算好 name 欄的子查詢上）
 CATEGORY_CASE = f"""
 CASE
@@ -123,10 +126,10 @@ CASE
     CASE
       WHEN name IS NULL                    THEN 'noname'
       WHEN name ~  '{_PLACEHOLDER_RE}'     THEN 'placeholder'
-      WHEN name ~* '{_NONSTD_RE}'          THEN 'nonstandard'
       WHEN 'vetoed'   IN ({_STAGES}) THEN 'vetoed'
       WHEN 'fuzzy'    IN ({_STAGES}) THEN 'fuzzy'
       WHEN 'multiple' IN ({_STAGES}) THEN 'multiple'
+      WHEN name ~* '{_NONSTD_RE}'          THEN 'nonstandard'
       ELSE 'none'
     END
 END
