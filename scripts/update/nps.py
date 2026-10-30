@@ -15,7 +15,7 @@ from scripts.utils.progress import timer
 import atexit
 
 # 比對學名時使用的欄位
-sci_cols = ['sourceScientificName','sourceVernacularName']
+sci_cols = ['sourceScientificName','sourceVernacularName','sourceTaxonRank']
 
 # 單位資訊 (在portal.Partner.info裡面的id)
 group = 'nps'

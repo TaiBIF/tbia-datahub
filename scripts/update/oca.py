@@ -16,7 +16,7 @@ from scripts.utils.progress import timer
 import atexit
 
 # 比對學名時使用的欄位
-sci_cols = ['taxonID', 'sourceVernacularName','sourceScientificName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily']
+sci_cols = ['taxonID', 'sourceVernacularName','sourceScientificName','scientificNameID','sourceClass','sourceOrder', 'sourceFamily','sourceTaxonRank']
 
 # 單位資訊 (在portal.Partner.info裡面的id)
 group = 'oca'

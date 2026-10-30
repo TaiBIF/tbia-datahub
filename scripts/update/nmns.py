@@ -164,7 +164,7 @@ for now_category in category_list[category_index:]:
             now_dict = {'sourceModified': r.get('MDDATE'), 
                         'references': r.get('CollectionUrl'),
                         'associatedMedia': r.get('ImageList'),
-                        'license': r.get('GalCC')}
+                        'license': 'OGDL'}
             # Step A: 先依據學門給予預設的 Kingdom
             if now_category in kingdom_map:
                 now_dict['sourceKingdom'] = kingdom_map[now_category]

@@ -42,7 +42,7 @@ sci_cols = ['sourceScientificName', 'sourceVernacularName', 'sourceClass', 'sour
 # 單位資訊 (在portal.Partner.info裡面的id)
 group = 'ntuforestry'
 rights_holder = '愛自然-臺灣(iNaturalist Taiwan)'
-info_id = 1
+info_id = 0
 
 # 更新紀錄
 session = init_update_session(rights_holder)
