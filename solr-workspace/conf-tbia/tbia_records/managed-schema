@@ -609,7 +609,31 @@
   <field name="formatted_subform" type="string"/>
   <field name="formatted_specialform" type="string"/>
   <field name="formatted_race" type="string"/>
-  <field name="formatted_strip" type="string"/>
+  <field name="epifamily" type="string"/>
+  <field name="epifamily_c" type="string"/>
+  <field name="grandclass" type="string"/>
+  <field name="grandclass_c" type="string"/>
+  <field name="megaclass" type="string"/>
+  <field name="megaclass_c" type="string"/>
+  <field name="mirclass" type="string"/>
+  <field name="mirclass_c" type="string"/>
+  <field name="subrealm" type="string"/>
+  <field name="subrealm_c" type="string"/>
+  <field name="formatted_division" type="string"/>
+  <field name="formatted_domain" type="string"/>
+  <field name="formatted_epifamily" type="string"/>
+  <field name="formatted_grandclass" type="string"/>
+  <field name="formatted_infradivision" type="string"/>
+  <field name="formatted_megaclass" type="string"/>
+  <field name="formatted_microphylum" type="string"/>
+  <field name="formatted_mirclass" type="string"/>
+  <field name="formatted_parvdivision" type="string"/>
+  <field name="formatted_parvphylum" type="string"/>
+  <field name="formatted_stirp" type="string"/>
+  <field name="formatted_subdivision" type="string"/>
+  <field name="formatted_subrealm" type="string"/>
+  <field name="formatted_superdivision" type="string"/>
+  <field name="formatted_superkingdom" type="string"/>
   <field name="formatted_morph" type="string"/>
   <field name="formatted_aberration" type="string"/>
   <field name="formatted_hybridformula" type="string"/>
@@ -881,6 +905,20 @@
   <copyField source="species_c" dest="_text_"/>
   <copyField source="stirp" dest="_text_"/>
   <copyField source="stirp_c" dest="_text_"/>
+  <copyField source="epifamily" dest="_text_"/>
+  <copyField source="epifamily_c" dest="_text_"/>
+  <copyField source="grandclass" dest="_text_"/>
+  <copyField source="grandclass_c" dest="_text_"/>
+  <copyField source="megaclass" dest="_text_"/>
+  <copyField source="megaclass_c" dest="_text_"/>
+  <copyField source="mirclass" dest="_text_"/>
+  <copyField source="mirclass_c" dest="_text_"/>
+  <copyField source="subrealm" dest="_text_"/>
+  <copyField source="subrealm_c" dest="_text_"/>
+  <copyField source="realm" dest="_text_"/>
+  <copyField source="realm_c" dest="_text_"/>
+  <copyField source="unranked" dest="_text_"/>
+  <copyField source="unranked_c" dest="_text_"/>
   <copyField source="subclass" dest="_text_"/>
   <copyField source="subclass_c" dest="_text_"/>
   <copyField source="subdivision" dest="_text_"/>
