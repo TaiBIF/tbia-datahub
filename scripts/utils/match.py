@@ -135,12 +135,52 @@ def has_hybrid_marker(name):
     tokens = name.split()
     return 'x' in tokens or 'X' in tokens
 
+# ── 開放命名(sp. / spp. / indet. 等)判斷 ──
+# 開放命名/不確定標記,計算詞數時先去除
+_OPEN_NOMEN_TOKENS = {'sp', 'sp.', 'spp', 'spp.', 'indet', 'indet.', 'spec', 'spec.',
+                      'cf', 'cf.', 'aff', 'aff.'}
+# 尾端標記(與 NomenMatch api.php 的 $on_markers 對應),含 sp1 / sp.1 這種黏著編號
+_TRAILING_MARKER_RE = re.compile(r'^(sp|spp|indet|spec)(\.|\d|$)', re.IGNORECASE)
+
+def _strip_open_nomen(name):
+    """去除開放命名標記與編號(sp. 1 / sp. A),行為對齊 NomenMatch canonical_form:
+    首字以外,含數字或大寫開頭的詞一律略過。"""
+    parts = name.strip().split()
+    if not parts:
+        return []
+    kept = [parts[0]]
+    for p in parts[1:]:
+        if p.lower() in _OPEN_NOMEN_TOKENS:
+            continue
+        if re.search(r'\d', p) or re.match(r'^[A-Z]', p):
+            continue
+        kept.append(p)
+    return kept
+
+def _is_single_name(name):
+    """去除開放命名標記與編號後,判斷是否為單名(僅一個詞)。"""
+    if not name or not isinstance(name, str):
+        return False
+    return len(_strip_open_nomen(name)) == 1
+
+def _is_open_nomen_single(name):
+    """是否為「單名 + 尾端開放命名標記」,如 Montastrea sp.、Talitridae spp.、Cerceis sp. 1。
+    這類學名實際只鑑定到該單名的階層。cf./aff. 不在此列。"""
+    if not name or not isinstance(name, str):
+        return False
+    parts = name.strip().split()
+    if len(parts) < 2 or parts[0].lower() in _OPEN_NOMEN_TOKENS:
+        return False
+    has_marker = any(_TRAILING_MARKER_RE.match(p) for p in parts[1:])
+    return has_marker and len(_strip_open_nomen(name)) == 1
+
+
 def _stage4_genus_transform(df):
     """stage 4:取屬名(第一個字)去比對。
     - 有 sourceTaxonRank:限種/種下(原行為)。
     - 無 sourceTaxonRank:退而用「雙名格式」判斷(≥2 字、首字為屬名格式),
       涵蓋 Gracilaria chorda 這種缺 rank 但實為雙名的種名。
-    學名有雜交符號者一律跳過。"""
+    學名有雜交符號者一律跳過;開放命名單名(Genus sp.)也跳過。"""
     names = df['now_matching_name'].fillna('').astype(str)
     no_hybrid = ~names.map(has_hybrid_marker)
 
@@ -160,8 +200,12 @@ def _stage4_genus_transform(df):
     else:
         eligible = names.map(_looks_binomial)
 
+    # 開放命名單名(Genus sp.)在 stage 1 已用同名查過,stage 4 只會強制套 genus 限定,
+    # 可能把高階層同名(如 Plecoptera 目)硬對到屬,故跳過,未對到交由來源補資訊
+    no_open_nomen = ~names.map(_is_open_nomen_single)
+
     genus = names.str.split(' ').str[0]
-    return genus.where(eligible & no_hybrid, '')
+    return genus.where(eligible & no_hybrid & no_open_nomen, '')
 
 
 # ── 無上階層資訊時,用 COL 來源做同名/相似名歧義偵測 ──
@@ -679,8 +723,11 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
                 
                 successful_matches += 1
                 
+            elif veto_reason == 'ambiguous':
+                # COL 同名多筆且來源無上階層 → 視為 multiple,由來源補上階層
+                sci_names.loc[sci_names.sci_index == sci_idx, f'stage_{stage_num}'] = 4  # multiple
             elif veto_reason == 'vetoed':
-                # 有候選但被保守規則主動否決（COL 歧義／單名否決）→ 非「未收錄」
+                # 有候選但被單名 COL 否決(TaiCOL 候選疑似錯誤)→ 非「未收錄」
                 sci_names.loc[sci_names.sci_index == sci_idx, f'stage_{stage_num}'] = 5  # vetoed
             elif len(results_dict) > 1:
                 # 有多個結果但階層不匹配
@@ -690,22 +737,12 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
         return successful_matches
     
 
-    # 開放命名/不確定標記,計算詞數時先去除
-    _OPEN_NOMEN_TOKENS = {'sp', 'sp.', 'spp', 'spp.', 'indet', 'indet.', 'cf', 'cf.', 'aff', 'aff.'}
-
-    def _is_single_name(name):
-        """去除開放命名標記後,判斷是否為單名(僅一個詞)。"""
-        if not name or not isinstance(name, str):
-            return False
-        parts = [p for p in name.strip().split() if p.lower() not in _OPEN_NOMEN_TOKENS]
-        return len(parts) == 1
-
     def _check_hierarchy_match_vectorized(results_dict, row, is_parent, specific_rank,
                                           fallback_on_conflict=True):
         """階層檢查(規則 A):由上而下取「來源與候選都有值」的可比較層,
         任一層相符即通過;只有單一可比較層時等同該層須完全相符。
         有相符但也有不符的層 → 標記 _higher_partial 供稽核。
-        來源完全無上階層資訊 → 退回 COL 單候選歧義判斷。
+        來源完全無上階層資訊 → 退回 COL 單候選歧義判斷(歧義時回 'ambiguous')。
         來源有上階層但全數淘汰 → 若 TaiCOL 唯一 exact 命中且 COL 唯一,放行(fallback)。"""
         if not results_dict:
             return [], None
@@ -722,12 +759,17 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
         src_vals = [(f, _norm(row.get(f))) for f in disambig_fields]
         has_any_src = any(sv for _, sv in src_vals)
 
-        src_rank = normalize_rank(row.get('sourceTaxonRank')) if not is_parent else None
+        # 開放命名單名(Genus sp.)實際只鑑定到該名階層,不套 sourceTaxonRank 過濾,
+        # 避免 rank=species 時在 stage 1 被濾掉
+        if is_parent or _is_open_nomen_single(row.get('now_matching_name')):
+            src_rank = None
+        else:
+            src_rank = normalize_rank(row.get('sourceTaxonRank'))
 
         matched = []
         unverifiable = []   # (a) 候選無任何可比較層
         conflicting = []    # (b) 有可比較層但全不符
-        vetoed = False      # 曾因保守規則主動否決候選（COL 歧義／單名否決）
+        vetoed = False      # 曾因單名 COL 否決主動否決候選
 
         for result in results_dict:
             if src_rank and not _rank_match(src_rank, normalize_rank(result.get('taxon_rank'))):
@@ -794,8 +836,10 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
 
         if len(matched) != 1:
             return [], ('vetoed' if vetoed else None)
+        # COL 有同名多筆、來源又無上階層可分辨 → 等同 multiple(來源補上階層即可解決),
+        # 與「單名 COL 否決」(TaiCOL 候選疑似錯誤)區分
         if _col_is_ambiguous(row.get('now_matching_name'), specific_rank):
-            return [], 'vetoed'
+            return [], 'ambiguous'
         return matched, None
     
     # 主要處理流程
