@@ -22,8 +22,8 @@ sourceVernacularName → originalVernacularName 第一個非空值；三者皆�
   email.png              給夥伴的摘要圖
 
 用法（在 /code 下以模組方式執行，才找得到專案根目錄的 app）：
-  python -m scripts.post_update.dev.match_report --year-month 2026-11 --group nps     # 只跑某 group 的資料庫
-  python -m scripts.post_update.dev.match_report --year-month 2026-11 --unit nps_1    # 只跑單一資料庫
+  python -m scripts.post_update.dev.match_report --year-month 2026-11 --group nps namr       # 只跑這些 group 的資料庫
+  python -m scripts.post_update.dev.match_report --year-month 2026-11 --unit nps_1 namr_0    # 只跑這些資料庫
   python -m scripts.post_update.dev.match_report --year-month 2026-11                 # 全部
   python -m scripts.post_update.dev.match_report --year-month 2026-11 --no-delta      # 比對邏輯變更後的首次產出
 """
@@ -733,16 +733,18 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--year-month", default=f"{datetime.date.today():%Y-%m}",
                    help="YYYY-MM，預設本月")
-    p.add_argument("--group", help="只處理該 group 的資料庫（如 nps → nps_0、nps_1）")
-    p.add_argument("--unit", help="只處理單一資料庫，格式 {group}_{info_id}，如 nps_1")
+    p.add_argument("--group", nargs="+",
+                   help="只處理這些 group 的資料庫，可傳多個（如 --group nps namr）")
+    p.add_argument("--unit", nargs="+",
+                   help="只處理這些資料庫，格式 {group}_{info_id}，可傳多個（如 --unit nps_1 namr_0）")
     p.add_argument("--no-delta", action="store_true",
                    help="比對邏輯變更後的首次產出：PNG 不顯示差值，meta.json 標記 logic_changed，"
                         "網頁同樣隱藏差值；比較檔仍會產出")
     args = p.parse_args()
 
     units = [u for u in UNITS
-             if (not args.group or u[1] == args.group)
-             and (not args.unit or unit_key(u[1], u[2]) == args.unit)]
+             if (not args.group or u[1] in args.group)
+             and (not args.unit or unit_key(u[1], u[2]) in args.unit)]
     if not units:
         sys.exit(f"找不到符合的資料庫：group={args.group} unit={args.unit}")
 

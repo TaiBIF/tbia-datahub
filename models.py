@@ -242,6 +242,7 @@ class MediaRule(Base):
     )
 
 
+# 應已deprecated
 class Taxon(Base):
     __tablename__ = 'taxon'
 
