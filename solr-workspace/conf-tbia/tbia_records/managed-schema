@@ -465,11 +465,11 @@
   <!-- <field name="collectionID" type="string"/> -->
   <field name="catalogNumber" type="string"/>
   <field name="coordinatePrecision" type="string"/>
-  <field name="coordinateUncertaintyInMeters" type="string"/>
-  <field name="created" type="pdates"/>
-  <field name="dataGeneralizations" type="boolean"/>
+  <field name="coordinateUncertaintyInMeters" type="pdouble"/>
+  <field name="created" type="pdate"/>
+  <field name="dataGeneralizations" type="string"/>
   <field name="datasetName" type="string"/>
-  <field name="eventDate" type="string"/>
+  <field name="verbatimEventDate" type="string"/>
   <field name="group" type="string"/>
   <field name="id" type="string" multiValued="false" indexed="true" required="true" stored="true"/>
   <field name="license" type="string"/>
@@ -477,31 +477,30 @@
   <field name="location_rpt" type="location_rpt"/>
   <field name="raw_location_rpt" type="location_rpt"/>
   <field name="mediaLicense" type="string"/>
-  <field name="modified" type="pdates"/>
+  <field name="modified" type="pdate"/>
   <field name="occurrenceID" type="string"/>
-  <field name="organismQuantity" type="string"/>
   <field name="organismQuantityType" type="string"/>
-  <field name="originalScientificName" type="string"/>
+  <field name="verbatimIdentification" type="string"/>
   <!-- <field name="originalVernacularName" type="string"/> -->
-  <field name="preservation" type="string"/>
+  <field name="preparations" type="string"/>
   <field name="recordedBy" type="string"/>
   <field name="recordNumber" type="string"/>
   <field name="recordType" type="text_general"/>
   <field name="references" type="string"/>
   <field name="resourceContacts" type="string"/>
-  <field name="rightsHolder" type="string"/>
+  <field name="sourceDatabase" type="string"/>
   <field name="selfProduced" type="boolean"/>
   <field name="sensitiveCategory" type="string"/>
-  <field name="sourceCreated" type="pdates"/>
-  <field name="sourceModified" type="pdates"/>
-  <field name="sourceScientificName" type="string"/>
-  <field name="sourceVernacularName" type="string"/>
-  <field name="standardDate" type="pdates"/>
-  <field name="standardLatitude" type="pdoubles"/>
-  <field name="standardLongitude" type="pdoubles"/>
-  <field name="standardRawLatitude" type="pdoubles"/>
-  <field name="standardRawLongitude" type="pdoubles"/>
-  <field name="standardOrganismQuantity" type="pdoubles"/>
+  <field name="sourceCreated" type="pdate"/>
+  <field name="sourceModified" type="pdate"/>
+  <field name="verbatimScientificName" type="string"/>
+  <field name="verbatimVernacularName" type="string"/>
+  <field name="standardDate" type="pdate"/>
+  <field name="decimalLatitude" type="pdouble"/>
+  <field name="decimalLongitude" type="pdouble"/>
+  <field name="rawDecimalLatitude" type="pdouble"/>
+  <field name="rawDecimalLongitude" type="pdouble"/>
+  <field name="organismQuantity" type="pdouble"/>
   <field name="taxonID" type="string"/>
   <field name="match_higher_taxon" type="string"/>
   <!-- <field name="parentTaxonID" type="string"/> -->
@@ -510,8 +509,8 @@
   <field name="verbatimCoordinateSystem" type="string"/>
   <field name="verbatimLatitude" type="string"/>
   <field name="verbatimLongitude" type="string"/>
-  <field name="verbatimRawLatitude" type="string"/>
-  <field name="verbatimRawLongitude" type="string"/>
+  <field name="rawVerbatimLatitude" type="string"/>
+  <field name="rawVerbatimLongitude" type="string"/>
   <field name="verbatimSRS" type="string"/>
 
   <!-- 202310新增 -->
@@ -521,9 +520,9 @@
   <field name="sourceOrder" type="string"/>
   <field name="sourceClass" type="string"/>
   <field name="sourceKingdom" type="string"/>
-  <field name="year" type="string"/>
-  <field name="month" type="string"/>
-  <field name="day" type="string"/>
+  <field name="year" type="pint"/>
+  <field name="month" type="pint"/>
+  <field name="day" type="pint"/>
   <field name="is_deleted" type="boolean"/>
   <field name="cites" type="string"/>
   <field name="iucn" type="string"/>
@@ -544,7 +543,7 @@
 
 
   <!-- 202403新增 -->
-  <field name="sourceDatasetID" type="string"/>
+  <field name="datasetID" type="string"/>
   
   <!-- 202404新增 -->
   <field name="tbiaDatasetID" type="string"/>
@@ -553,7 +552,7 @@
   <field name="dataQuality" type="pdouble"/>
 
   <!-- 202412新增 -->
-  <field name="bioGroup" type="string"/>
+  <field name="taxonGroup" type="string"/>
   <field name="county" type="string"/>
   <field name="municipality" type="string"/>
   <field name="rawCounty" type="string"/>
@@ -564,14 +563,14 @@
   <field name="aberration_c" type="string"/>
   <field name="alternative_name_c" type="string"/>
   <field name="class" type="string"/>
-  <field name="class_c" type="string"/>
-  <field name="common_name_c" type="string"/>
+  <field name="classChinese" type="string"/>
+  <field name="vernacularName" type="string"/>
   <field name="division" type="string"/>
   <field name="division_c" type="string"/>
   <field name="domain" type="string"/>
   <field name="domain_c" type="string"/>
   <field name="family" type="string"/>
-  <field name="family_c" type="string"/>
+  <field name="familyChinese" type="string"/>
   <!-- 帶有HTML格式的階層學名 -->
   <field name="formatted_unranked" type="string"/>
   <field name="formatted_realm" type="string"/>
@@ -644,7 +643,7 @@
   <field name="form" type="string"/>
   <field name="form_c" type="string"/>
   <field name="genus" type="string"/>
-  <field name="genus_c" type="string"/>
+  <field name="genusChinese" type="string"/>
   <field name="hybridformula" type="string"/>
   <field name="hybridformula_c" type="string"/>
   <field name="infraclass" type="string"/>
@@ -658,25 +657,25 @@
   <field name="infraphylum" type="string"/>
   <field name="infraphylum_c" type="string"/>
   <field name="kingdom" type="string"/>
-  <field name="kingdom_c" type="string"/>
+  <field name="kingdomChinese" type="string"/>
   <field name="microphylum" type="string"/>
   <field name="microphylum_c" type="string"/>
   <field name="misapplied" type="string"/>
   <field name="morph" type="string"/>
   <field name="morph_c" type="string"/>
-  <field name="name_author" type="string"/>
+  <field name="scientificNameAuthorship" type="string"/>
   <field name="nothosubspecies" type="string"/>
   <field name="nothosubspecies_c" type="string"/>
   <field name="nothovariety" type="string"/>
   <field name="nothovariety_c" type="string"/>
   <field name="order" type="string"/>
-  <field name="order_c" type="string"/>
+  <field name="orderChinese" type="string"/>
   <field name="parvdivision" type="string"/>
   <field name="parvdivision_c" type="string"/>
   <field name="parvphylum" type="string"/>
   <field name="parvphylum_c" type="string"/>
   <field name="phylum" type="string"/>
-  <field name="phylum_c" type="string"/>
+  <field name="phylumChinese" type="string"/>
   <field name="race" type="string"/>
   <field name="race_c" type="string"/>
   <field name="realm" type="string"/>
@@ -827,8 +826,8 @@
   <dynamicField name="*_d" type="pdouble" indexed="true" stored="true"/>
   <dynamicField name="*_p" type="location" indexed="true" stored="true"/>
   <!-- Full text search -->
-  <copyField source="eventDate" dest="_text_"/>
-  <copyField source="rightsHolder" dest="_text_"/>
+  <copyField source="verbatimEventDate" dest="_text_"/>
+  <copyField source="sourceDatabase" dest="_text_"/>
   <copyField source="sensitiveCategory" dest="_text_"/>
   <copyField source="typeStatus" dest="_text_"/>
   <copyField source="verbatimCoordinateSystem" dest="_text_"/>
@@ -836,7 +835,7 @@
   <copyField source="locality" dest="_text_"/>
   <copyField source="organismQuantityType" dest="_text_"/>
   <copyField source="recordedBy" dest="_text_"/>
-  <copyField source="preservation" dest="_text_"/>
+  <copyField source="preparations" dest="_text_"/>
   <copyField source="basisOfRecord" dest="_text_"/>
   <copyField source="datasetName" dest="_text_"/>
   <copyField source="resourceContacts" dest="_text_"/>
@@ -848,22 +847,22 @@
   <copyField source="nothosubspecies" dest="_text_"/>
   <copyField source="synonyms" dest="_text_"/>
   <copyField source="misapplied" dest="_text_"/>
-  <copyField source="common_name_c" dest="_text_"/>
+  <copyField source="vernacularName" dest="_text_"/>
   <copyField source="alternative_name_c" dest="_text_"/>
   <copyField source="aberration" dest="_text_"/>
   <copyField source="aberration_c" dest="_text_"/>
   <copyField source="class" dest="_text_"/>
-  <copyField source="class_c" dest="_text_"/>
+  <copyField source="classChinese" dest="_text_"/>
   <copyField source="division" dest="_text_"/>
   <copyField source="division_c" dest="_text_"/>
   <copyField source="domain" dest="_text_"/>
   <copyField source="domain_c" dest="_text_"/>
   <copyField source="family" dest="_text_"/>
-  <copyField source="family_c" dest="_text_"/>
+  <copyField source="familyChinese" dest="_text_"/>
   <copyField source="form" dest="_text_"/>
   <copyField source="form_c" dest="_text_"/>
   <copyField source="genus" dest="_text_"/>
-  <copyField source="genus_c" dest="_text_"/>
+  <copyField source="genusChinese" dest="_text_"/>
   <copyField source="hybridformula" dest="_text_"/>
   <copyField source="hybridformula_c" dest="_text_"/>
   <copyField source="infraclass" dest="_text_"/>
@@ -877,24 +876,24 @@
   <copyField source="infraphylum" dest="_text_"/>
   <copyField source="infraphylum_c" dest="_text_"/>
   <copyField source="kingdom" dest="_text_"/>
-  <copyField source="kingdom_c" dest="_text_"/>
+  <copyField source="kingdomChinese" dest="_text_"/>
   <copyField source="microphylum" dest="_text_"/>
   <copyField source="microphylum_c" dest="_text_"/>
   <copyField source="misapplied" dest="_text_"/>
   <copyField source="morph" dest="_text_"/>
   <copyField source="morph_c" dest="_text_"/>
-  <copyField source="name_author" dest="_text_"/>
+  <copyField source="scientificNameAuthorship" dest="_text_"/>
   <copyField source="nothosubspecies_c" dest="_text_"/>
   <copyField source="nothovariety" dest="_text_"/>
   <copyField source="nothovariety_c" dest="_text_"/>
   <copyField source="order" dest="_text_"/>
-  <copyField source="order_c" dest="_text_"/>
+  <copyField source="orderChinese" dest="_text_"/>
   <copyField source="parvdivision" dest="_text_"/>
   <copyField source="parvdivision_c" dest="_text_"/>
   <copyField source="parvphylum" dest="_text_"/>
   <copyField source="parvphylum_c" dest="_text_"/>
   <copyField source="phylum" dest="_text_"/>
-  <copyField source="phylum_c" dest="_text_"/>
+  <copyField source="phylumChinese" dest="_text_"/>
   <copyField source="race" dest="_text_"/>
   <copyField source="race_c" dest="_text_"/>
   <copyField source="section" dest="_text_"/>
@@ -961,50 +960,50 @@
   <copyField source="variety_c" dest="_text_"/>
   
   <!-- ngram 比對用欄位：只索引不儲存 -->
-  <field name="sourceVernacularName_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="verbatimVernacularName_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
   <field name="locality_ngram"       type="text_ngram" indexed="true" stored="false" multiValued="true"/>
   <field name="recordedBy_ngram"     type="text_ngram" indexed="true" stored="false" multiValued="true"/>
   <field name="datasetName_ngram"    type="text_ngram" indexed="true" stored="false" multiValued="true"/>
   <field name="basisOfRecord_ngram"  type="text_ngram" indexed="true" stored="false" multiValued="true"/>
   <field name="license_ngram"        type="text_ngram" indexed="true" stored="false" multiValued="true"/>
-  <field name="rightsHolder_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="sourceDatabase_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
   <field name="sensitiveCategory_ngram" type="text_ngram" indexed="true" stored="false" multiValued="true"/>
-  <field name="eventDate_ngram"      type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="verbatimEventDate_ngram"      type="text_ngram" indexed="true" stored="false" multiValued="true"/>
   <field name="typeStatus_ngram"     type="text_ngram" indexed="true" stored="false" multiValued="true"/>
-  <field name="preservation_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="preparations_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
   <field name="resourceContacts_ngram" type="text_ngram" indexed="true" stored="false" multiValued="true"/>
 
   <!-- 名稱欄位 ngram（option A：col/occ 全站搜尋名稱比對改走 ngram，需重灌） -->
-  <field name="common_name_c_ngram"      type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="vernacularName_ngram"      type="text_ngram" indexed="true" stored="false" multiValued="true"/>
   <field name="alternative_name_c_ngram" type="text_ngram" indexed="true" stored="false" multiValued="true"/>
-  <field name="kingdom_c_ngram" type="text_ngram" indexed="true" stored="false" multiValued="true"/>
-  <field name="phylum_c_ngram"  type="text_ngram" indexed="true" stored="false" multiValued="true"/>
-  <field name="class_c_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
-  <field name="order_c_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
-  <field name="family_c_ngram"  type="text_ngram" indexed="true" stored="false" multiValued="true"/>
-  <field name="genus_c_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="kingdomChinese_ngram" type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="phylumChinese_ngram"  type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="classChinese_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="orderChinese_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="familyChinese_ngram"  type="text_ngram" indexed="true" stored="false" multiValued="true"/>
+  <field name="genusChinese_ngram"   type="text_ngram" indexed="true" stored="false" multiValued="true"/>
 
-  <copyField source="sourceVernacularName"   dest="sourceVernacularName_ngram"/>
+  <copyField source="verbatimVernacularName"   dest="verbatimVernacularName_ngram"/>
   <copyField source="locality"       dest="locality_ngram"/>
   <copyField source="recordedBy"     dest="recordedBy_ngram"/>
   <copyField source="datasetName"    dest="datasetName_ngram"/>
   <copyField source="basisOfRecord"  dest="basisOfRecord_ngram"/>
   <copyField source="license"        dest="license_ngram"/>
-  <copyField source="rightsHolder"   dest="rightsHolder_ngram"/>
+  <copyField source="sourceDatabase"   dest="sourceDatabase_ngram"/>
   <copyField source="sensitiveCategory" dest="sensitiveCategory_ngram"/>
-  <copyField source="eventDate"      dest="eventDate_ngram"/>
+  <copyField source="verbatimEventDate"      dest="verbatimEventDate_ngram"/>
   <copyField source="typeStatus"     dest="typeStatus_ngram"/>
-  <copyField source="preservation"   dest="preservation_ngram"/>
+  <copyField source="preparations"   dest="preparations_ngram"/>
   <copyField source="resourceContacts" dest="resourceContacts_ngram"/>
 
-  <copyField source="common_name_c"      dest="common_name_c_ngram"/>
+  <copyField source="vernacularName"      dest="vernacularName_ngram"/>
   <copyField source="alternative_name_c" dest="alternative_name_c_ngram"/>
-  <copyField source="kingdom_c" dest="kingdom_c_ngram"/>
-  <copyField source="phylum_c"  dest="phylum_c_ngram"/>
-  <copyField source="class_c"   dest="class_c_ngram"/>
-  <copyField source="order_c"   dest="order_c_ngram"/>
-  <copyField source="family_c"  dest="family_c_ngram"/>
-  <copyField source="genus_c"   dest="genus_c_ngram"/>
+  <copyField source="kingdomChinese" dest="kingdomChinese_ngram"/>
+  <copyField source="phylumChinese"  dest="phylumChinese_ngram"/>
+  <copyField source="classChinese"   dest="classChinese_ngram"/>
+  <copyField source="orderChinese"   dest="orderChinese_ngram"/>
+  <copyField source="familyChinese"  dest="familyChinese_ngram"/>
+  <copyField source="genusChinese"   dest="genusChinese_ngram"/>
 
   <!-- A+ 拉丁分詞+前綴、datasetName bigram（效率優化）-->
   <fieldType name="text_latin" class="solr.TextField" positionIncrementGap="100">
@@ -1027,8 +1026,8 @@
     </analyzer>
   </fieldType>
   <field name="scientificName_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
-  <field name="sourceScientificName_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
-  <field name="originalScientificName_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
+  <field name="verbatimScientificName_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
+  <field name="verbatimIdentification_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
   <field name="kingdom_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
   <field name="phylum_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
   <field name="class_txt" type="text_latin" indexed="true" stored="false" multiValued="true"/>
@@ -1042,12 +1041,12 @@
   <field name="locality_bi" type="text_ngram_bi" indexed="true" stored="false" multiValued="true"/>
   <field name="recordedBy_bi" type="text_ngram_bi" indexed="true" stored="false" multiValued="true"/>
   <field name="resourceContacts_bi" type="text_ngram_bi" indexed="true" stored="false" multiValued="true"/>
-  <field name="sourceVernacularName_bi" type="text_ngram_bi" indexed="true" stored="false" multiValued="true"/>
-  <field name="common_name_c_bi" type="text_ngram_bi" indexed="true" stored="false" multiValued="true"/>
+  <field name="verbatimVernacularName_bi" type="text_ngram_bi" indexed="true" stored="false" multiValued="true"/>
+  <field name="vernacularName_bi" type="text_ngram_bi" indexed="true" stored="false" multiValued="true"/>
   <field name="alternative_name_c_bi" type="text_ngram_bi" indexed="true" stored="false" multiValued="true"/>
   <copyField source="scientificName" dest="scientificName_txt"/>
-  <copyField source="sourceScientificName" dest="sourceScientificName_txt"/>
-  <copyField source="originalScientificName" dest="originalScientificName_txt"/>
+  <copyField source="verbatimScientificName" dest="verbatimScientificName_txt"/>
+  <copyField source="verbatimIdentification" dest="verbatimIdentification_txt"/>
   <copyField source="kingdom" dest="kingdom_txt"/>
   <copyField source="phylum" dest="phylum_txt"/>
   <copyField source="class" dest="class_txt"/>
@@ -1061,7 +1060,25 @@
   <copyField source="locality" dest="locality_bi"/>
   <copyField source="recordedBy" dest="recordedBy_bi"/>
   <copyField source="resourceContacts" dest="resourceContacts_bi"/>
-  <copyField source="sourceVernacularName" dest="sourceVernacularName_bi"/>
-  <copyField source="common_name_c" dest="common_name_c_bi"/>
+  <copyField source="verbatimVernacularName" dest="verbatimVernacularName_bi"/>
+  <copyField source="vernacularName" dest="vernacularName_bi"/>
   <copyField source="alternative_name_c" dest="alternative_name_c_bi"/>
+  <!-- v2 新增欄位（2026-11 步驟 1.2；第一階段多數來源尚無值） -->
+  <field name="eventTime" type="string"/>  <!-- D6 原始資料有時間才推算 -->
+  <field name="eventID" type="string"/>  <!-- 來源提供才填（第二階段） -->
+  <field name="samplingProtocol" type="string"/>  <!-- 同上 -->
+  <field name="partner" type="string"/>  <!-- 同上 -->
+  <field name="identifiedBy" type="string"/>  <!-- 同上 -->
+  <field name="institutionCode" type="string"/>  <!-- 同上 -->
+  <field name="institutionID" type="string"/>  <!-- 同上 -->
+  <field name="collectionCode" type="string"/>  <!-- 同上 -->
+  <field name="collectionID" type="string"/>  <!-- 同上 -->
+  <field name="individualCount" type="pint"/>  <!-- D7 只收來源提供值 -->
+  <field name="countyCode" type="string"/>  <!-- 公開：依模糊化後 county 對照內政部 COUNTYCODE -->
+  <field name="rawCountyCode" type="string"/>  <!-- 限制型：依 rawCounty 對照；只在模糊化時有值 -->
+  <field name="countryCode" type="string"/>  <!-- D13 -->
+  <field name="geodeticDatum" type="string"/>  <!-- D14 -->
+  <field name="nameAccordingTo" type="string"/>  <!-- D8 TaiCOL 版本 -->
+  <field name="resourceCitationIdentifier" type="string"/>  <!-- D9 第一階段暫用 dataset.datasetURL -->
+  <field name="tbiaPartnerID" type="string"/>  <!-- D2 Partner UUID；GBIF 留空 -->
 </schema>
