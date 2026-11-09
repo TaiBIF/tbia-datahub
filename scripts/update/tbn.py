@@ -1,0 +1,158 @@
+import requests
+import pandas as pd
+import time
+from app import engine
+import json
+from scripts.utils.common import *
+from scripts.utils.deduplicates import resolve_existed_records
+from scripts.utils.records import prepare_df_for_sql, delete_records
+from scripts.utils.match import process_match_log, process_taxon_match, zip_match_log
+from scripts.utils.geography import process_geo_batch, geo_keys
+from scripts.utils.export import export_records_with_taxon
+from scripts.utils.dataset import fetch_tbn_datasets
+from scripts.utils.update_version import init_update_session, update_update_version
+from scripts.utils.dataset import process_dataset, update_dataset_deprecated
+from tqdm import tqdm
+from scripts.utils.progress import timer
+import atexit
+
+# 比對學名時使用的欄位
+sci_cols = ['taxonID','sourceScientificName','sourceVernacularName','originalVernacularName','sourceTaxonID','sourceFamily','sourceKingdom','sourceTaxonRank']
+
+# 單位資訊 (在portal.Partner.info裡面的id)
+group = 'tbri'
+rights_holder = '台灣生物多樣性網絡 TBN'
+info_id = 0
+
+# 更新紀錄
+session = init_update_session(rights_holder, cross_batch=False)
+update_version = session.update_version
+current_page = session.current_page
+note = session.note 
+now = session.now
+records_processor = session.records_processor
+matchlog_processor = session.matchlog_processor
+dedup_tracker = session.dedup_tracker
+
+# 更新失敗紀錄
+atexit.register(records_processor.export_failed_records, 
+                f'failed_records_{group}_{info_id}.csv')
+atexit.register(matchlog_processor.export_failed_records, 
+                f'failed_match_logs_{group}_{info_id}.csv')
+
+# 取得dataset info
+url_list, dataset = fetch_tbn_datasets()
+
+request_url, url_index = (note.get('request_url'), note.get('url_index')) if note else (None, 0)
+
+for url in url_list[url_index:]:
+    if not request_url:
+        request_url = url
+    c = current_page
+    data = []
+    pbar = None
+    while request_url:
+        time.sleep(0.5)
+        if request_url.find('limit=1000') < 0:
+            request_url += '&limit=1000'
+        if request_url.find(f"apikey={os.getenv('TBN_KEY')}") < 0:
+            request_url += f"&apikey={os.getenv('TBN_KEY')}"
+        response = requests.get(request_url)
+        if response.status_code == 200:
+            result = response.json()
+            total_count = result['meta']['total']
+            if pbar is None:
+                pbar = tqdm(total=total_count, unit='筆',
+                            desc=f"URL {url_index+1}/{len(url_list)}")
+                if c > 0:
+                    pbar.update(c * 1000)  # resume 時快進
+            pbar.update(len(result["data"]))
+            request_url = result['links']['next']
+            data += result["data"]
+            c += 1
+        else:
+            raise Exception(f"API failed: {response.status_code} - {request_url}")
+        if c % 10 == 0 or not request_url:
+            df = pd.DataFrame(data)
+            df = df.replace(to_quote_dict)
+            df['originalVernacularName'] = df['originalVernacularName'].replace({'原始資料無物種資訊': ''})
+            df = filter_by_license_and_sensitivity(df)
+            if len(df):
+                df = df.reset_index(drop=True)
+                df = df.replace(to_quote_dict)
+                df = df.rename(columns={
+                    'created': 'sourceCreated',
+                    'modified': 'sourceModified',
+                    'simplifiedScientificName': 'sourceScientificName',
+                    'decimalLatitude': 'verbatimLatitude', 
+                    'decimalLongitude': 'verbatimLongitude',
+                    'geodeticDatum': 'verbatimSRS',
+                    'taiCOLTaxonID': 'taxonID',
+                    'taxonUUID': 'sourceTaxonID',
+                    'taxonRank': 'sourceTaxonRank',
+                    'vernacularName': 'sourceVernacularName',
+                    'familyScientificName': 'sourceFamily',
+                    'datasetUUID': 'sourceDatasetID',
+                    'kingdomScientificName': 'sourceKingdom'
+                })
+                df['locality'] = df.apply(lambda x: x.county + x.municipality if not x.sensitiveCategory == '座標不開放' else '', axis = 1) #
+                # 若沒有individualCount 則用organismQuantity 
+                df['organismQuantity'] = df.apply(lambda x: x.individualCount if x.individualCount else x.organismQuantity, axis = 1)
+                df = df.drop(columns=['externalID','minimumElevationInMeters','gridID','adminareaCode',
+                                    'county','municipality','hour','minute','protectedStatusTW',
+                                        'categoryIUCN', 'categoryRedlistTW', 'endemism', 'nativeness',
+                                        'taxonGroup','scientificName','taiCOLNameCode','familyVernacularName', 'datasetAuthor', 
+                                        'resourceCitationIdentifier','degreeOfEstablishment','individualCount','partner',
+                                        'identificationVerificationStatus', 'identifiedBy', 'dataSensitiveCategory',                                        
+                                        'eventID', 'samplingProtocol','source','selfProduced',
+                                        'collectionID','verbatimEventDate','eventTime', 'eventPlaceAdminarea',
+                                        'countyCode','tfNameCode', 'scientificNameID'],errors='ignore')
+                df['taxonID'] = df['taxonID'].apply(lambda x: x if len(str(x)) == 8 else '')
+                # NOTE 應該在這邊就先用sci_index和原本的df merge 才不會後面有複合種的問題
+                df = process_taxon_match(df, sci_cols)
+                df = apply_common_fields(df, group, rights_holder, now)
+                df['references'] = df.apply(lambda x: f"https://www.tbn.org.tw/occurrence/{x.occurrenceID}" if x.occurrenceID else None, axis=1)
+                df = apply_record_type(df, mode='auto')
+                df, media_rule_list = apply_media_rule(df, [])
+                df[geo_keys] = process_geo_batch(df, is_full_hidden='auto')
+                df = df.replace(to_quote_dict)
+                df['dataQuality'] = df.apply(lambda x: calculate_data_quality(x), axis=1)
+                df['datasetURL'] = df['datasetURL'].apply(
+                    lambda x: f"https://www.tbn.org.tw{x}" if isinstance(x, str) and x.startswith('/') else x
+                )
+                df = process_dataset(df, group, rights_holder, update_version, now,
+                      extra_cols=None,
+                      dataset=dataset,
+                      df_cols=['datasetName', 'sourceDatasetID', 'datasetURL', 'datasetPublisher'],
+                      dataset_cols=['datasetUUID', 'datasetLicense'],
+                      left_on='sourceDatasetID',
+                      right_on='datasetUUID')
+                df, existed_records = resolve_existed_records(df, rights_holder, dedup_tracker)
+                df = df.replace(to_none_dict)
+                df_for_sql = prepare_df_for_sql(df, update_version)
+                failed_ids = records_processor.smart_upsert_records(df_for_sql, existed_records=existed_records, dedup_tracker=dedup_tracker)
+                if failed_ids:
+                    df = df[~df['id'].isin(failed_ids)].reset_index(drop=True)
+                    df_for_sql = df_for_sql[~df_for_sql['tbiaID'].isin(failed_ids)].reset_index(drop=True)
+                process_match_log(df, matchlog_processor, existed_records, now, group, info_id, suffix=f"{url_index}_{c}")
+                export_records_with_taxon(df_for_sql, f'/solr/csvs/export/{group}_{info_id}_{url_index}_{c}.csv')
+                update_media_rules(media_rules=media_rule_list,rights_holder=rights_holder, now=now)
+                timer.batch_summary(label=f"批次 {url_index}_{c}")  # ← 新增
+            # 成功之後 更新update_update_version 也有可能這批page 沒有資料 一樣從下一個c開始
+            data = []
+            update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=c, note=json.dumps({'url_index': url_index, 'request_url': request_url}), total_count=records_processor.success_count)
+    if pbar is not None:
+        pbar.close()
+    url_index += 1
+    current_page = 0 # 換成新的url時要重新開始
+    update_update_version(update_version=update_version, rights_holder=rights_holder, current_page=0, note=json.dumps({'url_index': url_index, 'request_url': None}), total_count=records_processor.success_count)
+
+
+failed_tbia_ids = {r['tbiaID'] for r in records_processor.failed_records if r.get('tbiaID')}
+delete_records(rights_holder=rights_holder,group=group,update_version=int(update_version),exclude_ids=failed_tbia_ids)
+zip_match_log(group=group,info_id=info_id)
+update_update_version(is_finished=True, update_version=update_version, rights_holder=rights_holder, total_count=records_processor.success_count)
+update_dataset_deprecated(rights_holder=rights_holder, update_version=update_version)
+
+
+print('done!')

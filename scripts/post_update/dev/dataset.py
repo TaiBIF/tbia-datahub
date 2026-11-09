@@ -1,0 +1,194 @@
+# 計算資料集統計
+# 用法：
+#   python -m scripts.post_update.dev.dataset --rights-holder "科博典藏 (NMNS Collection)"
+#   python -m scripts.post_update.dev.dataset            # 不指定則更新全部
+import json
+import argparse
+import requests
+import psycopg2
+import pandas as pd
+from datetime import datetime
+from tqdm import tqdm
+
+from app import db_settings
+from scripts.post_update.solr_helper import SOLR_BASE, solr_import_csv
+
+bio_group_en = {
+    '鳥類': 'Birds',
+    '爬蟲類': 'Reptiles',
+    '哺乳類': 'Mammals',
+    '甲蟲類': 'Beetles',
+    '魚類': 'Fishes',
+    '兩棲類': 'Amphibians',
+    '蛾類': 'Moths',
+    '蝶類': 'Butterflies',
+    '蜘蛛': 'Spiders',
+    '蜻蛉類': 'Dragonflies',
+    '蝸牛與貝類': 'Snails & Shells',
+    '其他昆蟲': 'Other Insects',
+    '蝦蟹類': 'Crustaceans',
+    '裸子植物': 'Gymnosperms',
+    '被子植物': 'Angiosperms',
+    '蕨類植物': 'Ferns',
+    '苔蘚植物': 'Mosses',
+    '真菌': 'Fungi',
+    '藻類': 'Algae',
+    '病毒': 'Viruses',
+    '細菌': 'Bacteria',
+}
+
+parser = argparse.ArgumentParser(description='更新 dataset 統計欄位並同步至 Solr')
+parser.add_argument(
+    '--rights-holder', default=None,
+    help='只更新此 rights_holder 底下的 dataset；不給則更新全部',
+)
+args = parser.parse_args()
+RIGHTS_HOLDER = args.rights_holder
+
+
+# 取得未棄用的資料集（可依 rights_holder 限縮）
+conn = psycopg2.connect(**db_settings)
+
+if RIGHTS_HOLDER:
+    query = """
+        SELECT "tbiaDatasetID", "name", "rights_holder"
+        FROM dataset
+        WHERE deprecated = 'f' AND "rights_holder" = %s;
+    """
+    params = (RIGHTS_HOLDER,)
+else:
+    query = """
+        SELECT "tbiaDatasetID", "name", "rights_holder"
+        FROM dataset
+        WHERE deprecated = 'f';
+    """
+    params = None
+
+with conn.cursor() as cursor:
+    cursor.execute(query, params)
+    res = cursor.fetchall()
+    df = pd.DataFrame(res, columns=['tbiaDatasetID', 'datasetName', 'rights_holder'])
+
+print(f'本次更新對象：{RIGHTS_HOLDER or "全部 rights_holder"}，共 {len(df)} 個 dataset')
+if df.empty:
+    raise SystemExit('查無符合條件的 dataset，結束。')
+
+
+# 每個 dataset 查一次 Solr，一次取得所有需要的 facet 與 stats
+records = []
+to_deprecate = []
+
+for i, row in tqdm(df.iterrows(), total=len(df), desc='fetch dataset stats'):
+    solr_params = {
+        'q': '*:*',
+        'fq': f'tbiaDatasetID:"{row.tbiaDatasetID}"',
+        'rows': 0,
+        'stats': 'true',
+        'stats.field': 'standardDate',
+        'facet': 'true',
+        'facet.limit': -1,
+        'facet.mincount': 1,
+        'facet.field': ['resourceContacts', 'recordType', 'bioGroup'],
+    }
+    resp = requests.get(f'{SOLR_BASE}/tbia_records/select', params=solr_params).json()
+    occurrence_count = resp['response']['numFound']
+
+    # deprecated='f' 但 Solr 查不到任何 record → 印錯誤並跳過，不更新
+    if occurrence_count == 0:
+        print(f'❌ Solr 查無資料,標記 deprecated:{row.tbiaDatasetID} / '
+              f'{row.datasetName} / {row.rights_holder}')
+        to_deprecate.append(row.tbiaDatasetID)
+        continue
+
+    date_stats = resp['stats']['stats_fields']['standardDate']
+    date_min = date_stats.get('min')
+    date_max = date_stats.get('max')
+    # facet 回傳格式為 [value, count, value, count, ...]
+    facets = resp['facet_counts']['facet_fields']
+    contacts = facets['resourceContacts'][::2]
+    record_types = facets['recordType'][::2]
+    # bioGroup → taxon_stat / taxon_string
+    taxon_stat = {en: 0 for en in bio_group_en.values()}
+    taxon_string = []
+    bio_data = facets['bioGroup']
+    for k in range(0, len(bio_data), 2):
+        zh, count = bio_data[k], bio_data[k + 1]
+        taxon_string.append(zh)
+        if zh in bio_group_en:
+            taxon_stat[bio_group_en[zh]] = count
+    records.append({
+        'tbiaDatasetID': row.tbiaDatasetID,
+        'occurrenceCount': occurrence_count,
+        'datasetDateStart': date_min.split('T')[0] if date_min else None,
+        'datasetDateEnd': date_max.split('T')[0] if date_max else None,
+        'resourceContacts': ';'.join(contacts),
+        'record_type': ','.join(record_types),
+        'datasetTaxonGroup': ','.join(taxon_string),
+        'datasetTaxonStat': json.dumps(taxon_stat),
+    })
+
+
+# 一次批次寫回 PostgreSQL
+update_sql = '''
+    UPDATE dataset SET
+        "datasetTaxonGroup" = %(datasetTaxonGroup)s,
+        "datasetTaxonStat"  = %(datasetTaxonStat)s,
+        "occurrenceCount"   = %(occurrenceCount)s,
+        "datasetDateStart"  = %(datasetDateStart)s,
+        "datasetDateEnd"    = %(datasetDateEnd)s,
+        "resourceContacts"  = %(resourceContacts)s,
+        "record_type"       = %(record_type)s
+    WHERE "tbiaDatasetID" = %(tbiaDatasetID)s;
+'''
+if records:
+    with conn.cursor() as cursor:
+        cursor.executemany(update_sql, records)
+    conn.commit()
+    print(f'✅ 已更新 {len(records)} 筆 dataset 統計')
+else:
+    print('⚠️ 沒有任何 dataset 需要更新統計')
+
+# 將 occurrenceCount=0 的 dataset 標記為 deprecated
+if to_deprecate:
+    with conn.cursor() as cursor:
+        cursor.execute(
+            'UPDATE dataset SET deprecated = TRUE WHERE "tbiaDatasetID" = ANY(%s);',
+            (to_deprecate,),
+        )
+    conn.commit()
+    print(f'🚫 已將 {len(to_deprecate)} 筆 occurrenceCount=0 的 dataset 標記為 deprecated')
+
+# 匯出全表：is_duplicated_name 需全域比較，
+# 且全表 upsert 可順便同步其他 rights_holder 因同名變動而改變的 flag
+with conn.cursor() as cursor:
+    cursor.execute("SELECT * FROM dataset;")
+    res = cursor.fetchall()
+
+keys = [
+    'id', 'name', 'record_type', 'rights_holder', 'deprecated',
+    'datasetTaxonGroup', 'resourceContacts', 'sourceDatasetID',
+    'gbifDatasetID', 'tbiaDatasetID', 'occurrenceCount', 'datasetURL',
+    'datasetLicense', 'created', 'modified', 'datasetPublisher',
+    'update_version', 'datasetDateStart', 'datasetDateEnd',
+    'datasetTaxonStat', 'downloadCount', 'group',
+]
+df = pd.DataFrame(res, columns=keys)
+df = df.drop(columns=['downloadCount'])
+
+# 標記同名資料集（未棄用且 name 重複）
+dd = df[df.deprecated == False]
+dd_names = dd[dd.name.duplicated()].name.unique()
+df['is_duplicated_name'] = False
+df.loc[df.name.isin(dd_names) & (df.deprecated == False), 'is_duplicated_name'] = True
+
+now = datetime.now().strftime('%Y%m%d')
+updating_csv = f'/bucket/tbia_updated_dataset_{now}.csv'
+df.to_csv(updating_csv, index=None)
+print(f'📄 已匯出 {updating_csv}（{len(df)} 筆）')
+
+
+# 依 uniqueKey (id) upsert 進 Solr dataset core，不刪除、無空窗期
+solr_import_csv('dataset', updating_csv)
+print('✅ Solr dataset core 已同步')
+
+conn.close()
