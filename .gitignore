@@ -4,3 +4,21 @@ __pycache__/
 .env
 
 data_prep/
+tmp/
+WIP/
+
+*.csv
+*.xlsx
+*.json
+
+*.backup
+
+datagap/
+
+*.pdf
+*.zip
+*.log
+*output
+
+test/
+NotoSansCJK-Regular.ttc
