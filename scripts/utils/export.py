@@ -192,15 +192,22 @@ def _fmt_datetime(x):
     return x
 
 
-def _to_int(series):
-    num = pd.to_numeric(series, errors='coerce')
-    num = num.where(np.isfinite(num) & (num == np.floor(num)))
-    return num.astype('Int64')
+def _parse_float(x):
+    # 不用 pd.to_numeric：它解析字串不保證精確捨入，會差 1 ulp（23.649526841608566 → ...857）
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return np.nan
 
 
 def _to_float(series):
-    num = pd.to_numeric(series, errors='coerce')
+    num = series.map(_parse_float).astype('float64')
     return num.where(np.isfinite(num))
+
+
+def _to_int(series):
+    num = _to_float(series)
+    return num.where(num == np.floor(num)).astype('Int64')
 
 
 def to_v2(df, taxon_df=None):
