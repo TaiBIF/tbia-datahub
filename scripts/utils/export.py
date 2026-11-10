@@ -1,27 +1,13 @@
 """
 records → Solr tbia_records（v2 欄位）CSV 匯出
 
-第一階段（D17）PG records 與 update 腳本維持舊欄位名稱，只在這裡把舊格式對應成 v2：
-  - export_records_with_taxon(df, output_path)：update 腳本呼叫，介面不變，輸出改為 v2 欄位
-  - 指令列：從 PG 直接匯出指定單位（測試站 v2 試匯出 / 2.6 全量匯出用），可選擇匯入 core 並與 v1 比對
-
-使用範例（測試站在 ~/tbia-datahub-v2，一律加 -f）：
-  # 列出各單位筆數，挑試匯出對象
-  docker compose -f docker-compose.v2.yml exec app-v2 python -m scripts.utils.export --list
-
-  # 只輸出 CSV（預設寫到 /tmp/export，對應主機 /tmp/export_v2）
-  docker compose -f docker-compose.v2.yml exec app-v2 python -m scripts.utils.export --group oca
-
-  # 輸出 + 清掉 core 內該單位舊資料後匯入 tbia_records_new + 抽 200 筆與 v1 比對
-  docker compose -f docker-compose.v2.yml exec app-v2 python -m scripts.utils.export \
-      --group oca --overwrite --post --replace --compare 200
+第一階段（D17）PG records 與 update 腳本維持舊欄位名稱，只在這裡把舊格式對應成 v2。
+update 腳本呼叫 export_records_with_taxon(df, output_path)，介面不變，輸出為 v2 欄位。
+上線前把既有 v1 CSV 轉成 v2 的一次性工具在 scripts/v2_migration/convert_v1_csv.py（共用 to_v2）。
 """
-import argparse
-import glob
 import json
 import os
 import re
-import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -53,7 +39,8 @@ RECORDS_RENAME = {
     'sourceDatasetID': 'datasetID',
     'rightsHolder': 'sourceDatabase',
     'preservation': 'preparations',
-    'originalVernacularName': 'verbatimIdentification',  # v1 匯出時叫 originalScientificName（D5）
+    'originalVernacularName': 'verbatimIdentification',  # D5
+    'originalScientificName': 'verbatimIdentification',  # v1 CSV 中的名稱（舊 export 改名過）
     'sourceScientificName': 'verbatimScientificName',
     'sourceVernacularName': 'verbatimVernacularName',
 }
@@ -217,10 +204,11 @@ def _to_float(series):
 
 
 def to_v2(df, taxon_df=None):
-    """records df（PG 欄位名）＋ taxa df（taxa 欄位名）→ v2 欄位 df。"""
+    """records df（PG 欄位名，或 v1 CSV）＋ taxa df（taxa 欄位名）→ v2 欄位 df。"""
     out = df.drop(columns=[c for c in RECORDS_DROP if c in df.columns])
     out = out.drop(columns=['id'], errors='ignore') if 'tbiaID' in out.columns else out  # PG 流水號
     out = out.rename(columns=RECORDS_RENAME)
+    out = out.rename(columns=TAXA_RENAME)   # v1 CSV 已 merge 過 taxa（舊名）；PG 來源沒有這些欄位
 
     if taxon_df is not None and len(taxon_df):
         taxon_df = taxon_df.rename(columns=TAXA_RENAME)
@@ -249,7 +237,8 @@ def to_v2(df, taxon_df=None):
         out['typeStatus'] = out['typeStatus'].map(normalize_type_status)
     if 'dataGeneralizations' in out.columns:
         # 模糊化的紀錄 verbatim* 為模糊後的值，v2 公開欄位留空，原值在 rawVerbatim*
-        blurred = out['dataGeneralizations'].fillna(False).astype(bool)
+        # PG 來源為 bool、v1 CSV 來源為字串 'True' / 'False'
+        blurred = out['dataGeneralizations'].map(lambda x: str(x).strip().lower() in ('true', '1', 't'))
         for c in ['verbatimLatitude', 'verbatimLongitude']:
             if c in out.columns:
                 out.loc[blurred, c] = None
@@ -271,226 +260,3 @@ def export_records_with_taxon(df, output_path):
     """把 records df（prepare_df_for_sql 後）與 taxa 合併，以 v2 欄位輸出 CSV。"""
     taxon_df = fetch_taxon_df(df['taxonID'].dropna().tolist())
     to_v2(df, taxon_df).to_csv(output_path, index=None)
-
-
-# ---------------------------------------------------------------------------
-# 指令列：從 PG 匯出 / 匯入 core / 與 v1 比對
-# ---------------------------------------------------------------------------
-
-def _pg_conn():
-    import psycopg2
-    from app import db_settings
-    return psycopg2.connect(**db_settings)
-
-
-def list_sources():
-    sql = 'SELECT "group", "rightsHolder", count(*) FROM records GROUP BY 1, 2 ORDER BY 3'
-    with _pg_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql)
-        for g, rh, n in cur.fetchall():
-            print(f'{n:>12,}  {g:<12} {rh}')
-
-
-def _select_sql(cur):
-    cur.execute("SELECT column_name FROM information_schema.columns "
-                "WHERE table_name = 'records' ORDER BY ordinal_position")
-    cols = [r[0] for r in cur.fetchall() if r[0] != 'id']
-    parts = []
-    for c in cols:
-        if c in DATETIME_COLS:
-            # 依連線時區格式化，與 update 時 naive 時間寫入的解讀一致
-            parts.append(f'''to_char("{c}", 'YYYY-MM-DD HH24:MI:SS') AS "{c}"''')
-        else:
-            parts.append(f'"{c}"')
-    return 'SELECT ' + ', '.join(parts) + ' FROM records'
-
-
-def export_from_pg(group, rights_holder, out_dir, chunk_size, limit=None):
-    """依 group（+ rightsHolder）從 PG 分批讀出，轉 v2 後每批一個 CSV。回傳 (檔案清單, 筆數)。"""
-    where = ['"group" = %s', 'is_deleted IS NOT TRUE']
-    params = [group]
-    if rights_holder:
-        where.append('"rightsHolder" = %s')
-        params.append(rights_holder)
-
-    files, total = [], 0
-    with _pg_conn() as conn:
-        with conn.cursor() as cur:
-            base = _select_sql(cur)
-        sql = base + ' WHERE ' + ' AND '.join(where) + ' ORDER BY "tbiaID"'
-        if limit:
-            sql += f' LIMIT {int(limit)}'
-        with conn.cursor(name='v2_export') as cur:   # server-side cursor，不一次載入
-            cur.itersize = chunk_size
-            cur.execute(sql, params)
-            cols = None
-            n = 0
-            while True:
-                rows = cur.fetchmany(chunk_size)
-                if not rows:
-                    break
-                if cols is None:
-                    cols = [d[0] for d in cur.description]
-                df = pd.DataFrame(rows, columns=cols)
-                taxon_df = fetch_taxon_df(df['taxonID'].dropna().tolist(), use_cache=True)
-                path = os.path.join(out_dir, f'{group}_{n:05d}.csv')
-                to_v2(df, taxon_df).to_csv(path, index=None)
-                files.append(path)
-                total += len(df)
-                n += 1
-                print(f'[export] {path}  累計 {total:,} 筆')
-    return files, total
-
-
-def solr_count(core, q):
-    r = requests.get(f'{SOLR_URL}/{core}/select', params={'q': q, 'rows': 0, 'wt': 'json'})
-    r.raise_for_status()
-    return r.json()['response']['numFound']
-
-
-def _q(field, value):
-    return f'{field}:"{value}"'
-
-
-def post_files(files, core, replace_q=None):
-    if replace_q:
-        print(f'[post] 刪除 {core} 中 {replace_q}：{solr_count(core, replace_q):,} 筆')
-        r = requests.post(f'{SOLR_URL}/{core}/update', params={'commit': 'true'},
-                          json={'delete': {'query': replace_q}})
-        r.raise_for_status()
-    failed = []
-    for f in files:
-        with open(f, 'rb') as fh:
-            r = requests.post(f'{SOLR_URL}/{core}/update', params={'commit': 'false'},
-                              data=fh, headers={'Content-Type': 'text/csv; charset=utf-8'})
-        if r.status_code != 200:
-            failed.append(f)
-            print(f'[post] 失敗 {f}: {r.status_code} {r.text[:500]}')
-    requests.get(f'{SOLR_URL}/{core}/update', params={'commit': 'true', 'openSearcher': 'true'}).raise_for_status()
-    print(f'[post] 匯入 {len(files) - len(failed)} / {len(files)} 個檔案')
-    return failed
-
-
-# v1 欄位 → v2 欄位（比對用）
-V1_TO_V2 = {**{('originalScientificName' if k == 'originalVernacularName' else k): v
-               for k, v in RECORDS_RENAME.items() if k != 'tbiaID'},
-            **{k: v for k, v in TAXA_RENAME.items() if k != 'taxon_name_id'}}
-# 規則本來就會不同的欄位：比對時只計數不列為異常
-EXPECTED_DIFF = {'typeStatus', 'verbatimLatitude', 'verbatimLongitude', 'dataGeneralizations',
-                 'scientificNameID', 'organismQuantity', 'sourceDatabase',
-                 'coordinatePrecision', 'coordinateUncertaintyInMeters'}   # 字串 NaN / 非數字轉空值
-
-
-def _norm(v):
-    if isinstance(v, list):
-        v = v[0] if len(v) == 1 else '|'.join(map(str, v))
-    if v is None or v == '':
-        return None
-    if isinstance(v, bool):
-        return str(v).lower()
-    if isinstance(v, (int, float)):
-        return float(v)
-    s = str(v)
-    if re.fullmatch(r'-?\d+(\.\d+)?', s):
-        return float(s)
-    if s.lower() in ('true', 'false'):
-        return s.lower()
-    return s
-
-
-def compare_with_v1(v1_core, v2_core, v1_q, v2_q, sample):
-    n1, n2 = solr_count(v1_core, v1_q), solr_count(v2_core, v2_q)
-    print(f'\n[compare] 筆數 {v1_core}={n1:,}  {v2_core}={n2:,}  差 {n2 - n1:+,}')
-
-    r = requests.get(f'{SOLR_URL}/{v2_core}/select',
-                     params={'q': v2_q, 'rows': sample, 'sort': f'random_{datetime.now():%H%M%S} asc', 'wt': 'json'})
-    r.raise_for_status()
-    new_docs = {d['id']: d for d in r.json()['response']['docs']}
-    if not new_docs:
-        print('[compare] v2 core 沒有資料')
-        return
-    ids = list(new_docs)
-    r = requests.post(f'{SOLR_URL}/{v1_core}/select',
-                      json={'query': '{!terms f=id}' + ','.join(ids), 'limit': len(ids)})
-    r.raise_for_status()
-    old_docs = {d['id']: d for d in r.json()['response']['docs']}
-    print(f'[compare] 抽樣 {len(ids)} 筆，v1 找到 {len(old_docs)} 筆')
-
-    diff, examples = {}, {}
-    for i in ids:
-        old, new = old_docs.get(i), new_docs[i]
-        if old is None:
-            continue
-        for k1, val in old.items():
-            if k1.startswith('_') or k1 == 'originalVernacularName':
-                continue
-            k2 = V1_TO_V2.get(k1, k1)
-            if k1 == 'organismQuantity':      # v1 原始字串，v2 已不存
-                continue
-            if k1 == 'standardOrganismQuantity':
-                k2 = 'organismQuantity'
-            a, b = _norm(val), _norm(new.get(k2))
-            if a != b:
-                diff[k2] = diff.get(k2, 0) + 1
-                examples.setdefault(k2, (i, val, new.get(k2)))
-        for k2 in new:
-            if k2 not in V1_TO_V2.values() and k2 not in old and not k2.startswith('_') \
-                    and new[k2] not in (None, ''):
-                diff[f'{k2}（v2 新增）'] = diff.get(f'{k2}（v2 新增）', 0) + 1
-
-    if not diff:
-        print('[compare] 所有欄位一致')
-    for k in sorted(diff, key=lambda x: (x.split('（')[0] in EXPECTED_DIFF or '新增' in x, x)):
-        tag = '預期' if (k in EXPECTED_DIFF or '新增' in k) else '異常'
-        ex = examples.get(k)
-        ex_s = f'  例 {ex[0]}: {ex[1]!r} → {ex[2]!r}' if ex else ''
-        print(f'  [{tag}] {k}: {diff[k]} 筆{ex_s}')
-
-
-def main(argv=None):
-    p = argparse.ArgumentParser(description='PG records → v2 CSV（可匯入 core 並與 v1 比對）')
-    p.add_argument('--list', action='store_true', help='列出各單位筆數')
-    p.add_argument('--group')
-    p.add_argument('--rights-holder', help='同 group 有多個資料庫時指定（舊名稱）')
-    p.add_argument('--out', default='/tmp/export')
-    p.add_argument('--chunk', type=int, default=20000, help='每個 CSV 的筆數')
-    p.add_argument('--limit', type=int, help='只匯出前 N 筆（測試用）')
-    p.add_argument('--overwrite', action='store_true', help='先刪除 out 目錄中同 group 的舊 CSV')
-    p.add_argument('--post', action='store_true', help='匯出後匯入 --core')
-    p.add_argument('--core', default='tbia_records_new')
-    p.add_argument('--replace', action='store_true', help='匯入前刪除 core 中該單位的資料')
-    p.add_argument('--compare', type=int, default=0, metavar='N', help='與 v1 core 比對筆數並抽 N 筆比欄位')
-    p.add_argument('--v1-core', default='tbia_records')
-    a = p.parse_args(argv)
-
-    if a.list:
-        list_sources()
-        return
-    if not a.group:
-        p.error('需要 --group（或 --list）')
-    if a.core in ('tbia_records', 'tbia_records_build', 'tbia_records_v1') and (a.post or a.replace):
-        sys.exit(f'拒絕寫入 {a.core}：開發期只寫 tbia_records_new，正式灌入走 import_and_swap_data.sh')
-
-    os.makedirs(a.out, exist_ok=True)
-    old = glob.glob(os.path.join(a.out, f'{a.group}_*.csv'))
-    if old:
-        if not a.overwrite:
-            sys.exit(f'{a.out} 已有 {len(old)} 個 {a.group}_*.csv，加 --overwrite 先刪除')
-        for f in old:
-            os.remove(f)
-
-    files, total = export_from_pg(a.group, a.rights_holder, a.out, a.chunk, a.limit)
-    print(f'[export] 完成：{total:,} 筆、{len(files)} 個檔案')
-
-    v1_q = _q('group', a.group) + (f' AND {_q("rightsHolder", a.rights_holder)}' if a.rights_holder else '')
-    new_rh = source_database_map().get(a.rights_holder, a.rights_holder) if a.rights_holder else None
-    v2_q = _q('group', a.group) + (f' AND {_q("sourceDatabase", new_rh)}' if new_rh else '')
-
-    if a.post and files:
-        post_files(files, a.core, replace_q=v2_q if a.replace else None)
-    if a.compare:
-        compare_with_v1(a.v1_core, a.core, v1_q, v2_q, a.compare)
-
-
-if __name__ == '__main__':
-    main()
