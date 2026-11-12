@@ -453,10 +453,10 @@
   <field name="_version_" type="plong" indexed="false" stored="false"/>
   
   <!-- <field name="group" type="string"/> -->
-  <field name="rightsHolder" type="string"/>
+  <field name="sourceDatabase" type="string"/>
   <field name="group" type="string"/>
   <field name="total_count" type="pint"/>
-  <field name="bioGroup" type="string"/>
+  <field name="taxonGroup" type="string"/>
   <field name="grid_5" type="string"/>
   <field name="grid_x" type="pint"/>
   <field name="grid_y" type="pint"/>
@@ -533,7 +533,7 @@
   <dynamicField name="*_d" type="pdouble" indexed="true" stored="true"/>
   <dynamicField name="*_p" type="location" indexed="true" stored="true"/>
   <!-- Full text search -->
-  <copyField source="bioGroup" dest="_text_"/>
-  <copyField source="rightsHolder" dest="_text_"/>
+  <copyField source="taxonGroup" dest="_text_"/>
+  <copyField source="sourceDatabase" dest="_text_"/>
 
 </schema>

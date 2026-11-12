@@ -2,6 +2,7 @@
 # 用法：
 #   python -m scripts.post_update.dev.dataset --rights-holder "科博典藏 (NMNS Collection)"
 #   python -m scripts.post_update.dev.dataset            # 不指定則更新全部
+#   python -m scripts.post_update.dev.dataset --dry-run  # 只輸出統計 CSV，不寫 PG 與 dataset core
 import json
 import argparse
 import requests
@@ -11,7 +12,7 @@ from datetime import datetime
 from tqdm import tqdm
 
 from app import db_settings
-from scripts.post_update.solr_helper import SOLR_BASE, solr_import_csv
+from scripts.post_update.solr_helper import SOLR_BASE, RECORDS_CORE, DATASET_CORE, solr_import_csv
 
 bio_group_en = {
     '鳥類': 'Birds',
@@ -42,8 +43,9 @@ parser.add_argument(
     '--rights-holder', default=None,
     help='只更新此 rights_holder 底下的 dataset；不給則更新全部',
 )
+parser.add_argument('--dry-run', action='store_true', help='只輸出統計 CSV，不寫 PG 與 dataset core（v2 開發期用）')
 args = parser.parse_args()
-RIGHTS_HOLDER = args.rights_holder
+RIGHTS_HOLDER = args.rights_holder   # PG dataset.rights_holder，第一階段仍是舊名稱
 
 
 # 取得未棄用的資料集（可依 rights_holder 限縮）
@@ -88,9 +90,9 @@ for i, row in tqdm(df.iterrows(), total=len(df), desc='fetch dataset stats'):
         'facet': 'true',
         'facet.limit': -1,
         'facet.mincount': 1,
-        'facet.field': ['resourceContacts', 'recordType', 'bioGroup'],
+        'facet.field': ['resourceContacts', 'recordType', 'taxonGroup'],
     }
-    resp = requests.get(f'{SOLR_BASE}/tbia_records/select', params=solr_params).json()
+    resp = requests.get(f'{SOLR_BASE}/{RECORDS_CORE}/select', params=solr_params).json()
     occurrence_count = resp['response']['numFound']
 
     # deprecated='f' 但 Solr 查不到任何 record → 印錯誤並跳過，不更新
@@ -107,10 +109,10 @@ for i, row in tqdm(df.iterrows(), total=len(df), desc='fetch dataset stats'):
     facets = resp['facet_counts']['facet_fields']
     contacts = facets['resourceContacts'][::2]
     record_types = facets['recordType'][::2]
-    # bioGroup → taxon_stat / taxon_string
+    # taxonGroup → taxon_stat / taxon_string（PG 欄位名稱不變）
     taxon_stat = {en: 0 for en in bio_group_en.values()}
     taxon_string = []
-    bio_data = facets['bioGroup']
+    bio_data = facets['taxonGroup']
     for k in range(0, len(bio_data), 2):
         zh, count = bio_data[k], bio_data[k + 1]
         taxon_string.append(zh)
@@ -127,6 +129,12 @@ for i, row in tqdm(df.iterrows(), total=len(df), desc='fetch dataset stats'):
         'datasetTaxonStat': json.dumps(taxon_stat),
     })
 
+
+if args.dry_run:
+    out = f'/bucket/tbia_dataset_stat_{datetime.now():%Y%m%d}_dryrun.csv'
+    pd.DataFrame(records).to_csv(out, index=None)
+    print(f'--dry-run：已輸出 {out}（{len(records)} 筆），待 deprecated {len(to_deprecate)} 筆；未寫入 PG 與 {DATASET_CORE}')
+    raise SystemExit(0)
 
 # 一次批次寫回 PostgreSQL
 update_sql = '''
@@ -188,7 +196,7 @@ print(f'📄 已匯出 {updating_csv}（{len(df)} 筆）')
 
 
 # 依 uniqueKey (id) upsert 進 Solr dataset core，不刪除、無空窗期
-solr_import_csv('dataset', updating_csv)
+solr_import_csv(DATASET_CORE, updating_csv)
 print('✅ Solr dataset core 已同步')
 
 conn.close()
