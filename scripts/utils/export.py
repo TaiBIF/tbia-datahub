@@ -327,6 +327,8 @@ def normalize_type_status(value):
 
 # 2.3 暫行文字（D4；正式句型 P2-5）：只描述 TBIA 統一模糊化的紀錄，來源端自行模糊化的不填
 DG_PREFIX = '由 TBIA 統一模糊化'
+RAW_COLS = ['rawDecimalLatitude', 'rawDecimalLongitude', 'rawVerbatimLatitude', 'rawVerbatimLongitude',
+            'rawCounty', 'rawMunicipality', 'raw_location_rpt']
 
 
 def _precision_text(cp):
@@ -424,13 +426,19 @@ def to_v2(df, taxon_df=None, derive=True):
     if 'typeStatus' in out.columns:
         out['typeStatus'] = out['typeStatus'].map(normalize_type_status)
     if 'dataGeneralizations' in out.columns:
-        # 模糊化的紀錄 verbatim* 為模糊後的值，v2 公開欄位留空，原值在 rawVerbatim*
-        # PG 來源為 bool、v1 CSV 來源為字串 'True' / 'False'
-        blurred = out['dataGeneralizations'].map(lambda x: str(x).strip().lower() in ('true', '1', 't'))
+        # 是否模糊化以實際狀態為準（有 TBIA 文字），不看原本的布林值：
+        # v1 有標 True 但座標沒動的紀錄（例 ardswc 敏感層級「無」），視為未模糊化
+        dg = data_generalizations_text(out)
+        tbia_blurred = dg.notna()
+        # TBIA 模糊化的紀錄 verbatim* 為模糊後的值，v2 公開欄位留空，原值在 rawVerbatim*
         for c in ['verbatimLatitude', 'verbatimLongitude']:
             if c in out.columns:
-                out.loc[blurred, c] = None
-        out['dataGeneralizations'] = data_generalizations_text(out)
+                out.loc[tbia_blurred, c] = None
+        # 未模糊化的紀錄 raw* 與公開值相同，清空以維持「raw 只在模糊化時有值」（D25）
+        for c in RAW_COLS:
+            if c in out.columns:
+                out.loc[~tbia_blurred, c] = None
+        out['dataGeneralizations'] = dg
     if 'sourceDatabase' in out.columns and source_database_map():
         out['sourceDatabase'] = out['sourceDatabase'].replace(source_database_map())
     if derive:
