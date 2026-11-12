@@ -325,6 +325,45 @@ def normalize_type_status(value):
     return '|'.join(out) if out else None
 
 
+# 2.3 暫行文字（D4；正式句型 P2-5）：只描述 TBIA 統一模糊化的紀錄，來源端自行模糊化的不填
+DG_PREFIX = '由 TBIA 統一模糊化'
+
+
+def _precision_text(cp):
+    """coordinatePrecision → 模糊化程度；與 geography._blur_coordinate 的規則一致，未模糊化回 None。"""
+    cp = _parse_float(cp)
+    if not np.isfinite(cp):
+        return None
+    if 0 < cp < 1:
+        return f'座標取至小數點後 {round(-np.log10(cp))} 位'
+    if cp == 1:
+        return '座標取至整數位'
+    return None
+
+
+def data_generalizations_text(out):
+    """依資料狀態產生 dataGeneralizations 文字（須在 RECORDS_RENAME 之後呼叫）。
+    raw 座標只在 TBIA 模糊化時才有值（skip_blur 的來源不存 raw），以此判斷是否由 TBIA 處理：
+      raw 有值、公開座標為空 → 座標不公開（taif、敏感層級「縣市」「座標不開放」）
+      raw 有值、公開座標有值 → 依 coordinatePrecision 說明位數
+      其餘 → 空值"""
+    raw_cols = [c for c in ('rawDecimalLatitude', 'rawVerbatimLatitude') if c in out.columns]
+    if not raw_cols:
+        return pd.Series(None, index=out.index, dtype=object)
+    has_raw = pd.Series(False, index=out.index)
+    for c in raw_cols:
+        has_raw |= out[c].notna() & (out[c].astype(str).str.strip() != '')
+    public = out['decimalLatitude'].notna() if 'decimalLatitude' in out.columns else pd.Series(False, index=out.index)
+
+    text = pd.Series(None, index=out.index, dtype=object)
+    text[has_raw & ~public] = f'{DG_PREFIX}，座標不公開'
+    blurred = has_raw & public
+    if blurred.any() and 'coordinatePrecision' in out.columns:
+        degree = out.loc[blurred, 'coordinatePrecision'].map(_precision_text)
+        text[degree[degree.notna()].index] = DG_PREFIX + '，' + degree.dropna()
+    return text
+
+
 def _fmt_datetime(x):
     # update 腳本傳入的已是 'YYYY-MM-DD HH:MM:SS' 字串；指令列由 SQL to_char 產生同格式
     if x is None or x is pd.NaT or (isinstance(x, float) and np.isnan(x)):
@@ -391,7 +430,7 @@ def to_v2(df, taxon_df=None, derive=True):
         for c in ['verbatimLatitude', 'verbatimLongitude']:
             if c in out.columns:
                 out.loc[blurred, c] = None
-        # TODO 2.3：改成暫行文字，目前仍輸出 True / False
+        out['dataGeneralizations'] = data_generalizations_text(out)
     if 'sourceDatabase' in out.columns and source_database_map():
         out['sourceDatabase'] = out['sourceDatabase'].replace(source_database_map())
     if derive:
