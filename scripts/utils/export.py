@@ -83,9 +83,18 @@ TYPE_STATUS_MAP = {
     'topotype': 'TOPOTYPE',
 }
 
-# 來源資料庫名稱對照（舊 rightsHolder → 新 sourceDatabase，見交接文件 2.1）
-# 過渡期使用（P2-3 改由 Partner dbname 取得後移除）；格式 {"舊名稱": "新名稱", ...}，只列有改名的
-SOURCE_DATABASE_MAP_PATH = os.getenv('SOURCE_DATABASE_MAP', str(Path(__file__).with_name('source_database_map.json')))
+# 來源資料庫名稱對照（舊 rightsHolder → 新 sourceDatabase，11/12 定案，見交接文件最後一節）
+# 只列有改名的；過渡期使用，P2-3 改由 Partner dbname 取得後與 RECORDS_RENAME 一起移除
+SOURCE_DATABASE_MAP = {
+    '中央研究院生物多樣性中心動物標本館': '中央研究院動物標本館 ASIZ',
+    '中央研究院生物多樣性中心植物標本資料庫': '中央研究院植物標本館 HAST',
+    '國家海洋資料庫及共享平台': '國家海洋資料庫及共享平臺',
+    '國立海洋生物博物館生物典藏管理系統': '生物典藏管理系統',
+    '科博典藏 (NMNS Collection)': '科博典藏',
+    '國立臺灣博物館典藏': '國立臺灣博物館生物典藏資料',
+    '愛自然-臺灣(iNaturalist Taiwan)': '愛自然-臺灣',
+    '中油生態地圖': '中油生態保育資料庫',
+}
 
 # 2.2 衍生欄位的來源
 PORTAL_PARTNER_API = os.getenv('PORTAL_PARTNER_API', 'https://tbiadata.tw/api/partner-info')
@@ -112,19 +121,8 @@ def v2_schema_fields():
     return _schema_fields
 
 
-_source_database_map = None
-
-
 def source_database_map():
-    global _source_database_map
-    if _source_database_map is None:
-        try:
-            with open(SOURCE_DATABASE_MAP_PATH, encoding='utf-8') as f:
-                _source_database_map = json.load(f)
-            print(f'[export] 來源資料庫名稱對照 {len(_source_database_map)} 筆（{SOURCE_DATABASE_MAP_PATH}）')
-        except FileNotFoundError:
-            _source_database_map = {}
-    return _source_database_map
+    return SOURCE_DATABASE_MAP
 
 
 # ---------------------------------------------------------------------------
