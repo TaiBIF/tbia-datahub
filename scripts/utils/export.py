@@ -84,8 +84,14 @@ TYPE_STATUS_MAP = {
 }
 
 # 來源資料庫名稱對照（舊 rightsHolder → 新 sourceDatabase，見交接文件 2.1）
-# 各單位名稱定案前為空；檔案格式 {"舊名稱": "新名稱", ...}
-SOURCE_DATABASE_MAP_PATH = os.getenv('SOURCE_DATABASE_MAP', '/portal/bucket/v2/source_database_map.json')
+# 過渡期使用（P2-3 改由 Partner dbname 取得後移除）；格式 {"舊名稱": "新名稱", ...}，只列有改名的
+SOURCE_DATABASE_MAP_PATH = os.getenv('SOURCE_DATABASE_MAP', str(Path(__file__).with_name('source_database_map.json')))
+
+# 2.2 衍生欄位的來源
+PORTAL_PARTNER_API = os.getenv('PORTAL_PARTNER_API', 'https://tbiadata.tw/api/partner-info')
+PARTNER_CACHE_PATH = os.getenv('PARTNER_CACHE', '/bucket/v2/partner_info.json')   # API 連不上時用上次的結果
+COUNTY_SHP_PATH = '/bucket/TW_TOWN/TOWN_MOI_1131028.shp'                         # 與 geography.py 同一份
+TAXA_VERSION = os.getenv('TAXA_VERSION')   # taxa 來源檔名日期 YYYYMMDD，例 20261030（D8）
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +170,144 @@ def fetch_taxon_df(taxon_ids, solr_url=TAXA_SELECT_URL, chunk_size=500, use_cach
 
 
 # ---------------------------------------------------------------------------
+# 衍生欄位的來源（2.2）：每個程序只載入一次
+# ---------------------------------------------------------------------------
+
+_partner_id_map = None      # group → tbiaPartnerID
+_county_code_map = None     # 縣市名稱 → 內政部 COUNTYCODE（D24）
+_dataset_url_map = None     # tbiaDatasetID → datasetURL（D9 第一階段）
+_unmapped_county = set()
+
+
+def partner_id_map():
+    """portal /api/partner-info：group → tbiaPartnerID（GBIF 為 null，D2）。連不上時用上次快取。"""
+    global _partner_id_map
+    if _partner_id_map is None:
+        try:
+            r = requests.get(PORTAL_PARTNER_API, timeout=30)
+            r.raise_for_status()
+            data = r.json()['data']
+            try:
+                os.makedirs(os.path.dirname(PARTNER_CACHE_PATH), exist_ok=True)
+                with open(PARTNER_CACHE_PATH, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False)
+            except OSError as e:
+                print(f'[export] 無法寫入 partner 快取 {PARTNER_CACHE_PATH}: {e}')
+        except Exception as e:
+            if not os.path.exists(PARTNER_CACHE_PATH):
+                raise RuntimeError(f'[export] 讀不到 {PORTAL_PARTNER_API}，也沒有快取：{e}')
+            print(f'[export] 讀不到 {PORTAL_PARTNER_API}（{e}），改用快取 {PARTNER_CACHE_PATH}')
+            with open(PARTNER_CACHE_PATH, encoding='utf-8') as f:
+                data = json.load(f)
+        _partner_id_map = {p['group']: p['tbiaPartnerID'] for p in data if p.get('group') and p.get('tbiaPartnerID')}
+    return _partner_id_map
+
+
+def county_code_map():
+    global _county_code_map
+    if _county_code_map is None:
+        import geopandas as gpd
+        t = gpd.read_file(COUNTY_SHP_PATH, ignore_geometry=True)[['COUNTYNAME', 'COUNTYCODE']].drop_duplicates()
+        _county_code_map = dict(zip(t.COUNTYNAME, t.COUNTYCODE.astype(str)))
+    return _county_code_map
+
+
+def dataset_url_map():
+    global _dataset_url_map
+    if _dataset_url_map is None:
+        import psycopg2
+        from app import db_settings
+        conn = psycopg2.connect(**db_settings)
+        try:
+            with conn.cursor() as cur:
+                # 同一個 tbiaDatasetID 若有多列，以未 deprecated 的為準
+                cur.execute('''SELECT "tbiaDatasetID", "datasetURL" FROM dataset
+                               WHERE "tbiaDatasetID" <> '' AND "datasetURL" <> ''
+                               ORDER BY deprecated DESC''')
+                _dataset_url_map = {k: v for k, v in cur.fetchall()}
+        finally:
+            conn.close()
+    return _dataset_url_map
+
+
+def name_according_to():
+    if not TAXA_VERSION or not re.fullmatch(r'\d{8}', TAXA_VERSION):
+        raise RuntimeError('需要設定 TAXA_VERSION（taxa 來源檔名日期，例 20261030）')
+    return f'臺灣物種名錄 {TAXA_VERSION}版本'
+
+
+def set_taxa_version(v):
+    global TAXA_VERSION
+    TAXA_VERSION = v
+
+
+def load_derived_sources():
+    """平行轉檔前先在主程序載入，fork 出的子程序直接沿用。"""
+    name_according_to()
+    print(f'[export] partner {len(partner_id_map())} 個 group、縣市代碼 {len(county_code_map())} 筆、'
+          f'dataset URL {len(dataset_url_map()):,} 筆、nameAccordingTo={name_according_to()}')
+
+
+# eventTime（D6）：原始 eventDate 有時間才填，照原樣（含 00:00:00）；區間取第一個時間（起始）
+_TIME_RE = re.compile(r'(?:T|\s)(上午|下午|AM|PM)?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?\s*(AM|PM)?\s*(Z|[+-]\d{2}:?\d{2})?',
+                      re.IGNORECASE)
+
+
+def event_time(value):
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return None
+    m = _TIME_RE.search(str(value))   # 不可用 / 切區間：2020/01/01 這類日期本身就有 /
+    if not m:
+        return None
+    ampm = (m.group(1) or m.group(5) or '').upper()
+    h, mi, s, tz = int(m.group(2)), m.group(3), m.group(4), m.group(6) or ''
+    if ampm in ('下午', 'PM') and h < 12:
+        h += 12
+    elif ampm in ('上午', 'AM') and h == 12:
+        h = 0
+    if h > 23 or int(mi) > 59 or (s and int(s) > 59):
+        return None
+    return f'{h:02d}:{mi}' + (f':{s}' if s else '') + tz
+
+
+def add_derived(out):
+    """2.2 衍生欄位：tbiaPartnerID、geodeticDatum、countyCode / rawCountyCode、countryCode、eventTime、
+    resourceCitationIdentifier、nameAccordingTo（scientificNameID 已在 taxa 改名處理，D15）。"""
+    if 'group' in out.columns:
+        out['tbiaPartnerID'] = out['group'].map(partner_id_map())          # GBIF 不在對照中 → 空（D2）
+
+    if {'decimalLatitude', 'decimalLongitude'} <= set(out.columns):
+        has_coor = out['decimalLatitude'].notna() & out['decimalLongitude'].notna()
+        out['geodeticDatum'] = np.where(has_coor, 'EPSG:4326', None)       # D14
+
+    codes = county_code_map()
+    for src, dst in (('county', 'countyCode'), ('rawCounty', 'rawCountyCode')):
+        if src in out.columns:
+            out[dst] = out[src].map(codes)
+            miss = set(out.loc[out[src].notna() & out[dst].isna(), src].unique()) - _unmapped_county
+            if miss:
+                _unmapped_county.update(miss)
+                print(f'[to_v2] 對不到縣市代碼的名稱：{sorted(miss)}')
+
+    # D13：TBIA 推算在台灣範圍內（陸地或海域縣市有值）→ TW；records 沒有保存來源 countryCode，其餘留空
+    in_tw = pd.Series(False, index=out.index)
+    for c in ('county', 'rawCounty'):
+        if c in out.columns:
+            in_tw |= out[c].notna()
+    out['countryCode'] = np.where(in_tw, 'TW', None)
+
+    if 'verbatimEventDate' in out.columns:
+        out['eventTime'] = out['verbatimEventDate'].map(event_time)
+
+    if 'tbiaDatasetID' in out.columns:
+        out['resourceCitationIdentifier'] = out['tbiaDatasetID'].map(dataset_url_map())
+
+    out['nameAccordingTo'] = np.where(out['taxonID'].notna(), name_according_to(), None) \
+        if 'taxonID' in out.columns else None
+    return out
+
+
+# ---------------------------------------------------------------------------
 # 值的轉換
 # ---------------------------------------------------------------------------
 
@@ -210,8 +354,8 @@ def _to_int(series):
     return num.where(num == np.floor(num)).astype('Int64')
 
 
-def to_v2(df, taxon_df=None):
-    """records df（PG 欄位名，或 v1 CSV）＋ taxa df（taxa 欄位名）→ v2 欄位 df。"""
+def to_v2(df, taxon_df=None, derive=True):
+    """records df（PG 欄位名，或 v1 CSV）＋ taxa df（taxa 欄位名）→ v2 欄位 df。derive=False 不產生 2.2 衍生欄位。"""
     out = df.drop(columns=[c for c in RECORDS_DROP if c in df.columns])
     out = out.drop(columns=['id'], errors='ignore') if 'tbiaID' in out.columns else out  # PG 流水號
     out = out.rename(columns=RECORDS_RENAME)
@@ -252,6 +396,8 @@ def to_v2(df, taxon_df=None):
         # TODO 2.3：改成暫行文字，目前仍輸出 True / False
     if 'sourceDatabase' in out.columns and source_database_map():
         out['sourceDatabase'] = out['sourceDatabase'].replace(source_database_map())
+    if derive:
+        out = add_derived(out)
 
     # 只輸出 v2 schema 有的欄位，避免 schemaless 自動建出多值欄位
     allowed = v2_schema_fields()

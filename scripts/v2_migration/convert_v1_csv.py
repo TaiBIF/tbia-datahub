@@ -8,7 +8,7 @@ v1 CSV → v2 CSV（一次性工具，上線後刪除這個目錄）
   docker compose -f docker-compose.v2.yml exec app-v2 python -m scripts.v2_migration.convert_v1_csv --list
 
   docker compose -f docker-compose.v2.yml exec -d app-v2 sh -c \
-    'python -u -m scripts.v2_migration.convert_v1_csv --group nmns --overwrite --post --replace --compare 200 \
+    'python -u -m scripts.v2_migration.convert_v1_csv --group nmns --taxa-version 20261030 --overwrite --post --replace --compare 200 \
      > /tmp/export/nmns.log 2>&1'
 
   # 同 group 多個資料庫：--pattern 指定檔名（nps_0_* 國家公園、nps_1_* 濕地），--rights-holder 讓比對只看該資料庫
@@ -29,7 +29,7 @@ import pandas as pd
 import requests
 
 from scripts.utils.export import (RECORDS_RENAME, TAXA_RENAME, SOLR_URL, TAXA_SELECT_URL,
-                                  source_database_map, to_v2)
+                                  load_derived_sources, set_taxa_version, source_database_map, to_v2)
 
 PROTECTED_CORES = ('tbia_records', 'tbia_records_build', 'tbia_records_v1')
 
@@ -198,6 +198,7 @@ def main(argv=None):
     p.add_argument('--group')
     p.add_argument('--pattern', help="檔名樣式，預設 '<group>_*.csv'")
     p.add_argument('--rights-holder', help='比對時只看這個資料庫（舊名稱）')
+    p.add_argument('--taxa-version', help='taxa 來源檔名日期 YYYYMMDD（nameAccordingTo，D8）；未給則用環境變數 TAXA_VERSION')
     p.add_argument('--workers', type=int, default=4)
     p.add_argument('--overwrite', action='store_true', help='先刪除 out 中同樣式的舊檔')
     p.add_argument('--post', action='store_true', help='轉完匯入 --core')
@@ -230,6 +231,10 @@ def main(argv=None):
             sys.exit(f'{a.out} 已有 {len(old)} 個 {pattern}，加 --overwrite 先刪除')
         for f in old:
             os.remove(f)
+
+    if a.taxa_version:
+        set_taxa_version(a.taxa_version)
+    load_derived_sources()   # 主程序先載入，子程序 fork 後沿用
 
     t0 = time.time()
     print(f'[convert] {len(files)} 個檔案（{a.src}/{pattern}）→ {a.out}，workers={a.workers}')
