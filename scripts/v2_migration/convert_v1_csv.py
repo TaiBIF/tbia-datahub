@@ -118,7 +118,10 @@ V1_TO_V2 = {**{k: v for k, v in RECORDS_RENAME.items() if k not in ('tbiaID', 'o
 V1_SKIP = {'organismQuantity', 'originalVernacularName'}   # v1 原始數量字串 v2 不存；originalVernacularName v1 為空
 # 規則本來就會不同的欄位：只計數，不列為異常
 EXPECTED_DIFF = {'typeStatus', 'verbatimLatitude', 'verbatimLongitude', 'dataGeneralizations',
-                 'scientificNameID', 'sourceDatabase', 'coordinatePrecision', 'coordinateUncertaintyInMeters'}
+                 'scientificNameID', 'sourceDatabase', 'coordinatePrecision', 'coordinateUncertaintyInMeters',
+                 # 2.3：v1 標了模糊化但座標沒動的紀錄，v2 清空 raw*（export.RAW_COLS）
+                 'rawDecimalLatitude', 'rawDecimalLongitude', 'rawVerbatimLatitude', 'rawVerbatimLongitude',
+                 'rawCounty', 'rawMunicipality', 'raw_location_rpt'}
 
 
 def _norm(v):
