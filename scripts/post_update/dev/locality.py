@@ -37,7 +37,8 @@ locality.to_csv(updating_csv)
 print(f'已匯出 {updating_csv}（{len(locality)} 筆，來源 {RECORDS_CORE}）')
 
 if args.dry_run:
-    raise SystemExit('--dry-run：未寫入 locality core')
+    print('--dry-run：未寫入 locality core')
+    raise SystemExit(0)
 
 # 刪除 Solr locality core 並從 CSV 重匯
 solr_reimport_from_csv(LOCALITY_CORE, updating_csv)
