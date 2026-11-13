@@ -7,7 +7,12 @@ from numpy import nan
 import concurrent.futures
 from scripts.utils.common import to_none_dict
 from scripts.utils.progress import timed
+from scripts.utils.export import SOURCE_DATABASE_MAP
 import time
+
+# 查既有 tbiaID 用的 records core（v2，3.2）：開發期在 v2 的 .env 設 RECORDS_CORE=tbia_records_new
+SOLR_URL = os.getenv('SOLR_URL', 'http://solr:8983/solr')
+RECORDS_SELECT_URL = f"{SOLR_URL}/{os.getenv('RECORDS_CORE', 'tbia_records')}/select"
 
 class DedupTracker:
     """
@@ -356,6 +361,9 @@ def get_existed_records_optimized(occ_ids, rights_holder, get_reference=False, c
     if get_reference:
         get_fields.append('references')
 
+    # update 腳本傳入的是 PG 的舊名稱（第一階段 D17），v2 core 存的是新名稱
+    source_database = SOURCE_DATABASE_MAP.get(rights_holder, rights_holder)
+
     def query_batch(ids, field_name):
         if not ids:
             return []
@@ -363,7 +371,7 @@ def get_existed_records_optimized(occ_ids, rights_holder, get_reference=False, c
             "query": "*:*",
             "offset": 0,
             "filter": [
-                f'rightsHolder:"{rights_holder}"',
+                f'sourceDatabase:"{source_database}"',
                 f'{{!terms f={field_name} cache=false}}{",".join(ids)}'
             ],
             "limit": len(ids) * 2,
@@ -373,7 +381,7 @@ def get_existed_records_optimized(occ_ids, rights_holder, get_reference=False, c
         for attempt in range(1, max_retries + 1):
             try:
                 resp = requests.post(
-                    'http://solr:8983/solr/tbia_records/select',
+                    RECORDS_SELECT_URL,
                     data=json.dumps(query),
                     headers={'content-type': "application/json"},
                     timeout=30
@@ -388,7 +396,7 @@ def get_existed_records_optimized(occ_ids, rights_holder, get_reference=False, c
 
         raise RuntimeError(
             f"Solr query 重試 {max_retries} 次仍失敗（field={field_name}, "
-            f"rightsHolder={rights_holder}, ids={len(ids)} 筆）"
+            f"sourceDatabase={source_database}, ids={len(ids)} 筆）"
         ) from last_error
 
     tasks = (
