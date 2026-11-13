@@ -12,15 +12,16 @@ import pandas as pd
 import requests
 from tqdm import tqdm
 
-SOLR = 'http://solr:8983/solr'
+from scripts.post_update.solr_helper import SOLR_BASE as SOLR, RECORDS_CORE, TW_GRID_CORE
 BATCH_GRIDS = 200  # 每累積幾個 grid 就 post 一次
 
+# 鍵為 v2 sourceDatabase 名稱（11/12 定案）；數字編號沿用，文件 id 不變。P2-3 改由 Partner.info[].dbname 產生
 rights_holder_group = {
     'GBIF': 'gbif',
-    '中央研究院生物多樣性中心動物標本館': 'asiz',
-    '中央研究院生物多樣性中心植物標本資料庫': 'hast',
+    '中央研究院動物標本館 ASIZ': 'asiz',
+    '中央研究院植物標本館 HAST': 'hast',
     '台灣生物多樣性網絡 TBN': 'tbri',
-    '國立臺灣博物館典藏': 'ntm',
+    '國立臺灣博物館生物典藏資料': 'ntm',
     '林業試驗所昆蟲標本館': 'fact',
     '林業試驗所植物標本資料庫': 'taif',
     '河川環境資料庫': 'wra',
@@ -29,22 +30,22 @@ rights_holder_group = {
     '臺灣國家公園生物多樣性資料庫': 'nps',
     '臺灣生物多樣性資訊機構 TaiBIF': 'brcas',
     '海洋保育資料倉儲系統': 'oca',
-    '科博典藏 (NMNS Collection)': 'nmns',
+    '科博典藏': 'nmns',
     '臺灣魚類資料庫': 'ascdc',
-    '國家海洋資料庫及共享平台': 'namr',
+    '國家海洋資料庫及共享平臺': 'namr',
     '集水區友善環境生態資料庫': 'ardswc',
-    '中油生態地圖': 'cpc',
+    '中油生態保育資料庫': 'cpc',
     '作物種原資訊系統': 'npgrc',
-    '國立海洋生物博物館生物典藏管理系統': 'nmmba',
-    '愛自然-臺灣(iNaturalist Taiwan)': 'ntuforestry',
+    '生物典藏管理系統': 'nmmba',
+    '愛自然-臺灣': 'ntuforestry',
 }
 
 rights_holder_map = {
     'GBIF': '1',
-    '中央研究院生物多樣性中心動物標本館': '2',
-    '中央研究院生物多樣性中心植物標本資料庫': '3',
+    '中央研究院動物標本館 ASIZ': '2',
+    '中央研究院植物標本館 HAST': '3',
     '台灣生物多樣性網絡 TBN': '4',
-    '國立臺灣博物館典藏': '5',
+    '國立臺灣博物館生物典藏資料': '5',
     '林業試驗所昆蟲標本館': '6',
     '林業試驗所植物標本資料庫': '7',
     '河川環境資料庫': '8',
@@ -53,14 +54,14 @@ rights_holder_map = {
     '臺灣國家公園生物多樣性資料庫': '11',
     '臺灣生物多樣性資訊機構 TaiBIF': '12',
     '海洋保育資料倉儲系統': '13',
-    '科博典藏 (NMNS Collection)': '14',
+    '科博典藏': '14',
     '臺灣魚類資料庫': '15',
-    '國家海洋資料庫及共享平台': '16',
+    '國家海洋資料庫及共享平臺': '16',
     '集水區友善環境生態資料庫': '17',
-    '中油生態地圖': '18',
+    '中油生態保育資料庫': '18',
     '作物種原資訊系統': '19',
-    '國立海洋生物博物館生物典藏管理系統': '20',
-    '愛自然-臺灣(iNaturalist Taiwan)': '21',
+    '生物典藏管理系統': '20',
+    '愛自然-臺灣': '21',
 }
 
 taxon_group_map_e = {
@@ -91,14 +92,14 @@ RANK_FILTER = 'taxonRank:(species OR subspecies OR nothosubspecies OR variety OR
 
 
 def fetch_counts(field):
-    """一次 pivot query 撈回所有 grid 的計數，只存非 0 者：{(grid, bioGroup, rightsHolder): count}"""
+    """一次 pivot query 撈回所有 grid 的計數，只存非 0 者：{(grid, taxonGroup, sourceDatabase): count}"""
     query = {
         "query": "*:*",
         "limit": 0,
-        "filter": ['-standardOrganismQuantity:0', RANK_FILTER, 'is_in_taiwan:true'],
+        "filter": ['-organismQuantity:0', RANK_FILTER, 'is_in_taiwan:true'],
     }
-    pivot_key = f'{field},bioGroup,rightsHolder'
-    url = (f'{SOLR}/tbia_records/select?facet.pivot={pivot_key}'
+    pivot_key = f'{field},taxonGroup,sourceDatabase'
+    url = (f'{SOLR}/{RECORDS_CORE}/select?facet.pivot={pivot_key}'
            '&facet.limit=-1&facet.mincount=1&facet=true')
     resp = requests.post(url, data=json.dumps(query),
                          headers={'content-type': 'application/json'}).json()
@@ -117,7 +118,7 @@ def post_docs(docs):
     """把一批文件以固定 id upsert 進 Solr（相同 id 覆蓋）"""
     if not docs:
         return
-    resp = requests.post(f'{SOLR}/tw_grid/update?commit=true',
+    resp = requests.post(f'{SOLR}/{TW_GRID_CORE}/update?commit=true',
                          data=json.dumps(docs),
                          headers={'content-type': 'application/json'})
     resp.raise_for_status()
@@ -135,8 +136,8 @@ def sync(field, is_blur, grids):
             for holder, holder_id in rights_holder_map.items():
                 batch.append({
                     'id': f'{grid}_{bio_id}_{holder_id}{suffix}',
-                    'bioGroup': bio,
-                    'rightsHolder': holder,
+                    'taxonGroup': bio,
+                    'sourceDatabase': holder,
                     'total_count': counts.get((grid, bio, holder), 0),
                     'grid_5': grid,
                     'grid_x': grid_x,
@@ -158,7 +159,7 @@ def main():
     grids = pd.read_csv(args.grid_csv).grid_5.unique()  # 3756
     sync('grid_5', False, grids)
     sync('grid_5_blurred', True, grids)
-    print('Solr 更新完成')
+    print(f'Solr 更新完成（{RECORDS_CORE} → {TW_GRID_CORE}）')
 
 
 if __name__ == '__main__':

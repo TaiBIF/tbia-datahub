@@ -1,6 +1,14 @@
+import os
+
 import requests
 
 SOLR_BASE = 'http://solr:8983/solr'
+
+# core 名稱（v2 2.4）：預設為正式名稱；開發期在 v2 的 .env 設成 *_new，避免覆蓋測試站 v1
+RECORDS_CORE = os.getenv('RECORDS_CORE', 'tbia_records')
+TW_GRID_CORE = os.getenv('TW_GRID_CORE', 'tw_grid')
+LOCALITY_CORE = os.getenv('LOCALITY_CORE', 'locality')
+DATASET_CORE = os.getenv('DATASET_CORE', 'dataset')
 
 
 def solr_reimport_from_csv(core, csv_path, base=SOLR_BASE):

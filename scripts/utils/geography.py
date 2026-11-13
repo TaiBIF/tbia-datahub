@@ -272,8 +272,9 @@ def process_geo_batch(df, is_full_hidden=False, skip_blur=False, infer_generaliz
 
     if not skip_blur:
         if infer_generalizations is True:
+            # NaN 是 truthy，不先排除會把沒有精度（未模糊化）的紀錄標成 True
             df['dataGeneralizations'] = df['coordinatePrecision'].apply(
-                lambda x: True if x else False
+                lambda x: bool(pd.notna(x) and x)
             )
         elif infer_generalizations is False:
             df['dataGeneralizations'] = False
