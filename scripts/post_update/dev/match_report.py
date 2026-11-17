@@ -40,6 +40,7 @@ from pathlib import Path
 
 from sqlalchemy import text, bindparam
 from app import engine  # datahub 既有的 DB 連線（同 tbn.py）
+from scripts.utils.match import RANK_PREFIX_RE   # 與比對端共用「學名前誤帶階層字樣」的判斷
 
 import matplotlib
 matplotlib.use("Agg")
@@ -64,7 +65,10 @@ CATEGORY_META = {
     "nonstandard": ("unmatched", "非正規學名（sp./cf. 等）",     "partner"),
     "noname":      ("unmatched", "無學名（資料缺漏）",           "partner"),
     "placeholder": ("unmatched", "暫定名（GTDB 等資料庫編號）",  "info"),
+    "invalid":     ("unmatched", "非學名（代號、unknown 等）",   "partner"),
     "vetoed":      ("unmatched", "疑應可對到（比對保守否決）",   "review"),
+    "rank":        ("unmatched", "階層（rank）與學名不符",       "partner"),
+    "conflict":    ("unmatched", "上階層與 TaiCOL 不符",         "both"),
     "none":        ("unmatched", "TaiCOL 尚未收錄",              "ours"),
 }
 
@@ -75,18 +79,32 @@ CATEGORY_NOTE = {
                    "建議增加上階層資訊（如界、綱、目、科）以利比對。",
     "nonstandard": "學名含 sp.、cf. 等開放命名標記，且未找到可對應的名稱；"
                    "請確認標記前的屬名／科名是否正確，若已鑑定到種，請更新學名。",
+    "rank":        "TaiCOL 有收錄此學名，但階層與來源的 sourceTaxonRank 不一致"
+                   "（如三名法卻填「種」、雙名法卻填「科」），請確認階層欄位。",
+    "conflict":    "TaiCOL 有同名學名，但上階層（界／綱／目／科）與來源不符。"
+                   "請確認上階層是否正確；若確認無誤，可能是 TaiCOL 尚未收錄的同名異物。",
+    "placeholder": "此為 BOLD BIN 或 GTDB 等資料庫編號，非正式學名，無法對應 TaiCOL；"
+                   "若已鑑定，請提供學名。",
+    "invalid":     "學名欄位為代號、數字，或 unknown／未發現等字樣，並非學名。"
+                   "請確認是否為欄位錯位；若已鑑定，請填入學名。",
 }
 
-# 夥伴可修/需知的未對到類別（none→TaiCOL、vetoed→內部檢討、noname/placeholder 僅計數不列名）
-PARTNER_CATS = {"fuzzy", "multiple", "nonstandard"}
+# 夥伴可修/需知的未對到類別（none→TaiCOL、vetoed→內部檢討、noname 僅計數不列名、另產逐筆 zip）
+PARTNER_CATS = {"fuzzy", "multiple", "nonstandard", "rank", "conflict", "placeholder", "invalid"}
 
 _STAGES = ",".join(f"stage_{i}" for i in range(1, 9))
 # 開放命名標記：句點可有可無，但須獨立成詞（避免誤判 sp019039055、species 等）
 _NONSTD_RE = r'(^|[[:space:]])(sp|spp|cf|aff|indet)\.?([[:space:]]|$)'
 # 開放命名中「只鑑定到前一個名稱」的標記（cf./aff. 為種階層的不確定，不包含在內）
 _OPEN_RANK_RE = r'(^|[[:space:]])(sp|spp|indet)\.?([[:space:]]|$)'
-# GTDB 等暫定名：sp 後接 6 位以上數字
-_PLACEHOLDER_RE = r'[[:space:]]sp[0-9]{6,}'
+# 暫定名：GTDB 等 sp 後接 6 位以上數字，或 BOLD BIN（BOLD:XXX0000）
+_PLACEHOLDER_RE = r'[[:space:]]sp[0-9]{6,}|^BOLD:'
+# 非學名：純數字／符號（6、18）、單一字母（X）、unknown／unidentified、中文的未發現等字樣。
+# 多為欄位錯位或代號，請原單位修正，不歸給 TaiCOL。（以 ~* 比對，不分大小寫）
+_INVALID_RE = (r'^[0-9[:space:][:punct:]]+$'
+               r'|^[A-Za-z]$'          # 只限拉丁字母，避免把「雞」這類單字中文名誤判
+               r'|(^|[^[:alpha:]])(unknown|unidentified)'
+               r'|未發現|無法辨認|鑑定中|未鑑定|未知種')
 
 # 每筆紀錄的「學名」：依比對流程順序 學名(stage 1) → 中文名(stage 3) → 原始名稱(stage 5)，
 # 取第一個非空值（皆空為 NULL）
@@ -110,8 +128,11 @@ COALESCE(NULLIF(btrim(r."sourceScientificName"), ''),
 # 品質以「來源自己的階層」為基準：match_higher_taxon=True 才算較來源退階；
 # 但 sp./spp./indet. 以屬名（stage 4）對到時，對到的即為來源鑑定的階層，算 atrank。
 #   （2026-10 起比對端開放命名單名已不走 stage 4；此條保留給尚未重新比對的舊 match_log）
-# 未對到時，stage_1~8 多個 issue code 並存的優先序：vetoed > fuzzy > multiple > nonstandard > none
-#   比對端已給出具體原因者優先，沒有其他原因時才歸為非正規學名
+# 未對到時，先看名稱本身：無學名 > 非學名（代號、unknown）> 暫定名；
+# 再看 stage_1~8 的 issue code，多個並存的優先序：
+#   vetoed > rank > conflict > fuzzy > multiple > nonstandard > none
+#   比對端已給出具體原因者優先；rank / conflict 是來源自己的名稱有候選但被淘汰，
+#   比後段（如屬名 stage 4）的 multiple 更接近根本原因。沒有其他原因時才歸為非正規學名
 # （作用在已算好 name 欄的子查詢上）
 CATEGORY_CASE = f"""
 CASE
@@ -125,8 +146,11 @@ CASE
   ELSE
     CASE
       WHEN name IS NULL                    THEN 'noname'
+      WHEN name ~* '{_INVALID_RE}'         THEN 'invalid'
       WHEN name ~  '{_PLACEHOLDER_RE}'     THEN 'placeholder'
       WHEN 'vetoed'   IN ({_STAGES}) THEN 'vetoed'
+      WHEN 'rank'     IN ({_STAGES}) THEN 'rank'
+      WHEN 'conflict' IN ({_STAGES}) THEN 'conflict'
       WHEN 'fuzzy'    IN ({_STAGES}) THEN 'fuzzy'
       WHEN 'multiple' IN ({_STAGES}) THEN 'multiple'
       WHEN name ~* '{_NONSTD_RE}'          THEN 'nonstandard'
@@ -312,7 +336,7 @@ def _solr_lookup(field, values, fl, batch=100):
 
 # ── 格式判斷（與 SQL 的 regex 一致）────────────────────────────
 _NONSTD_PY = re.compile(r'(^|\s)(sp|spp|cf|aff|indet)\.?(\s|$)', re.IGNORECASE)
-_PLACEHOLDER_PY = re.compile(r'\ssp\d{6,}')
+_PLACEHOLDER_PY = re.compile(r'\ssp\d{6,}|^BOLD:')
 _CJK = re.compile(r'[\u4e00-\u9fff]')
 # 作者名/年份：括號、四位數年份、&、或結尾為縮寫（如 "Kuk."、"L."）
 _AUTHOR = re.compile(r'\(|\b\d{4}\b|&|\s[A-Z][A-Za-z\-]*\.\s*$')
@@ -337,6 +361,8 @@ def _format_hints(name, s):
         if not any(s.get(k) for k in ("fam", "ord", "cls", "kin")):
             hints.append("無上階層資訊")
         return "；".join(hints)
+    if RANK_PREFIX_RE.match(name):
+        hints.append("學名含階層字樣（如 Family）")
     if _AUTHOR.search(name):
         hints.append("學名含作者／年份")
     if _is_hybrid(name):

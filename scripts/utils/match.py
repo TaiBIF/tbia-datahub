@@ -47,7 +47,9 @@ match_issue_map = {
     2: 'none',
     3: 'fuzzy',
     4: 'multiple',
-    5: 'vetoed'
+    5: 'vetoed',
+    6: 'rank',      # 有候選,但 rank 與來源 sourceTaxonRank 不符而被淘汰
+    7: 'conflict',  # 有候選,但上階層與來源不符而被淘汰(fallback 也未放行)
 }
 
 # TODO rank map待新增47之後的
@@ -103,6 +105,34 @@ BELOW_SPECIES_RANKS = set(
     _rank_df.loc[(_rank_df['order'] > _species_order) &
                  (~_rank_df['key'].isin(_NOT_BELOW_SPECIES)), 'key']
 )
+
+
+# 學名前誤帶階層字樣(如 "Family Cicadellidae"、"Order Acari"),比對前去除。
+# 階層由 TaiCOL 階層表動態取「種以上」(order < species)的 key 與英文名,
+# 只在其後剩「單一個首字大寫的學名」時才去除,避免誤傷
+def _build_rank_prefix_re(rank_df):
+    words = set()
+    for _, r in rank_df[rank_df['order'] < _species_order].iterrows():
+        cands = [r['key']]
+        try:
+            cands.append(json.loads(r['display']).get('en-us', ''))
+        except Exception:
+            pass
+        for c in cands:
+            c = _canon_rank_str(c)          # 小寫、- _ 轉空格
+            if c:
+                words.add(c)
+    # 長的放前面;字內空格允許寫成空格、- 或 _ 或連寫(super family / super-family / superfamily)
+    alt = '|'.join(re.escape(w).replace(r'\ ', r'[\s_-]?')
+                   for w in sorted(words, key=len, reverse=True))
+    return re.compile(rf'^(?i:{alt})\s*[:.]?\s+(?=[A-Z][a-z]+\s*$)')
+
+RANK_PREFIX_RE = _build_rank_prefix_re(_rank_df)
+
+def strip_rank_prefix(name):
+    if not isinstance(name, str):
+        return name
+    return RANK_PREFIX_RE.sub('', name.strip())
 
 def normalize_rank(v):
     """標準化 rank → 標準 key;無法對應或空值回 None"""
@@ -546,6 +576,9 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
         # 清理 HTML tags
         no_taxon['now_matching_name'] = no_taxon['now_matching_name'].apply(clean_html_tags)
 
+        # 去除學名前的階層字樣(Family Xxx → Xxx);需在 transform_func 前,stage 4 才不會取到 "Family" 當屬名
+        no_taxon['now_matching_name'] = no_taxon['now_matching_name'].apply(strip_rank_prefix)
+
         # 應用轉換函數（如果有）
         if transform_func:
             no_taxon['now_matching_name'] = transform_func(no_taxon)
@@ -729,6 +762,11 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
             elif veto_reason == 'vetoed':
                 # 有候選但被單名 COL 否決(TaiCOL 候選疑似錯誤)→ 非「未收錄」
                 sci_names.loc[sci_names.sci_index == sci_idx, f'stage_{stage_num}'] = 5  # vetoed
+            elif veto_reason in ('rank', 'conflict') and not is_parent:
+                # 有候選但因 rank/上階層與來源不符被淘汰 → 非「未收錄」,請來源確認欄位。
+                # 上階 stage(4、6~8)不標:那是代查上階,同名衝突不代表來源填錯
+                sci_names.loc[sci_names.sci_index == sci_idx, f'stage_{stage_num}'] = \
+                    6 if veto_reason == 'rank' else 7
             elif len(results_dict) > 1:
                 # 有多個結果但階層不匹配
                 sci_names.loc[sci_names.sci_index == sci_idx, f'stage_{stage_num}'] = 4  # multiple
@@ -770,9 +808,21 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
         unverifiable = []   # (a) 候選無任何可比較層
         conflicting = []    # (b) 有可比較層但全不符
         vetoed = False      # 曾因單名 COL 否決主動否決候選
+        rank_rejected = False   # 曾有候選因 rank 與來源不符被淘汰
+
+        def _fail_reason():
+            """全數淘汰時的原因:vetoed > conflict(上階層不符)> rank > None"""
+            if vetoed:
+                return 'vetoed'
+            if conflicting:
+                return 'conflict'
+            if rank_rejected:
+                return 'rank'
+            return None
 
         for result in results_dict:
             if src_rank and not _rank_match(src_rank, normalize_rank(result.get('taxon_rank'))):
+                rank_rejected = True
                 continue
 
             comparable = [
@@ -819,9 +869,9 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
                 pool += conflicting
             pool = [p for p in pool if float(p.get('score') or 0) >= 1.0]
             if len(pool) != 1:
-                return [], ('vetoed' if vetoed else None)
+                return [], _fail_reason()
             if _col_single_exact(row.get('now_matching_name'), specific_rank) != 'single':
-                return [], ('vetoed' if vetoed else None)
+                return [], _fail_reason()
             pool[0]['_higher_partial'] = True   # 未經階層驗證,標記供稽核
             return pool, None
 
@@ -835,7 +885,8 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
                 matched = [m for m in matched if m.get('name_status') == 'not-accepted']
 
         if len(matched) != 1:
-            return [], ('vetoed' if vetoed else None)
+            # 0 個:全被 rank 淘汰時回 'rank';多個:交給後面標 multiple
+            return [], (None if matched else _fail_reason())
         # COL 有同名多筆、來源又無上階層可分辨 → 等同 multiple(來源補上階層即可解決),
         # 與「單名 COL 否決」(TaiCOL 候選疑似錯誤)區分
         if _col_is_ambiguous(row.get('now_matching_name'), specific_rank):
@@ -1065,8 +1116,9 @@ class OptimizedMatchLogProcessor:
         
         # match_log 的固定欄位類型（相對單純）
         timestamp_cols = ['modified', 'created']
-        numeric_cols = ['match_stage', 'stage_1', 'stage_2', 'stage_3', 'stage_4', 
-                       'stage_5', 'stage_6', 'stage_7', 'stage_8']
+        # stage_1~8 在 create_match_log_df 已轉成 'multiple' 等字串(DB 為文字欄位),
+        # 不可列為 numeric,否則 UPDATE 時會被寫成 NULL
+        numeric_cols = ['match_stage']
         boolean_cols = ['match_higher_taxon', 'match_higher_partial', 'is_matched']
         
         # 使用大批次處理
