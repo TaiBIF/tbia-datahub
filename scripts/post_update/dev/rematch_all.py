@@ -17,9 +17,16 @@ records 只會動到 taxonID、match_higher_taxon、modified 三個欄位。
 ⚠️ 比對程式有改時，執行前請先清空 /code/rematch_cache/，否則會沿用舊的比對結果。
 不會新增 update_version、不會刪除任何資料。
 除第 1 步有快取外，其他步驟重跑都是冪等的，中斷後直接重跑即可。
+
+用法（單位格式 {group}_{info_id}）：
+  python rematch_all.py                                 # 全部比對、全部更新
+  python rematch_all.py --only nps_0 nps_1              # 只比對、更新這些單位（換範圍要清快取）
+  python rematch_all.py --update-only nps_0 nps_1       # 全部比對（可沿用快取），只更新這些單位
 """
+import argparse
 import io
 import os
+import sys
 import glob
 import time
 import pandas as pd
@@ -67,17 +74,23 @@ HOLDERS = [
 # sci_cols 含 taxonID（來源會提供 TaiCOL taxonID）的單位
 SRC_TAXON_HOLDERS = {'集水區友善環境生態資料庫', '中油生態地圖', 'GBIF', '國立臺灣博物館典藏', '海洋保育資料倉儲系統',
                      '臺灣生物多樣性資訊機構 TaiBIF', '台灣生物多樣性網絡 TBN', '濕地環境資料庫', '河川環境資料庫'}
-ONLY = [   # 只跑部分單位時填 rights_holder；空 = 全部
-    # 2026-11 修正 stage 代碼遺失、新增 rank/conflict 代碼後，先重跑受影響的單位（不含 TBN）
-    '濕地環境資料庫',                          # nps_1：rank 填「科」
-    '臺灣國家公園生物多樣性資料庫',             # nps_0：三名法填「種」
-    '林業試驗所昆蟲標本館',                     # fact
-    '中央研究院生物多樣性中心植物標本資料庫',     # hast
-    '臺灣魚類資料庫',                          # ascdc
-    '國立臺灣博物館典藏',                       # ntm
-    '生態調查資料庫系統',                       # forest
-    # '臺灣生物多樣性資訊機構 TaiBIF',          # brcas：Family 前綴；資料量可接受再打開
-]
+# ── 執行範圍（命令列參數，格式 {group}_{info_id}，同 match_report 的 --unit）──
+#   --only         比對範圍；省略 = 全部。⚠️ 會改變 cfg 編號，換範圍時要清空 CACHE_DIR
+#   --update-only  第 3~5 步（更新 records/match_log、輸出 Solr CSV、重建 zip）只處理這些單位；
+#                  省略 = 同 --only。只改這個不影響 cfg 編號，比對快取（cfg_*.pkl）可沿用
+_ap = argparse.ArgumentParser(description='全資料庫重新比對學名')
+_ap.add_argument('--only', nargs='+', default=[], metavar='UNIT', help='比對範圍，如 nps_0 nps_1')
+_ap.add_argument('--update-only', nargs='+', default=[], metavar='UNIT', help='只更新這些單位')
+args, _ = _ap.parse_known_args()
+
+unit_of = lambda h: f'{h[1]}_{h[2]}'
+_unknown = set(args.only + args.update_only) - {unit_of(h) for h in HOLDERS}
+if _unknown:
+    sys.exit(f'HOLDERS 中沒有這些單位：{", ".join(sorted(_unknown))}')
+ONLY = [h[0] for h in HOLDERS if unit_of(h) in args.only]
+UPDATE_ONLY = [h[0] for h in HOLDERS if unit_of(h) in args.update_only]
+if UPDATE_ONLY and ONLY and set(UPDATE_ONLY) - set(ONLY):
+    sys.exit('--update-only 的單位必須包含在 --only 範圍內')
 
 # ── 參數 ──
 BATCH = 200000          # records / match_log 每批 commit 筆數
@@ -97,6 +110,8 @@ rec_match_cols = ['taxonID', 'match_higher_taxon']      # records 中屬於比�
 
 holders = [h for h in HOLDERS if not ONLY or h[0] in ONLY]
 holder_names = [h[0] for h in holders]
+update_holders = [h for h in holders if not UPDATE_ONLY or h[0] in UPDATE_ONLY]
+update_names = [h[0] for h in update_holders]
 # 比對欄位相同的單位共用一組（欄位「有沒有傳入」會影響比對邏輯，所以不能混在一起）
 cfg_ids, cfg_cols = {}, {}
 for _, _, _, cols in holders:
@@ -415,9 +430,9 @@ def export_all():
     raw = engine.raw_connection()
     try:
         cur = raw.cursor()
-        for rh, _, _, _ in holders:
+        for rh, _, _, _ in update_holders:
             tasks += [(rh, lo, hi) for lo, hi in holder_ranges(cur, rh, EXPORT_CHUNK)]
-        cur.execute('SELECT count(*) FROM records WHERE "rightsHolder" = ANY(%s)', (holder_names,))
+        cur.execute('SELECT count(*) FROM records WHERE "rightsHolder" = ANY(%s)', (update_names,))
         total = cur.fetchone()[0]
     finally:
         raw.close()
@@ -465,14 +480,14 @@ def main():
     run_sql(f'CREATE INDEX ON _rematch_names (cfg_id, "{SS}", "{SV}"); ANALYZE _rematch_names;')
 
     # 3. 更新 records + match_log
-    for rh, group, info_id, cols in holders:
+    for rh, group, info_id, cols in update_holders:
         update_holder(rh, group, cols)
 
     # 4. 全部輸出 Solr CSV
     export_all()
 
     # 5. match_log zip
-    for rh, group, info_id, cols in tqdm(holders, desc='重建 match_log zip'):
+    for rh, group, info_id, cols in tqdm(update_holders, desc='重建 match_log zip'):
         rebuild_match_log_zip(rh, group, info_id)
 
     # 收尾
