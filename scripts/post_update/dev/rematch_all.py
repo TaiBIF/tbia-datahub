@@ -210,7 +210,7 @@ def setup_tables():
             WHERE m.match_stage = 0 AND r."taxonID" IS NOT NULL AND r."rightsHolder" = ANY(%s)
               AND {not_deleted}
             ON CONFLICT DO NOTHING
-        ''', (holder_names,))
+        ''', (update_names,))     # 只有要更新的單位會用到 _rematch_skip（第 3 步）
         skipped = cur.rowcount
         # (B) 會提供 taxonID 的單位、沒有 match_log 可判斷來源 → 保守起見不重新比對
         cur.execute(f'''
@@ -219,7 +219,7 @@ def setup_tables():
             WHERE r."rightsHolder" = ANY(%s) AND r."taxonID" IS NOT NULL AND {not_deleted}
               AND NOT EXISTS (SELECT 1 FROM match_log m WHERE m."tbiaID" = r."tbiaID")
             ON CONFLICT DO NOTHING
-        ''', ([h for h in holder_names if h in SRC_TAXON_HOLDERS],))
+        ''', ([h for h in update_names if h in SRC_TAXON_HOLDERS],))
         skipped_no_ml = cur.rowcount
         raw.commit()
     finally:
