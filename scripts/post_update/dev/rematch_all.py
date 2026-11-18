@@ -43,33 +43,35 @@ from scripts.utils.export import fetch_taxon_df
 # ── 比對欄位 ──
 SS, SV, OV, SID = 'sourceScientificName', 'sourceVernacularName', 'originalVernacularName', 'scientificNameID'
 FAM, ORD, CLS, KIN = 'sourceFamily', 'sourceOrder', 'sourceClass', 'sourceKingdom'
-NAME_COLS = [SS, SV, OV, SID, FAM, ORD, CLS, KIN]
+RK = 'sourceTaxonRank'      # 比對時用於 rank 檢查（_rank_match），需與月更新一致
+NAME_COLS = [SS, SV, OV, SID, FAM, ORD, CLS, KIN, RK]
 
 # ── 各單位設定：取自 scripts/update/*.py 的 sci_cols ──
-# taxonID（來源提供，另外處理）與 sourceTaxonID（比對流程不使用）已排除
+# taxonID（來源提供，另外處理）與 sourceTaxonID（比對流程不使用）已排除；
+# 有 sourceTaxonRank 的單位須帶 RK，否則不會做 rank 檢查，結果會與月更新不同
 HOLDERS = [
     # (rights_holder, group, info_id, 比對欄位)
-    ('集水區友善環境生態資料庫',                'ardswc',      0, [SS, SV, FAM, ORD, CLS, KIN]),
+    ('集水區友善環境生態資料庫',                'ardswc',      0, [SS, SV, FAM, ORD, CLS, KIN, RK]),
     ('臺灣魚類資料庫',                          'ascdc',       0, [SS, SV]),
-    ('中央研究院生物多樣性中心動物標本館',        'asiz',        0, [SS, SV, FAM]),
-    ('中油生態地圖',                            'cpc',         0, [SV, SS, OV, CLS, ORD, FAM, KIN]),
-    ('林業試驗所昆蟲標本館',                     'fact',        0, [SS, SV]),
-    ('生態調查資料庫系統',                       'forest',      0, [SS, SV]),
-    ('GBIF',                                   'gbif',        0, [SV, SS, OV, CLS, ORD, FAM, KIN]),
-    ('中央研究院生物多樣性中心植物標本資料庫',     'hast',        0, [SS, SV, FAM, KIN]),
+    ('中央研究院生物多樣性中心動物標本館',        'asiz',        0, [SS, SV, FAM, RK]),
+    ('中油生態地圖',                            'cpc',         0, [SV, SS, OV, CLS, ORD, FAM, KIN, RK]),
+    ('林業試驗所昆蟲標本館',                     'fact',        0, [SS, SV, RK]),
+    ('生態調查資料庫系統',                       'forest',      0, [SS, SV, RK]),
+    ('GBIF',                                   'gbif',        0, [SV, SS, OV, CLS, ORD, FAM, KIN, RK]),
+    ('中央研究院生物多樣性中心植物標本資料庫',     'hast',        0, [SS, SV, FAM, KIN, RK]),
     ('愛自然-臺灣(iNaturalist Taiwan)',         'ntuforestry', 0, [SS, SV, CLS, KIN]),
     ('國立海洋生物博物館生物典藏管理系統',        'nmmba',       0, [SS, SV, FAM]),
     ('科博典藏 (NMNS Collection)',              'nmns',        0, [SS, SV, ORD, FAM, CLS, KIN]),
     ('國家海洋資料庫及共享平台',                  'namr',        0, [SS, SV, CLS, ORD, FAM, KIN]),
     ('作物種原資訊系統',                         'npgrc',       0, [SS, SV, FAM]),
-    ('臺灣國家公園生物多樣性資料庫',              'nps',         0, [SS, SV]),
-    ('國立臺灣博物館典藏',                       'ntm',         0, [SV, SS, OV, CLS, ORD, FAM, KIN]),
-    ('海洋保育資料倉儲系統',                     'oca',         0, [SV, SS, SID, CLS, ORD, FAM]),
-    ('臺灣生物多樣性資訊機構 TaiBIF',             'brcas',       0, [SV, SS, OV, CLS, ORD, FAM, KIN]),
-    ('林業試驗所植物標本資料庫',                  'taif',        0, [SS, SV, KIN]),
-    ('台灣生物多樣性網絡 TBN',                   'tbri',        0, [SS, SV, OV, FAM, KIN]),
-    ('濕地環境資料庫',                           'nps',         1, [SS, SV]),
-    ('河川環境資料庫',                           'wra',         0, [SV, SS, OV, CLS, ORD, FAM, KIN]),
+    ('臺灣國家公園生物多樣性資料庫',              'nps',         0, [SS, SV, RK]),
+    ('國立臺灣博物館典藏',                       'ntm',         0, [SV, SS, OV, CLS, ORD, FAM, KIN, RK]),
+    ('海洋保育資料倉儲系統',                     'oca',         0, [SV, SS, SID, CLS, ORD, FAM, RK]),
+    ('臺灣生物多樣性資訊機構 TaiBIF',             'brcas',       0, [SV, SS, OV, CLS, ORD, FAM, KIN, RK]),
+    ('林業試驗所植物標本資料庫',                  'taif',        0, [SS, SV, KIN, RK]),
+    ('台灣生物多樣性網絡 TBN',                   'tbri',        0, [SS, SV, OV, FAM, KIN, RK]),
+    ('濕地環境資料庫',                           'nps',         1, [SS, SV, RK]),
+    ('河川環境資料庫',                           'wra',         0, [SV, SS, OV, CLS, ORD, FAM, KIN, RK]),
 ]
 # sci_cols 含 taxonID（來源會提供 TaiCOL taxonID）的單位
 SRC_TAXON_HOLDERS = {'集水區友善環境生態資料庫', '中油生態地圖', 'GBIF', '國立臺灣博物館典藏', '海洋保育資料倉儲系統',
