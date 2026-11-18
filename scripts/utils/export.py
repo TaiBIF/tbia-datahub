@@ -325,8 +325,9 @@ def normalize_type_status(value):
     return '|'.join(out) if out else None
 
 
-# 2.3 暫行文字（D4；正式句型 P2-5）：只描述 TBIA 統一模糊化的紀錄，來源端自行模糊化的不填
-DG_PREFIX = '由 TBIA 統一模糊化'
+# 2.3 暫行文字（D4；正式句型 P2-5）：只描述 TBIA 統一模糊化的紀錄，來源端自行模糊化的不填。
+# 11/15 改為明確寫「公開座標」：有權限者（限制型）下載 / API 的座標欄位是原始值，文字說明的是公開版本的處理方式
+DG_PREFIX = '公開座標由 TBIA 統一模糊化'
 RAW_COLS = ['rawDecimalLatitude', 'rawDecimalLongitude', 'rawVerbatimLatitude', 'rawVerbatimLongitude',
             'rawCounty', 'rawMunicipality', 'raw_location_rpt']
 
@@ -337,9 +338,9 @@ def _precision_text(cp):
     if not np.isfinite(cp):
         return None
     if 0 < cp < 1:
-        return f'座標取至小數點後 {round(-np.log10(cp))} 位'
+        return f'取至小數點後 {round(-np.log10(cp))} 位'
     if cp == 1:
-        return '座標取至整數位'
+        return '取至整數位'
     return None
 
 
@@ -358,7 +359,7 @@ def data_generalizations_text(out):
     public = out['decimalLatitude'].notna() if 'decimalLatitude' in out.columns else pd.Series(False, index=out.index)
 
     text = pd.Series(None, index=out.index, dtype=object)
-    text[has_raw & ~public] = f'{DG_PREFIX}，座標不公開'
+    text[has_raw & ~public] = f'{DG_PREFIX}，不提供座標'
     blurred = has_raw & public
     if blurred.any() and 'coordinatePrecision' in out.columns:
         degree = out.loc[blurred, 'coordinatePrecision'].map(_precision_text)
