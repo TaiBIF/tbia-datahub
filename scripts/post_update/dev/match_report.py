@@ -13,7 +13,7 @@ sourceVernacularName → originalVernacularName 第一個非空值；三者皆�
   同一個 group 可能有多個資料庫（info_id 不同，如 nps_0 國家公園、nps_1 濕地），各自一份報告
   snapshot.json          各分類筆數／學名數
   unmatched_partner.csv  給夥伴：可由夥伴修正的學名（未對到各原因＋疑似錯字；含說明、來源階層、格式提醒）
-  for_taicol.csv         給 TaiCOL：尚未收錄 + 僅對到上階 + 字尾變化（種小名性別字尾不同）
+  for_taicol.csv         給 TaiCOL：尚未收錄 + 僅對到上階 + 字尾變化 + 拼寫不同（已對到但拼寫與 TaiCOL 不同）
   noname_records.zip     給夥伴：無學名（學名、中文名、原始名稱皆空白）且未對到的逐筆紀錄（有才產出）
   name_state.csv.gz      每個學名的分類與筆數（供下次學名層級比較）
   compare_category.csv   與前次快照的分類層級比較（有前次才產出）
@@ -397,7 +397,10 @@ def _format_hints(name, s):
 #   other   同物異名、改屬等 → 不列
 # 都算「對到」；typo 從 atrank 拆成獨立分類，ending／format／other 仍為 atrank。
 _RANK_MARK = {'var', 'subsp', 'ssp', 'f', 'forma', 'fo', 'cv', 'x', '\u00d7', 'subvar'}
-_ENDINGS = {'us', 'a', 'um', 'is', 'e', 'ii', 'i', 'ae', 'ensis', 'ense', 'es', 'ior', 'ius'}
+_ENDINGS = {'us', 'a', 'um', 'is', 'e', 'ii', 'i', 'ae', 'ensis', 'ense', 'es', 'ior', 'ius',
+            'os', 'on'}                                   # os/on：希臘字尾（heterocarpos、adenocaulon）
+# 單名的階層字尾（亞科 -inae、科 -idae 等）；只差這個不是錯字，是階層不同
+_RANK_SUFFIX = ('oideae', 'aceae', 'oidea', 'idae', 'inae', 'ales', 'ini', 'ina')
 
 
 def _sci_tokens(name):
@@ -428,14 +431,19 @@ def _lev(a, b):
 
 
 def _ending_only(x, y):
-    """兩個種小名是否只差常見的字尾（共同字首至少 4 字元，剩下的都必須完全是常見字尾）。"""
-    k = 0
-    while k < min(len(x), len(y)) and x[k] == y[k]:
-        k += 1
-    if k < 4:
-        return False
-    ok = lambda e: e == '' or e in _ENDINGS
-    return ok(x[k:]) and ok(y[k:])
+    """兩個種小名是否只差常見字尾：x = 字幹 + 字尾1、y = 字幹 + 字尾2，字幹至少 4 字元。
+    （逐一試字尾，避免共同字首吃掉字尾的一部分，如 immaculatum／immaculatus）"""
+    for e1 in _ENDINGS | {''}:
+        if not x.endswith(e1):
+            continue
+        stem = x[:len(x) - len(e1)]
+        if len(stem) >= 4 and y.startswith(stem) and (y[len(stem):] in _ENDINGS or y == stem):
+            return True
+    return False
+
+
+def _rank_suffix(w):
+    return next((suf for suf in _RANK_SUFFIX if w.endswith(suf)), None)
 
 
 def classify_fuzzy(src, tgt):
@@ -448,6 +456,9 @@ def classify_fuzzy(src, tgt):
         return 'format'                                   # 自名亞種 X y y → X y
     if len(a) == len(b) and a[0] == b[0] and all(p == q or _ending_only(p, q) for p, q in zip(a[1:], b[1:])):
         return 'ending'                                   # 屬名相同、種小名以下只差字尾
+    if len(a) == len(b) == 1 and _rank_suffix(a[0]) and _rank_suffix(b[0]) \
+            and _rank_suffix(a[0]) != _rank_suffix(b[0]):
+        return 'other'                                    # 單名階層字尾不同（Ardeinae→Ardeidae）：階層不同，不是錯字
     sa, sb = ' '.join(a), ' '.join(b)
     d = _lev(sa, sb)
     if d <= 2 and d <= 0.15 * max(len(sa), len(sb)):
@@ -457,17 +468,18 @@ def classify_fuzzy(src, tgt):
 
 def split_fuzzy(conn, rh):
     """把該資料庫模糊對到（且對到來源階層）的學名分類；typo 直接在 _mr_agg 改成 cat='typo'。
-    回傳 (typo_map {學名: TaiCOL 學名}, ending_rows [(學名, taxonID, 筆數, TaiCOL taxa doc)])。"""
+    回傳 (typo_map {學名: TaiCOL 學名},
+          fuzzy_rows {'typo': [...], 'ending': [...]}，每筆為 (學名, taxonID, 筆數, TaiCOL taxa doc))。"""
     rows = conn.execute(text("""
         SELECT name, taxon_id, SUM(records) FROM _mr_agg
         WHERE rh = :g AND cat = 'atrank' AND fz AND name IS NOT NULL AND taxon_id IS NOT NULL
         GROUP BY 1, 2
     """), {"g": rh}).fetchall()
     if not rows:
-        return {}, []
+        return {}, {'typo': [], 'ending': []}
     docs = _solr_lookup("id", [r[1] for r in rows],
                         ["scientificName", "common_name_c", "family", "family_c"])
-    typo_pairs, typo_map, ending_rows = [], {}, []
+    typo_pairs, typo_map, fuzzy_rows = [], {}, {'typo': [], 'ending': []}
     for name, tid, records in rows:
         d = docs.get(tid)
         tname = _first(d.get("scientificName")) if d else ""
@@ -477,15 +489,17 @@ def split_fuzzy(conn, rh):
         if kind == 'typo':
             typo_pairs.append({"n": name, "t": tid})
             typo_map[name] = tname
-        elif kind == 'ending':
-            ending_rows.append((name, tid, int(records), d))
+        if kind in fuzzy_rows:
+            fuzzy_rows[kind].append((name, tid, int(records), d))
     if typo_pairs:
+        # 用陣列一次更新（不用 executemany：連線可能被設成 stream_results，伺服器端游標不支援）
         conn.execute(text("""
-            UPDATE _mr_agg SET cat = 'typo'
-            WHERE rh = :g AND cat = 'atrank' AND fz AND name = :n AND taxon_id = :t
-        """), [dict(p, g=rh) for p in typo_pairs])
+            UPDATE _mr_agg a SET cat = 'typo'
+            FROM (SELECT unnest(CAST(:names AS text[])) AS n, unnest(CAST(:tids AS text[])) AS t) v
+            WHERE a.rh = :g AND a.cat = 'atrank' AND a.fz AND a.name = v.n AND a.taxon_id = v.t
+        """), {"g": rh, "names": [p["n"] for p in typo_pairs], "tids": [p["t"] for p in typo_pairs]})
         conn.commit()
-    return typo_map, ending_rows
+    return typo_map, fuzzy_rows
 
 
 # ── 產出 ────────────────────────────────────────────────────
@@ -533,6 +547,8 @@ def write_noname_records(conn, rh, out_dir):
             w.writerows([[v if v is not None else "" for v in r] for r in rows])
             n += len(rows)
     finally:
+        result.close()
+        conn.execution_options(stream_results=False)   # 還原：execution_options 會改到整條連線
         if f:
             f.close()
         if zf:
@@ -546,7 +562,7 @@ def name_sort_key(name):
     return (name.casefold(), name)
 
 
-def write_csvs(conn, rh, rights_holder, out_dir, typo_map=None, ending_rows=()):
+def write_csvs(conn, rh, rights_holder, out_dir, typo_map=None, fuzzy_rows=None):
     """拆兩份：unmatched_partner.csv（夥伴可修）＋ for_taicol.csv（回報 TaiCOL）。
     兩份都附來源階層與格式提醒，方便判斷是否為格式問題；都依學名字母排序，方便閱讀。"""
     un = unmatched_names(conn, rh)      # (name, catkey, records)
@@ -569,12 +585,13 @@ def write_csvs(conn, rh, rights_holder, out_dir, typo_map=None, ending_rows=()):
                 s = src.get(name, _SRC_EMPTY)
                 note = CATEGORY_NOTE.get(cat, "")
                 if cat == "typo":
-                    note = (f"與 TaiCOL 收錄的學名「{(typo_map or {}).get(name, '')}」只差 1～2 個字元，"
-                            "疑似拼寫錯誤，請確認。已依 TaiCOL 學名對到，修正後比對結果不變。")
+                    note = (f"與 TaiCOL 收錄的學名「{(typo_map or {}).get(name, '')}」拼寫只差 1～2 個字元，"
+                            "請確認是否為錯字；若貴單位的拼寫才正確，請告知，我們會回報 TaiCOL。"
+                            "此筆已依 TaiCOL 學名對到。")
                 w.writerow([name, label.get(cat, cat), note, records]
                            + src_row(s) + [_format_hints(name, s)])
 
-    # 給 TaiCOL：未收錄（none）＋ 僅對到上階（higher）＋ 字尾變化；排除非正規學名與暫定名；依學名字母排序
+    # 給 TaiCOL：未收錄（none）＋ 僅對到上階（higher）＋ 字尾變化 ＋ 拼寫不同；排除非正規學名與暫定名；依學名字母排序
     rows = []
     for name, cat, records in un:
         if cat == "none" and not _is_nonstandard(name):
@@ -589,11 +606,14 @@ def write_csvs(conn, rh, rights_holder, out_dir, typo_map=None, ending_rows=()):
         fam = _first(d.get("family_c")) or _first(d.get("family"))
         rows.append([name, "僅對到上階", records, tid, cn, fam,
                      "", "", "", rights_holder])
-    # 字尾性別變化（formosana↔formosanus）：已對到，TaiCOL 可評估收錄為異名
-    for name, tid, records, d in ending_rows:
-        rows.append([name, "字尾變化", records, tid, _first(d.get("common_name_c")),
-                     _first(d.get("family_c")) or _first(d.get("family")),
-                     "", "", f"TaiCOL 學名：{_first(d.get('scientificName'))}", rights_holder])
+    # 已對到、但拼寫與 TaiCOL 不同者，TaiCOL 也看一份：
+    #   字尾變化（formosana↔formosanus）：可評估收錄為異名
+    #   拼寫不同（疑似錯字，夥伴也會收到）：也可能是 TaiCOL 端拼錯，請 TaiCOL 一併確認
+    for kind, label_ in (("ending", "字尾變化"), ("typo", "拼寫不同")):
+        for name, tid, records, d in (fuzzy_rows or {}).get(kind, []):
+            rows.append([name, label_, records, tid, _first(d.get("common_name_c")),
+                         _first(d.get("family_c")) or _first(d.get("family")),
+                         "", "", f"TaiCOL 學名：{_first(d.get('scientificName'))}", rights_holder])
     rows.sort(key=lambda r: (name_sort_key(r[0]), r[1]))
     with open(out_dir / "for_taicol.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
@@ -863,13 +883,13 @@ def process_unit(conn, rh, group, info_id, year_month, show_delta=True):
     out_dir = OUT_BASE / year_month / unit
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    typo_map, ending_rows = split_fuzzy(conn, rh)     # 先把疑似錯字從 atrank 拆出來
+    typo_map, fuzzy_rows = split_fuzzy(conn, rh)      # 先把疑似錯字從 atrank 拆出來
     agg = aggregate(conn, rh)
     if not agg:
         print(f"[{unit}] {rh}｜match_log 無資料，略過", file=sys.stderr)
         return
     snapshot = write_snapshot(agg, group, info_id, rh, year_month, out_dir)
-    write_csvs(conn, rh, rh, out_dir, typo_map, ending_rows)
+    write_csvs(conn, rh, rh, out_dir, typo_map, fuzzy_rows)
     write_noname_records(conn, rh, out_dir)
 
     states = name_states(conn, rh)
@@ -888,7 +908,7 @@ def process_unit(conn, rh, group, info_id, year_month, show_delta=True):
     total = sum(r["records"] for r in snapshot)
     matched = sum(r["records"] for r in snapshot if r["axis"] == "matched")
     rate = round(matched / total * 100, 1) if total else 0.0
-    print(f"[{unit}] {rh}｜比對率 {rate}%｜{total} 筆｜疑似錯字 {len(typo_map)} 個、字尾變化 {len(ending_rows)} 個學名"
+    print(f"[{unit}] {rh}｜比對率 {rate}%｜{total} 筆｜疑似錯字 {len(typo_map)} 個、字尾變化 {len(fuzzy_rows['ending'])} 個學名"
           f"｜前次 {prev_ym or '無'} → {out_dir}",
           file=sys.stderr)
 
