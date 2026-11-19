@@ -281,40 +281,104 @@ def _request_json_with_retry(url, tag, max_retries=3, backoff=2):
     return False, None
 
 
-def _col_is_ambiguous(name, specific_rank=None):
-    """用 COL 來源查同名/相似名:若指定 specific_rank,只計算同 rank 的結果,
-    再依 accepted_namecode 去重;去重後 > 1 筆 → 視為歧義(True)。
-    查詢失敗一律回 False(放行,沿用 TaiCOL 唯一候選)。"""
-    if not name or not isinstance(name, str):
-        return False
+# COL 歧義判斷用:name_status 分類
+_COL_ACCEPTED = {'accepted', 'provisionally accepted'}
+_COL_MISAPPLIED = {'misapplied'}
+_YEAR_RE = re.compile(r'\b(1[5-9]\d{2}|20\d{2})\b')
+
+
+def _norm_full_name(s):
+    """學名(含作者)正規化,供比對作者用:去年份、Linn.→L.、et→&,
+    再去空白、句點、逗號並轉小寫。例:'(Hedw.) P. Beauv., 1805' 與 '(Hedw.) P.Beauv.' 相同。"""
+    if not isinstance(s, str):
+        return ''
+    s = _YEAR_RE.sub('', s)
+    s = re.sub(r'\bLinn\.?(?=\s|$|\))', 'L.', s)
+    s = re.sub(r'\s+et\s+', ' & ', s)
+    return re.sub(r'[\s.,]+', '', s).lower()
+
+
+def _col_results(name):
+    """查 COL(source=col)回傳 results;查詢失敗回 None(不寫入 cache,下次可重試)。"""
     key = name.strip()
-    if key == '':
-        return False
-    cache_key = f'{key}::{specific_rank}'
+    cache_key = f'results::{key}'
     if cache_key in _col_ambiguity_cache:
         return _col_ambiguity_cache[cache_key]
-    result = False
-    try:
-        url = f"{COL_MATCH_BASE_URL}api.php?names={urllib.parse.quote(key)}&format=json&source=col"
-        resp = requests.get(url, timeout=30)
-        if resp.status_code == 200:
-            data = resp.json()
-            rows = data.get('data')
-            if isinstance(rows, list) and rows and isinstance(rows[0], list) and rows[0]:
-                best = rows[0][0]
-                if isinstance(best, dict):
-                    rs = best.get('results', [])
-                    if isinstance(rs, list):
-                        # 只保留同 rank(有指定時)
-                        if specific_rank:
-                            rs = [r for r in rs if isinstance(r, dict) and r.get('taxon_rank') == specific_rank]
-                        # 依 accepted_namecode 去重,同一 taxon 不重複計數
-                        codes = {r.get('accepted_namecode') for r in rs if isinstance(r, dict)}
-                        result = len(codes) > 1
-    except Exception as e:
-        print(f"COL ambiguity check error for {key}: {e}")
-    _col_ambiguity_cache[cache_key] = result
-    return result
+    url = f"{COL_MATCH_BASE_URL}api.php?names={urllib.parse.quote(key)}&format=json&source=col"
+    ok, data = _request_json_with_retry(url, f'COL ambiguity {key}')
+    if not ok:
+        return None
+    rs = []
+    rows = (data or {}).get('data')
+    if isinstance(rows, list) and rows and isinstance(rows[0], list) and rows[0]:
+        best = rows[0][0]
+        if isinstance(best, dict) and isinstance(best.get('results'), list):
+            rs = [r for r in best['results'] if isinstance(r, dict)]
+    _col_ambiguity_cache[cache_key] = rs
+    return rs
+
+
+def _col_is_ambiguous(name, specific_rank=None, src_rank=None, cand=None):
+    """來源無上階層、TaiCOL 只剩一個候選(cand)時,用 COL 判斷名稱是否有歧義。True = 歧義(標 multiple)。
+
+    TaiCOL 候選為模糊比對(score < 1):沿用原本判斷,COL 結果全部計入
+      (有 specific_rank 時只留同 rank),依 accepted_namecode 去重後 > 1 → 歧義。
+    TaiCOL 候選為完全命中:COL 只留 score = 1,再依 specific_rank(沒有則用來源 rank)過濾;
+      COL 沒有任何完全命中 → 不算歧義。
+      A. 來源有作者,且 COL 有同作者的結果:
+         - TaiCOL 候選也有作者但與來源不同 → 歧義(來源指的是另一個同名)
+         - 同作者結果(misapplied 不計)去重後 > 1 → 歧義;= 1 → 放行
+      B. 來源沒有作者、或作者對不上:只計 accepted
+         - 0 個(只有 synonym 類)、或 > 1 個 → 歧義
+         - 1 個:界須與 TaiCOL 候選相同(候選缺界也算歧義)
+    查詢失敗一律回 False(放行,沿用 TaiCOL 唯一候選)。"""
+    if not name or not isinstance(name, str) or name.strip() == '':
+        return False
+    rs = _col_results(name)
+    if rs is None:
+        return False
+    cand = cand or {}
+
+    def _rank_ok(r):
+        rr = normalize_rank(r.get('taxon_rank'))
+        if specific_rank:
+            return rr == specific_rank
+        if src_rank:
+            # COL 缺 rank 資訊時不當否定證據
+            return rr is None or _rank_match(src_rank, rr)
+        return True
+
+    # TaiCOL 候選為模糊比對:維持原本較嚴的判斷
+    if float(cand.get('score') or 0) < 1.0:
+        if specific_rank:
+            rs = [r for r in rs if r.get('taxon_rank') == specific_rank]
+        return len({r.get('accepted_namecode') for r in rs}) > 1
+
+    exact = [r for r in rs if r.get('score') == 1 and _rank_ok(r)]
+    if not exact:
+        return False
+
+    # A. 以作者比對
+    src_full = _norm_full_name(name)
+    canon = _norm_full_name(exact[0].get('simple_name'))
+    if src_full and src_full != canon:            # 來源帶作者
+        same = [r for r in exact if _norm_full_name(r.get('matched')) == src_full]
+        same = [r for r in same if r.get('name_status') not in _COL_MISAPPLIED]
+        if same:
+            c_full = _norm_full_name(cand.get('matched'))
+            c_canon = _norm_full_name(cand.get('simple_name'))
+            if c_full and c_full != c_canon and c_full != src_full:
+                return True
+            return len({r.get('accepted_namecode') for r in same}) > 1
+
+    # B. 只計 accepted,且須與 TaiCOL 候選同界
+    acc = [r for r in exact if r.get('name_status') in _COL_ACCEPTED]
+    codes = {r.get('accepted_namecode') for r in acc}
+    if len(codes) != 1:
+        return True
+    c_kingdom = str(cand.get('kingdom') or '').strip().casefold()
+    col_kingdoms = {str(r.get('kingdom') or '').strip().casefold() for r in acc}
+    return not (c_kingdom and col_kingdoms == {c_kingdom})
 
 
 def _col_has_exact(name):
@@ -681,7 +745,8 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
             
             # 轉換為DataFrame進行向量化操作
             results_df = pd.DataFrame(filtered_rs)
-            required_cols = ['accepted_namecode', 'family', 'order', 'class', 'kingdom', 'name_status', 'score', 'taxon_rank']
+            required_cols = ['accepted_namecode', 'family', 'order', 'class', 'kingdom', 'name_status', 'score', 'taxon_rank',
+                             'matched', 'simple_name']   # matched / simple_name 供 COL 歧義判斷比對作者
             missing_cols = [col for col in required_cols if col not in results_df.columns]
             for col in missing_cols:
                 results_df[col] = None
@@ -889,7 +954,7 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
             return [], (None if matched else _fail_reason())
         # COL 有同名多筆、來源又無上階層可分辨 → 等同 multiple(來源補上階層即可解決),
         # 與「單名 COL 否決」(TaiCOL 候選疑似錯誤)區分
-        if _col_is_ambiguous(row.get('now_matching_name'), specific_rank):
+        if _col_is_ambiguous(row.get('now_matching_name'), specific_rank, src_rank, matched[0]):
             return [], 'ambiguous'
         return matched, None
     
