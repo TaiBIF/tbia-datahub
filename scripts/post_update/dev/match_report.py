@@ -102,9 +102,17 @@ _PLACEHOLDER_RE = r'[[:space:]]sp[0-9]{6,}|^BOLD:'
 # 非學名：純數字／符號（6、18）、單一字母（X）、unknown／unidentified、中文的未發現等字樣。
 # 多為欄位錯位或代號，請原單位修正，不歸給 TaiCOL。（以 ~* 比對，不分大小寫）
 _INVALID_RE = (r'^[0-9[:space:][:punct:]]+$'
-               r'|^[A-Za-z]$'          # 只限拉丁字母，避免把「雞」這類單字中文名誤判
+               r'|^[A-Za-z]$'          # 只限拉丁字母；單字中文名（如「雞」）由 INVALID_NAMES 個別指定
                r'|(^|[^[:alpha:]])(unknown|unidentified)'
-               r'|未發現|無法辨認|鑑定中|未鑑定|未知種')
+               r'|未發現|無發現|未調查|無法辨認|鑑定中|未鑑定|未知種'
+               r'|^no [a-z]+$')        # 「no bats」這類「沒有發現 X」的紀錄
+# 人工維護：regex 不好涵蓋的非學名（俗名、類群名等），整串完全相同才算。
+# 發現新的樣態時直接加在這裡；會列入給夥伴的清單，不回報 TaiCOL
+INVALID_NAMES = [
+    '雞', '羊', '牛',                  # 家畜俗名，請來源提供學名
+    '家蝠類群', 'Moss taxa',            # 類群名
+]
+_INVALID_NAMES_SQL = ", ".join("'" + n.replace("'", "''") + "'" for n in INVALID_NAMES) or "NULL"
 
 # 每筆紀錄的「學名」：依比對流程順序 學名(stage 1) → 中文名(stage 3) → 原始名稱(stage 5)，
 # 取第一個非空值（皆空為 NULL）
@@ -146,7 +154,8 @@ CASE
   ELSE
     CASE
       WHEN name IS NULL                    THEN 'noname'
-      WHEN name ~* '{_INVALID_RE}'         THEN 'invalid'
+      WHEN name ~* '{_INVALID_RE}'
+        OR name IN ({_INVALID_NAMES_SQL})  THEN 'invalid'
       WHEN name ~  '{_PLACEHOLDER_RE}'     THEN 'placeholder'
       WHEN 'vetoed'   IN ({_STAGES}) THEN 'vetoed'
       WHEN 'rank'     IN ({_STAGES}) THEN 'rank'
@@ -428,9 +437,15 @@ def write_noname_records(conn, rh, out_dir):
     return n
 
 
+def name_sort_key(name):
+    """清單依學名字母排序（不分大小寫）；中文名等非拉丁字排在拉丁學名之後。"""
+    name = name or ""
+    return (name.casefold(), name)
+
+
 def write_csvs(conn, rh, rights_holder, out_dir):
     """拆兩份：unmatched_partner.csv（夥伴可修）＋ for_taicol.csv（回報 TaiCOL）。
-    兩份都附來源階層與格式提醒，方便判斷是否為格式問題。"""
+    兩份都附來源階層與格式提醒，方便判斷是否為格式問題；都依學名字母排序，方便閱讀。"""
     un = unmatched_names(conn, rh)      # (name, catkey, records)
     hi = higher_names(conn, rh)         # (name, taxon_id, records)
     label = {k: v[1] for k, v in CATEGORY_META.items()}
@@ -442,34 +457,37 @@ def write_csvs(conn, rh, rights_holder, out_dir):
     src_head = ["中文名(來源)", "階層(來源)", "科(來源)", "目(來源)", "綱(來源)", "界(來源)"]
     src_row = lambda s: [s["vern"], s["rank"], s["fam"], s["ord"], s["cls"], s["kin"]]
 
-    # 給夥伴：fuzzy / multiple / nonstandard，依影響筆數排序
+    # 給夥伴：PARTNER_CATS 各類別，依學名字母排序
     with open(out_dir / "unmatched_partner.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(["學名", "原因分類", "說明", "影響筆數"] + src_head + ["格式提醒"])
-        for name, cat, records in un:
+        for name, cat, records in sorted(un, key=lambda r: (name_sort_key(r[0]), r[1])):
             if cat in PARTNER_CATS:
                 s = src.get(name, _SRC_EMPTY)
                 w.writerow([name, label.get(cat, cat), CATEGORY_NOTE.get(cat, ""), records]
                            + src_row(s) + [_format_hints(name, s)])
 
-    # 給 TaiCOL：未收錄（none）＋ 僅對到上階（higher）；排除非正規學名與暫定名
+    # 給 TaiCOL：未收錄（none）＋ 僅對到上階（higher）；排除非正規學名與暫定名；依學名字母排序
+    rows = []
+    for name, cat, records in un:
+        if cat == "none" and not _is_nonstandard(name):
+            s = src.get(name, _SRC_EMPTY)
+            rows.append([name, "TaiCOL 尚未收錄", records, "", s["vern"], s["fam"],
+                         s["rank"], s["kin"], _format_hints(name, s), rights_holder])
+    for name, tid, records in hi:
+        if _is_nonstandard(name):
+            continue
+        d = by_tid.get(tid, {})
+        cn = _first(d.get("common_name_c"))
+        fam = _first(d.get("family_c")) or _first(d.get("family"))
+        rows.append([name, "僅對到上階", records, tid, cn, fam,
+                     "", "", "", rights_holder])
+    rows.sort(key=lambda r: (name_sort_key(r[0]), r[1]))
     with open(out_dir / "for_taicol.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(["學名", "類別", "影響筆數", "對到的taxonID", "中文名", "科",
                     "階層(來源)", "界(來源)", "格式提醒", "rights_holder"])
-        for name, cat, records in un:
-            if cat == "none" and not _is_nonstandard(name):
-                s = src.get(name, _SRC_EMPTY)
-                w.writerow([name, "TaiCOL 尚未收錄", records, "", s["vern"], s["fam"],
-                            s["rank"], s["kin"], _format_hints(name, s), rights_holder])
-        for name, tid, records in hi:
-            if _is_nonstandard(name):
-                continue
-            d = by_tid.get(tid, {})
-            cn = _first(d.get("common_name_c"))
-            fam = _first(d.get("family_c")) or _first(d.get("family"))
-            w.writerow([name, "僅對到上階", records, tid, cn, fam,
-                        "", "", "", rights_holder])
+        w.writerows(rows)
 
 
 # ── 前後比較 ────────────────────────────────────────────────
