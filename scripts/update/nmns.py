@@ -170,14 +170,15 @@ def fetch_page(category, offset):
 
 
 def baseline_counts():
-    """本次更新開始前，DB 各學門的筆數（datasetName = rights_holder-學門）。"""
+    """本次更新開始前，各學門的筆數：取 dataset 表的 occurrenceCount（name = rights_holder-學門）。
+    不排除 deprecated：學門若曾因 API 異常被整批刪光而標為 deprecated，仍要拿它的筆數當基準。"""
     with engine.connect() as conn:
         rows = conn.execute(text("""
-            SELECT "datasetName", count(*) FROM records
-            WHERE "rightsHolder" = :rh GROUP BY 1
+            SELECT name, COALESCE(SUM("occurrenceCount"), 0) FROM dataset
+            WHERE rights_holder = :rh GROUP BY 1
         """), {'rh': rights_holder}).fetchall()
     prefix = rights_holder + '-'
-    return {name[len(prefix):]: n for name, n in rows if name and name.startswith(prefix)}
+    return {name[len(prefix):]: int(n) for name, n in rows if name and name.startswith(prefix)}
 
 
 BASELINE = baseline_counts()
