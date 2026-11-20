@@ -330,8 +330,9 @@ def _col_reason(key, reason, result):
 def _col_is_ambiguous(name, specific_rank=None, src_rank=None, cand=None):
     """來源無上階層、TaiCOL 只剩一個候選(cand)時,用 COL 判斷名稱是否有歧義。True = 歧義(標 multiple)。
 
-    TaiCOL 候選為模糊比對(score < 1):沿用原本判斷,COL 結果全部計入
-      (有 specific_rank 時只留同 rank),依 accepted_namecode 去重後 > 1 → 歧義。
+    TaiCOL 候選為模糊比對(score < 1):COL 結果(有 specific_rank 時只留同 rank)中,
+      須有與 TaiCOL 候選 simple_name 相同的結果,且只指向 1 個 taxon,才放行;否則歧義。
+      中文名(stage 3、5)COL 無法佐證,沿用原本判斷:COL 結果去重後 > 1 → 歧義。
     TaiCOL 候選為完全命中:COL 只留 score = 1,再依 specific_rank(沒有則用來源 rank)過濾;
       COL 沒有任何完全命中 → 不算歧義。
       A. 來源有作者,且 COL 有同作者的結果:
@@ -359,12 +360,22 @@ def _col_is_ambiguous(name, specific_rank=None, src_rank=None, cand=None):
             return rr is None or _rank_match(src_rank, rr)
         return True
 
-    # TaiCOL 候選為模糊比對:維持原本較嚴的判斷
+    # TaiCOL 候選為模糊比對(中文名 0.95 也會進來)
     if float(cand.get('score') or 0) < 1.0:
         if specific_rank:
             rs = [r for r in rs if r.get('taxon_rank') == specific_rank]
-        amb = len({r.get('accepted_namecode') for r in rs}) > 1
-        return _col_reason(key, 'TaiCOL 模糊比對（原規則）', amb)
+        if re.search(r'[\u4e00-\u9fff]', key):
+            # 中文名:COL 沒有中文名可佐證,維持原本的判斷
+            amb = len({r.get('accepted_namecode') for r in rs}) > 1
+            return _col_reason(key, '中文名（原規則）', amb)
+        # 學名:COL 也要(模糊或完全)對到與 TaiCOL 候選相同的名稱,才算佐證。
+        # 例:Arctiidae → TaiCOL 對到 Arcticidae(雙殼綱)、COL 對到 Arctiinae → 不同 → 歧義
+        c_name = str(cand.get('simple_name') or '').strip().casefold()
+        same = [r for r in rs if str(r.get('simple_name') or '').strip().casefold() == c_name]
+        if not same:
+            return _col_reason(key, 'TaiCOL 模糊比對、COL 未對到相同名稱', True)
+        amb = len({r.get('accepted_namecode') for r in same}) > 1
+        return _col_reason(key, 'TaiCOL 模糊比對、COL 同名指向多個' if amb else 'TaiCOL 模糊比對、COL 佐證', amb)
 
     exact = [r for r in rs if r.get('score') == 1 and _rank_ok(r)]
     if not exact:
