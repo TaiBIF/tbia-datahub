@@ -393,7 +393,7 @@ def _format_hints(name, s):
 # 比對端分數 < 1 但有對到的學名，依「來源學名」與「TaiCOL 學名」的字串差異分成：
 #   typo    疑似錯字：去掉作者與階層標記後只差 1～2 個字元（且 ≤ 15%）→ 給夥伴
 #   ending  種小名字尾性別變化（formosana↔formosanus）→ 給 TaiCOL（可收錄為異名）
-#   format  只差作者名、階層標記、自名亞種寫法 → 不列
+#   format  只差作者名、階層標記、自名亞種寫法、連字號 → 不列
 #   other   同物異名、改屬等 → 不列
 # 都算「對到」；typo 從 atrank 拆成獨立分類，ending／format／other 仍為 atrank。
 _RANK_MARK = {'var', 'subsp', 'ssp', 'f', 'forma', 'fo', 'cv', 'x', '\u00d7', 'subvar'}
@@ -452,6 +452,8 @@ def classify_fuzzy(src, tgt):
         return 'other'
     if a == b:
         return 'format'
+    if [t.replace('-', '') for t in a] == [t.replace('-', '') for t in b]:
+        return 'format'                                   # 只差連字號（rubro-pilosum→rubropilosum）：寫法標準化，不是錯字
     if len(a) == len(b) + 1 and len(a) >= 3 and a[-1] == a[-2] and a[:-1] == b:
         return 'format'                                   # 自名亞種 X y y → X y
     if len(a) == len(b) and a[0] == b[0] and all(p == q or _ending_only(p, q) for p, q in zip(a[1:], b[1:])):

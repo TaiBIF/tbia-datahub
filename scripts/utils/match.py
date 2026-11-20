@@ -239,7 +239,7 @@ def _stage4_genus_transform(df):
 
 
 # ── 無上階層資訊時,用 COL 來源做同名/相似名歧義偵測 ──
-COL_MATCH_BASE_URL = 'https://match.taibif.tw/v2/'   # 測試用外部 endpoint;之後改本機
+COL_MATCH_BASE_URL = 'http://host.docker.internal:8080/'   # 本機 NomenMatch(與 TaiCOL 同一套,source=col)
 _col_ambiguity_cache = {}
 
 # 各階層的上下關係(數字越小越上階)
@@ -318,6 +318,15 @@ def _col_results(name):
     return rs
 
 
+# 每個名稱最後一次 COL 歧義判斷的原因(診斷用;不影響比對結果)
+col_reason_log = {}
+
+
+def _col_reason(key, reason, result):
+    col_reason_log[key] = reason
+    return result
+
+
 def _col_is_ambiguous(name, specific_rank=None, src_rank=None, cand=None):
     """來源無上階層、TaiCOL 只剩一個候選(cand)時,用 COL 判斷名稱是否有歧義。True = 歧義(標 multiple)。
 
@@ -329,14 +338,16 @@ def _col_is_ambiguous(name, specific_rank=None, src_rank=None, cand=None):
          - TaiCOL 候選也有作者但與來源不同 → 歧義(來源指的是另一個同名)
          - 同作者結果(misapplied 不計)去重後 > 1 → 歧義;= 1 → 放行
       B. 來源沒有作者、或作者對不上:只計 accepted
-         - 0 個(只有 synonym 類)、或 > 1 個 → 歧義
+         - 0 個(只有 synonym 類):synonym 類只指向 1 個 taxon → 放行,多個 → 歧義
+         - > 1 個 → 歧義
          - 1 個:界須與 TaiCOL 候選相同(候選缺界也算歧義)
     查詢失敗一律回 False(放行,沿用 TaiCOL 唯一候選)。"""
     if not name or not isinstance(name, str) or name.strip() == '':
         return False
+    key = name.strip()
     rs = _col_results(name)
     if rs is None:
-        return False
+        return _col_reason(key, 'COL 查詢失敗', False)
     cand = cand or {}
 
     def _rank_ok(r):
@@ -352,11 +363,12 @@ def _col_is_ambiguous(name, specific_rank=None, src_rank=None, cand=None):
     if float(cand.get('score') or 0) < 1.0:
         if specific_rank:
             rs = [r for r in rs if r.get('taxon_rank') == specific_rank]
-        return len({r.get('accepted_namecode') for r in rs}) > 1
+        amb = len({r.get('accepted_namecode') for r in rs}) > 1
+        return _col_reason(key, 'TaiCOL 模糊比對（原規則）', amb)
 
     exact = [r for r in rs if r.get('score') == 1 and _rank_ok(r)]
     if not exact:
-        return False
+        return _col_reason(key, 'COL 無完全命中', False)
 
     # A. 以作者比對
     src_full = _norm_full_name(name)
@@ -368,17 +380,27 @@ def _col_is_ambiguous(name, specific_rank=None, src_rank=None, cand=None):
             c_full = _norm_full_name(cand.get('matched'))
             c_canon = _norm_full_name(cand.get('simple_name'))
             if c_full and c_full != c_canon and c_full != src_full:
-                return True
-            return len({r.get('accepted_namecode') for r in same}) > 1
+                return _col_reason(key, 'A:TaiCOL 作者與來源不同', True)
+            amb = len({r.get('accepted_namecode') for r in same}) > 1
+            return _col_reason(key, 'A:同作者指向多個' if amb else 'A:同作者唯一', amb)
 
     # B. 只計 accepted,且須與 TaiCOL 候選同界
     acc = [r for r in exact if r.get('name_status') in _COL_ACCEPTED]
     codes = {r.get('accepted_namecode') for r in acc}
-    if len(codes) != 1:
-        return True
+    if not codes:
+        # 沒有 accepted(只有 synonym 類):synonym 類只指向 1 個 taxon → 放行(舊名一對一);
+        # 指向多個 → 歧義(如不附作者的 Polygonum chinense)。misapplied 不計
+        syn = {r.get('accepted_namecode') for r in exact if r.get('name_status') not in _COL_MISAPPLIED}
+        return _col_reason(key, {0: 'B:只有 misapplied', 1: 'B:synonym 唯一'}.get(len(syn), 'B:synonym 指向多個'), len(syn) > 1)
+    if len(codes) > 1:
+        return _col_reason(key, 'B:多個 accepted', True)
     c_kingdom = str(cand.get('kingdom') or '').strip().casefold()
     col_kingdoms = {str(r.get('kingdom') or '').strip().casefold() for r in acc}
-    return not (c_kingdom and col_kingdoms == {c_kingdom})
+    if not c_kingdom:
+        return _col_reason(key, 'B:TaiCOL 候選沒有界', True)
+    if col_kingdoms != {c_kingdom}:
+        return _col_reason(key, f'B:界不同（TaiCOL {c_kingdom}／COL {"、".join(sorted(col_kingdoms))}）', True)
+    return _col_reason(key, 'B:accepted 唯一且同界', False)
 
 
 def _col_has_exact(name):
