@@ -381,7 +381,7 @@ def _col_is_ambiguous(name, specific_rank=None, src_rank=None, cand=None):
 
     TaiCOL 候選為模糊比對(score < 1):
       - 中文名(stage 3、5):COL 無法佐證,沿用原本判斷(COL 結果去重後 > 1 → 歧義)
-      - 多字學名只差 1～2 個字元:拼寫差異,放行
+      - 多字學名只差 1～2 個字元(拼寫差異)、或承名種下對到種:放行
       - 其他:COL 結果中須有與 TaiCOL 候選同名的結果、且指向唯一 taxon,才放行
     TaiCOL 候選為完全命中:COL 只留 score = 1,再依 specific_rank(沒有則用來源 rank)過濾;
       COL 沒有任何完全命中 → 不算歧義。
@@ -424,6 +424,9 @@ def _col_is_ambiguous(name, specific_rank=None, src_rank=None, cand=None):
         a, b = _sci_words(key), _sci_words(cand.get('simple_name'))
         if len(a) >= 2 and len(a) == len(b) and _lev(' '.join(a), ' '.join(b)) <= 2:
             return _col_reason(key, 'TaiCOL 模糊比對、多字名拼寫差異', False)
+        # 自名種下(Vigna unguiculata subsp. unguiculata)與種為同一分類群
+        if len(a) >= 3 and a[-1] == a[-2] and a[:-1] == b:
+            return _col_reason(key, 'TaiCOL 模糊比對、承名種下', False)
         c_name = str(cand.get('simple_name') or '').strip().casefold()
         same = [r for r in rs if str(r.get('simple_name') or '').strip().casefold() == c_name]
         if not same:
