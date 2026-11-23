@@ -22,8 +22,8 @@ records 只會動到 taxonID、match_higher_taxon、modified 三個欄位。
   python rematch_all.py                                 # 全部比對、全部更新
   python rematch_all.py --only nps_0 nps_1              # 只比對、更新這些單位（換範圍要清快取）
   python rematch_all.py --update-only nps_0 nps_1       # 全部比對（可沿用快取），只更新這些單位
-  python rematch_all.py --rank-only                     # 只重跑 match_log 任一 stage 為 rank 的學名組合，
-                                                        # 只輸出有變動的 records 成 Solr CSV（rank 檢查有改時用）
+  python rematch_all.py --stage-codes rank multiple     # 只重跑 match_log 任一 stage 為這些代碼的學名組合，
+                                                        # 只輸出有變動的 records 成 Solr CSV（只改了部分規則時用）
 """
 import argparse
 import io
@@ -85,11 +85,11 @@ SRC_TAXON_HOLDERS = {'集水區友善環境生態資料庫', '中油生態地圖
 _ap = argparse.ArgumentParser(description='全資料庫重新比對學名')
 _ap.add_argument('--only', nargs='+', default=[], metavar='UNIT', help='比對範圍，如 nps_0 nps_1')
 _ap.add_argument('--update-only', nargs='+', default=[], metavar='UNIT', help='只更新這些單位')
-_ap.add_argument('--rank-only', action='store_true',
-                 help='只重跑 match_log 任一 stage 為 rank 的學名組合；只輸出有變動的 records')
+_ap.add_argument('--stage-codes', nargs='+', default=[], metavar='CODE',
+                 help='只重跑 match_log 任一 stage 為這些代碼(如 rank multiple)的學名組合；只輸出有變動的 records')
 args, _ = _ap.parse_known_args()
-RANK_ONLY = args.rank_only
-RANK_TEXT = 'rank'      # match_log stage 欄位中 rank 的文字(代碼 6)
+STAGE_CODES = args.stage_codes
+RANK_ONLY = bool(STAGE_CODES)      # 部分重跑模式
 
 unit_of = lambda h: f'{h[1]}_{h[2]}'
 _unknown = set(args.only + args.update_only) - {unit_of(h) for h in HOLDERS}
@@ -238,16 +238,17 @@ def setup_tables():
 
 # ── 1. 不重複學名組合（單次掃描）+ 比對 ──
 def get_all_names():
-    cache = f'{CACHE_DIR}/names_{"rank" if RANK_ONLY else "all"}.pkl'
+    cache = f'{CACHE_DIR}/names_{"partial" if RANK_ONLY else "all"}.pkl'
     if os.path.exists(cache):
         print(f'使用快取學名組合: {cache}')
         return pd.read_pickle(cache)
     # 各單位沒用到的欄位一律投影成 ''，避免無關欄位造成組合膨脹
     sel = ', '.join(f'CASE WHEN h."use_{c}" THEN COALESCE(r."{c}", \'\') ELSE \'\' END AS "{c}"'
                     for c in NAME_COLS)
-    # --rank-only:只取曾被 rank 淘汰的紀錄(任一 stage 為 rank)的組合
+    # --stage-codes:只取 match_log 任一 stage 為這些代碼的紀錄的組合
+    codes_sql = ', '.join("'" + c.replace("'", "") + "'" for c in STAGE_CODES)
     rank_cond = (f''' AND EXISTS (SELECT 1 FROM match_log m WHERE m."tbiaID" = r."tbiaID"
-                     AND '{RANK_TEXT}' IN ({q(stage_cols, 'm.')}))''' if RANK_ONLY else '')
+                     AND ARRAY[{q(stage_cols, 'm.')}]::text[] && ARRAY[{codes_sql}]::text[])''' if RANK_ONLY else '')
     print('取出不重複學名組合（掃描 records 一次）...')
     df = pd.read_sql(text(f'''
         SELECT DISTINCT h.cfg_id, {sel}
@@ -270,7 +271,7 @@ def match_names(cols, names):
 
 def get_match_results(cfg_id, names):
     cols = cfg_cols[cfg_id]
-    cache = f'{CACHE_DIR}/cfg_{cfg_id}{"_rank" if RANK_ONLY else ""}.pkl'
+    cache = f'{CACHE_DIR}/cfg_{cfg_id}{"_partial" if RANK_ONLY else ""}.pkl'
     partial = cache + '.partial'
     if os.path.exists(cache):
         return pd.read_pickle(cache)
@@ -427,7 +428,7 @@ def export_task(args):
     sql = text(f'SELECT {", ".join(sel_col(c) for c in export_cols)} FROM records r '
                'WHERE r."rightsHolder" = :rh AND '
                + range_cond(hi).replace('%(lo)s', ':lo').replace('%(hi)s', ':hi')
-               + (' AND r."modified" = :now' if RANK_ONLY else '')     # --rank-only:只輸出本次有變動的
+               + (' AND r."modified" = :now' if RANK_ONLY else '')     # --stage-codes:只輸出本次有變動的
                + ' ORDER BY r."tbiaID"')
     df = pd.read_sql(sql, engine, params={'rh': rh, 'lo': lo, 'hi': hi, 'now': now})
     if df.empty:
@@ -506,7 +507,7 @@ def main():
 
     # 5. match_log zip
     for rh, group, info_id, cols in tqdm(update_holders, desc='重建 match_log zip'):
-        if RANK_ONLY and rh not in changed:      # --rank-only:沒有變動的單位不用重建
+        if RANK_ONLY and rh not in changed:      # --stage-codes:沒有變動的單位不用重建
             continue
         rebuild_match_log_zip(rh, group, info_id)
 

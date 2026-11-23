@@ -488,8 +488,19 @@ def _col_is_ambiguous(name, specific_rank=None, src_rank=None, cand=None):
     if not codes:
         # 沒有 accepted(只有 synonym 類):synonym 類只指向 1 個 taxon → 放行(舊名一對一);
         # 指向多個 → 歧義(如不附作者的 Polygonum chinense)。misapplied 不計
-        syn = {r.get('accepted_namecode') for r in exact if r.get('name_status') not in _COL_MISAPPLIED}
-        return _col_reason(key, {0: 'B:只有 misapplied', 1: 'B:synonym 唯一'}.get(len(syn), 'B:synonym 指向多個'), len(syn) > 1)
+        syn_rows = [r for r in exact if r.get('name_status') not in _COL_MISAPPLIED]
+        syn = {r.get('accepted_namecode') for r in syn_rows}
+        if len(syn) <= 1:
+            return _col_reason(key, 'B:synonym 唯一' if syn else 'B:只有 misapplied', False)
+        # 指向多個 taxon:多為同屬內不同作者的同名(如 Sphyraena japonica Cuvier／Bloch & Schneider),
+        # TaiCOL 已依台灣用法選定 → 與 TaiCOL 候選同界就照 TaiCOL;跨界才算歧義。COL 缺界的不計
+        c_kingdom = str(cand.get('kingdom') or '').strip().casefold()
+        if not c_kingdom:
+            return _col_reason(key, 'B:synonym 指向多個、TaiCOL 候選沒有界', True)
+        syn_kingdoms = {k for k in (str(r.get('kingdom') or '').strip().casefold() for r in syn_rows) if k}
+        if all(_same_kingdom(c_kingdom, k) for k in syn_kingdoms):
+            return _col_reason(key, 'B:synonym 指向多個、同界照 TaiCOL', False)
+        return _col_reason(key, f'B:synonym 指向多個、跨界（TaiCOL {c_kingdom}／COL {"、".join(sorted(syn_kingdoms))}）', True)
     if len(codes) > 1:
         return _col_reason(key, 'B:多個 accepted', True)
     c_kingdom = str(cand.get('kingdom') or '').strip().casefold()
