@@ -1006,7 +1006,9 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
             return None
 
         for result in results_dict:
-            if src_rank and not _rank_match(src_rank, _cand_rank(result)):
+            # 原本的 taxon_rank 或對到名稱本身的階層,任一符合即通過(只會多放行、不會多淘汰)
+            if src_rank and not (_rank_match(src_rank, normalize_rank(result.get('taxon_rank')))
+                                 or _rank_match(src_rank, _cand_rank(result))):
                 rank_rejected = True
                 continue
 
