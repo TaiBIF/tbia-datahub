@@ -22,6 +22,8 @@ records 只會動到 taxonID、match_higher_taxon、modified 三個欄位。
   python rematch_all.py                                 # 全部比對、全部更新
   python rematch_all.py --only nps_0 nps_1              # 只比對、更新這些單位（換範圍要清快取）
   python rematch_all.py --update-only nps_0 nps_1       # 全部比對（可沿用快取），只更新這些單位
+  python rematch_all.py --rank-only                     # 只重跑 match_log 任一 stage 為 rank 的學名組合，
+                                                        # 只輸出有變動的 records 成 Solr CSV（rank 檢查有改時用）
 """
 import argparse
 import io
@@ -83,7 +85,11 @@ SRC_TAXON_HOLDERS = {'集水區友善環境生態資料庫', '中油生態地圖
 _ap = argparse.ArgumentParser(description='全資料庫重新比對學名')
 _ap.add_argument('--only', nargs='+', default=[], metavar='UNIT', help='比對範圍，如 nps_0 nps_1')
 _ap.add_argument('--update-only', nargs='+', default=[], metavar='UNIT', help='只更新這些單位')
+_ap.add_argument('--rank-only', action='store_true',
+                 help='只重跑 match_log 任一 stage 為 rank 的學名組合；只輸出有變動的 records')
 args, _ = _ap.parse_known_args()
+RANK_ONLY = args.rank_only
+RANK_TEXT = 'rank'      # match_log stage 欄位中 rank 的文字(代碼 6)
 
 unit_of = lambda h: f'{h[1]}_{h[2]}'
 _unknown = set(args.only + args.update_only) - {unit_of(h) for h in HOLDERS}
@@ -232,18 +238,21 @@ def setup_tables():
 
 # ── 1. 不重複學名組合（單次掃描）+ 比對 ──
 def get_all_names():
-    cache = f'{CACHE_DIR}/names_all.pkl'
+    cache = f'{CACHE_DIR}/names_{"rank" if RANK_ONLY else "all"}.pkl'
     if os.path.exists(cache):
         print(f'使用快取學名組合: {cache}')
         return pd.read_pickle(cache)
     # 各單位沒用到的欄位一律投影成 ''，避免無關欄位造成組合膨脹
     sel = ', '.join(f'CASE WHEN h."use_{c}" THEN COALESCE(r."{c}", \'\') ELSE \'\' END AS "{c}"'
                     for c in NAME_COLS)
+    # --rank-only:只取曾被 rank 淘汰的紀錄(任一 stage 為 rank)的組合
+    rank_cond = (f''' AND EXISTS (SELECT 1 FROM match_log m WHERE m."tbiaID" = r."tbiaID"
+                     AND '{RANK_TEXT}' IN ({q(stage_cols, 'm.')}))''' if RANK_ONLY else '')
     print('取出不重複學名組合（掃描 records 一次）...')
     df = pd.read_sql(text(f'''
         SELECT DISTINCT h.cfg_id, {sel}
         FROM records r JOIN _rematch_holders h ON h.rights_holder = r."rightsHolder"
-        WHERE {NOT_SKIP}
+        WHERE {NOT_SKIP}{rank_cond}
     '''), engine)
     df.to_pickle(cache)
     print(f'不重複學名組合: {len(df)}（' +
@@ -261,7 +270,7 @@ def match_names(cols, names):
 
 def get_match_results(cfg_id, names):
     cols = cfg_cols[cfg_id]
-    cache = f'{CACHE_DIR}/cfg_{cfg_id}.pkl'
+    cache = f'{CACHE_DIR}/cfg_{cfg_id}{"_rank" if RANK_ONLY else ""}.pkl'
     partial = cache + '.partial'
     if os.path.exists(cache):
         return pd.read_pickle(cache)
@@ -364,6 +373,7 @@ def update_holder(rh, group, cols):
         raw.close()
     tqdm.write(f'  {group}: taxonID 變動 {counts["taxon"]}、'
                f'match_log 更新 {counts["ml_update"]}、補新增 {counts["ml_insert"]}')
+    return counts
 
 
 # ── 4. 輸出全部 records 成 Solr CSV ──
@@ -417,8 +427,9 @@ def export_task(args):
     sql = text(f'SELECT {", ".join(sel_col(c) for c in export_cols)} FROM records r '
                'WHERE r."rightsHolder" = :rh AND '
                + range_cond(hi).replace('%(lo)s', ':lo').replace('%(hi)s', ':hi')
+               + (' AND r."modified" = :now' if RANK_ONLY else '')     # --rank-only:只輸出本次有變動的
                + ' ORDER BY r."tbiaID"')
-    df = pd.read_sql(sql, engine, params={'rh': rh, 'lo': lo, 'hi': hi})
+    df = pd.read_sql(sql, engine, params={'rh': rh, 'lo': lo, 'hi': hi, 'now': now})
     if df.empty:
         return 0
     export_with_taxon_checked(normalize_db_df(df), f'{EXPORT_DIR}/rematch_{n}.csv')
@@ -434,7 +445,9 @@ def export_all():
         cur = raw.cursor()
         for rh, _, _, _ in update_holders:
             tasks += [(rh, lo, hi) for lo, hi in holder_ranges(cur, rh, EXPORT_CHUNK)]
-        cur.execute('SELECT count(*) FROM records WHERE "rightsHolder" = ANY(%s)', (update_names,))
+        cur.execute('SELECT count(*) FROM records WHERE "rightsHolder" = ANY(%s)'
+                    + (' AND "modified" = %s' if RANK_ONLY else ''),
+                    (update_names, now) if RANK_ONLY else (update_names,))
         total = cur.fetchone()[0]
     finally:
         raw.close()
@@ -482,14 +495,19 @@ def main():
     run_sql(f'CREATE INDEX ON _rematch_names (cfg_id, "{SS}", "{SV}"); ANALYZE _rematch_names;')
 
     # 3. 更新 records + match_log
+    changed = set()
     for rh, group, info_id, cols in update_holders:
-        update_holder(rh, group, cols)
+        c = update_holder(rh, group, cols)
+        if c['taxon'] or c['ml_update'] or c['ml_insert']:
+            changed.add(rh)
 
     # 4. 全部輸出 Solr CSV
     export_all()
 
     # 5. match_log zip
     for rh, group, info_id, cols in tqdm(update_holders, desc='重建 match_log zip'):
+        if RANK_ONLY and rh not in changed:      # --rank-only:沒有變動的單位不用重建
+            continue
         rebuild_match_log_zip(rh, group, info_id)
 
     # 收尾
