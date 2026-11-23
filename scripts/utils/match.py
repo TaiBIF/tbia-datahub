@@ -179,6 +179,26 @@ def _cand_rank(result):
                 return rk
     return tr
 
+_INFRA_MARK_RE = re.compile(r'\s(?:var|subsp|ssp|f|fo|form|forma|subvar|nothosubsp|nothovar)\.?\s+(?!ex\b|et\b)[a-z][a-z\-]+')
+
+def _rank_by_name_form(src_rank, name, cand_ranks):
+    """種與種下之間,以來源學名本身的形式為準(2 個字為種、3 個字以上或帶 var./subsp. 為種下)。
+    來源 rank 是種或種下、但和學名形式不符時(如三名法卻填「種」),候選階層符合學名形式就放行;
+    放行的候選會在 stage 欄位留下 rank 代碼,供報告提醒來源修正 rank。其他階層不適用。"""
+    if not (src_rank == SPECIES_RANK or src_rank in BELOW_SPECIES_RANKS
+            or src_rank == BELOW_SPECIES_SENTINEL):
+        return False
+    # 帶 var./subsp./f. 等標記(後面接小寫種下名,排除作者的 "Hook. f. ex")即為種下
+    if _INFRA_MARK_RE.search(name or ''):
+        n = 3
+    else:
+        n = len(_sci_words(name or ''))
+    if n == 2:
+        return any(r == SPECIES_RANK for r in cand_ranks)
+    if n >= 3:
+        return any(r in BELOW_SPECIES_RANKS for r in cand_ranks)
+    return False
+
 def has_hybrid_marker(name):
     if not isinstance(name, str):
         return False
@@ -947,6 +967,9 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
                     
                     if match_score < 1.0:
                         sci_names.loc[sci_names.sci_index == sci_idx, f'stage_{stage_num}'] = 3  # fuzzy
+                    elif best_match.get('_rank_form'):
+                        # 依學名形式對到(來源 rank 種／種下填錯):照常對到,留 rank 代碼供報告提醒
+                        sci_names.loc[sci_names.sci_index == sci_idx, f'stage_{stage_num}'] = 6  # rank
                     else:
                         sci_names.loc[sci_names.sci_index == sci_idx, f'stage_{stage_num}'] = None  # perfect match
                 
@@ -1018,10 +1041,15 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
 
         for result in results_dict:
             # 原本的 taxon_rank 或對到名稱本身的階層,任一符合即通過(只會多放行、不會多淘汰)
-            if src_rank and not (_rank_match(src_rank, normalize_rank(result.get('taxon_rank')))
-                                 or _rank_match(src_rank, _cand_rank(result))):
-                rank_rejected = True
-                continue
+            if src_rank:
+                c_ranks = (normalize_rank(result.get('taxon_rank')), _cand_rank(result))
+                if not any(_rank_match(src_rank, r) for r in c_ranks):
+                    # 種／種下填錯:依學名形式放行,並標記供報告提醒
+                    if _rank_by_name_form(src_rank, row.get('now_matching_name'), c_ranks):
+                        result['_rank_form'] = True
+                    else:
+                        rank_rejected = True
+                        continue
 
             comparable = [
                 (sv, _norm(result.get(_FIELD_TO_CAND[f])))
@@ -1055,6 +1083,10 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
 
             result['_higher_partial'] = is_partial
             matched.append(result)
+
+        # 依學名形式放行的候選只在「沒有 rank 正確的候選」時才用,避免多出候選變成 multiple
+        if any(not m.get('_rank_form') for m in matched):
+            matched = [m for m in matched if not m.get('_rank_form')]
 
         # 來源有上階層資訊
         if has_any_src:
