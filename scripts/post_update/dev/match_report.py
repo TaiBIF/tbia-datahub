@@ -243,7 +243,9 @@ def prepare(conn, rhs):
                    -- 模糊對到（分數 < 1）；之後在 Python 依字串差異分成疑似錯字、字尾變化等
                    COALESCE("is_matched" AND 'fuzzy' IN ({_STAGES}), false) AS fz,
                    -- 已對到但 stage 有 rank:種／種下的 rank 與學名形式不符,比對端依學名形式對到
-                   COALESCE("is_matched" AND 'rank' IN ({_STAGES}), false) AS rk
+                   -- (排除只對到上階者:那是 rank 不符被淘汰後退到屬,不是依學名形式對到)
+                   COALESCE("is_matched" AND NOT COALESCE("match_higher_taxon", false)
+                            AND 'rank' IN ({_STAGES}), false) AS rk
             FROM (
                 SELECT m."rights_holder" AS rh, {NAME_EXPR} AS name,
                        m."is_matched", m."match_higher_taxon", m."match_stage",
