@@ -105,6 +105,7 @@ BELOW_SPECIES_RANKS = set(
     _rank_df.loc[(_rank_df['order'] > _species_order) &
                  (~_rank_df['key'].isin(_NOT_BELOW_SPECIES)), 'key']
 )
+_ANY_BELOW_SPECIES = 'subspecies' if 'subspecies' in BELOW_SPECIES_RANKS else sorted(BELOW_SPECIES_RANKS)[0]
 
 
 # 學名前誤帶階層字樣(如 "Family Cicadellidae"、"Order Acari"),比對前去除。
@@ -153,6 +154,30 @@ def _rank_match(source_rank, cand_rank):
     if source_rank in BELOW_SPECIES_RANKS or source_rank == BELOW_SPECIES_SENTINEL:
         return cand_rank in BELOW_SPECIES_RANKS
     return cand_rank == source_rank
+
+# 科級群名稱的字尾(動物 -oidea/-idae/-inae;植物 -aceae/-oideae),順序:長的先比
+_SUFFIX_RANK = [('oideae', 'subfamily'), ('aceae', 'family'), ('oidea', 'superfamily'),
+                ('idae', 'family'), ('inae', 'subfamily')]
+
+def _cand_rank(result):
+    """候選的階層。NomenMatch 回傳的 taxon_rank 是「接受名」的階層;候選是異名時
+    (如 Calocedrus formosana → 接受名 C. macrolepis var. formosana),改由對到的名稱本身
+    (simple_name)推斷:2 個字為種、3 個字以上為種下;單名依科級字尾推斷;其餘沿用 taxon_rank。"""
+    tr = normalize_rank(result.get('taxon_rank'))
+    if result.get('name_status') == 'accepted':
+        return tr
+    n = len(_sci_words(result.get('simple_name') or result.get('matched') or ''))
+    if n == 2:
+        return SPECIES_RANK
+    if n >= 3:
+        return tr if tr in BELOW_SPECIES_RANKS else _ANY_BELOW_SPECIES
+    # 單名異名:依命名規約的字尾推斷(如 Lymantriidae → 接受名為亞科 Lymantriinae)
+    nm = (result.get('simple_name') or '').strip().lower()
+    if n == 1 and ' ' not in nm:
+        for suf, rk in _SUFFIX_RANK:
+            if nm.endswith(suf) and rk in RANK_NORMALIZE_MAP.values():
+                return rk
+    return tr
 
 def has_hybrid_marker(name):
     if not isinstance(name, str):
@@ -381,7 +406,7 @@ def _col_is_ambiguous(name, specific_rank=None, src_rank=None, cand=None):
 
     TaiCOL 候選為模糊比對(score < 1):
       - 中文名(stage 3、5):COL 無法佐證,沿用原本判斷(COL 結果去重後 > 1 → 歧義)
-      - 多字學名只差 1～2 個字元(拼寫差異)、或承名種下對到種:放行
+      - 多字學名只差 1～2 個字元(拼寫差異)、或自名種下對到種:放行
       - 其他:COL 結果中須有與 TaiCOL 候選同名的結果、且指向唯一 taxon,才放行
     TaiCOL 候選為完全命中:COL 只留 score = 1,再依 specific_rank(沒有則用來源 rank)過濾;
       COL 沒有任何完全命中 → 不算歧義。
@@ -426,7 +451,7 @@ def _col_is_ambiguous(name, specific_rank=None, src_rank=None, cand=None):
             return _col_reason(key, 'TaiCOL 模糊比對、多字名拼寫差異', False)
         # 自名種下(Vigna unguiculata subsp. unguiculata)與種為同一分類群
         if len(a) >= 3 and a[-1] == a[-2] and a[:-1] == b:
-            return _col_reason(key, 'TaiCOL 模糊比對、承名種下', False)
+            return _col_reason(key, 'TaiCOL 模糊比對、自名種下', False)
         c_name = str(cand.get('simple_name') or '').strip().casefold()
         same = [r for r in rs if str(r.get('simple_name') or '').strip().casefold() == c_name]
         if not same:
@@ -981,7 +1006,7 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
             return None
 
         for result in results_dict:
-            if src_rank and not _rank_match(src_rank, normalize_rank(result.get('taxon_rank'))):
+            if src_rank and not _rank_match(src_rank, _cand_rank(result)):
                 rank_rejected = True
                 continue
 
