@@ -94,6 +94,11 @@ RANK_FORM_LABEL = "階層（rank）與學名不符（已依學名對到）"
 RANK_FORM_NOTE = ("學名為種下（三名法或含 var.／subsp. 等）卻填「種」，或為雙名法卻填種下階層，"
                   "與 sourceTaxonRank 不一致。此筆已依學名本身的形式對到，請確認並修正階層欄位。")
 
+# 已對到、但學名與中文名都空白（只以科／目／綱對到）：只列在給夥伴的 CSV 提醒，算「對到（來源階層）」
+NAMELESS_LABEL = "學名空白（已依上階層欄位對到）"
+NAMELESS_NOTE = ("學名與中文名皆未填，僅依科／目／綱欄位對到該階層。"
+                 "若已鑑定到更細的階層，請補上學名或中文名。")
+
 # 夥伴可修/需知的未對到類別（none→TaiCOL、vetoed→內部檢討、noname 僅計數不列名、另產逐筆 zip）
 PARTNER_CATS = {"typo", "multiple", "nonstandard", "rank", "conflict", "placeholder", "invalid"}
 # 算進「對到來源階層」比例的分類（疑似錯字也是對到正確物種，只是拼寫不同）
@@ -155,6 +160,8 @@ CASE
     CASE
       WHEN "match_higher_taxon" AND "match_stage" = 4
            AND name ~* '{_OPEN_RANK_RE}' THEN 'atrank'
+      -- 學名、中文名都沒有，只能用科／目／綱對到：來源本來就只到這一層，不算退階
+      WHEN "match_higher_taxon" AND name IS NULL THEN 'atrank'
       WHEN "match_higher_taxon" THEN 'higher'
       ELSE 'atrank'
     END
@@ -343,6 +350,31 @@ def rank_form_sources(conn, rights_holder, names):
     """)
     return {r.name: {k: (getattr(r, k) or "") for k in _SRC_EMPTY}
             for r in conn.execute(sql, {"rh": rights_holder, "names": list(names)})}
+
+
+def nameless_parent_rows(conn, rh):
+    """學名、中文名都空白，只以科／目／綱欄位對到的紀錄，依來源上階欄位彙總：[(src dict, records)]。
+    這些已算「對到（來源階層）」，另外列在給夥伴的 CSV 提醒補學名。"""
+    # 先用 _mr_agg 判斷有沒有這類紀錄（學名、中文名都空白又對到 = 只能是上階欄位對到），沒有就不掃 match_log
+    has = conn.execute(text("SELECT 1 FROM _mr_agg WHERE rh = :g AND name IS NULL AND cat = 'atrank' LIMIT 1"),
+                       {"g": rh}).first()
+    if not has:
+        return []
+    sql = text("""
+        SELECT r."sourceFamily" AS fam, r."sourceOrder" AS ord, r."sourceClass" AS cls,
+               r."sourceKingdom" AS kin, r."sourceTaxonRank" AS rank, COUNT(*) AS n
+        FROM match_log m JOIN records r ON r."tbiaID" = m."tbiaID"
+        WHERE m."rights_holder" = :g AND m."is_matched" AND m."match_higher_taxon"
+          AND NULLIF(btrim(m."sourceScientificName"), '') IS NULL
+          AND NULLIF(btrim(r."sourceVernacularName"), '') IS NULL
+          AND NULLIF(btrim(r."originalVernacularName"), '') IS NULL
+        GROUP BY 1, 2, 3, 4, 5
+    """)
+    out = []
+    for r in conn.execute(sql, {"g": rh}):
+        src = dict(_SRC_EMPTY, fam=r.fam or "", ord=r.ord or "", cls=r.cls or "", kin=r.kin or "", rank=r.rank or "")
+        out.append((src, int(r.n)))
+    return out
 
 
 def source_fields_of(conn, rh):
@@ -633,6 +665,8 @@ def write_csvs(conn, rh, rights_holder, out_dir, typo_map=None, fuzzy_rows=None)
         s = rf_src.get(name, _SRC_EMPTY)
         out_rows.append([name, RANK_FORM_LABEL, RANK_FORM_NOTE, records]
                         + src_row(s) + [_format_hints(name, s)])
+    for s, records in nameless_parent_rows(conn, rh):
+        out_rows.append(["", NAMELESS_LABEL, NAMELESS_NOTE, records] + src_row(s) + [""])
     out_rows.sort(key=lambda r: (name_sort_key(r[0]), r[1]))
     with open(out_dir / "unmatched_partner.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
