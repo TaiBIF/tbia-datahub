@@ -12,8 +12,8 @@ sourceVernacularName → originalVernacularName 第一個非空值；三者皆�
 每個資料庫（單位）輸出（/portal/media/match_report/<YYYY-MM>/<group>_<info_id>/）：
   同一個 group 可能有多個資料庫（info_id 不同，如 nps_0 國家公園、nps_1 濕地），各自一份報告
   snapshot.json          各分類筆數／學名數
-  unmatched_partner.csv  給夥伴：可由夥伴修正的未對到學名（含說明、來源階層、格式提醒）
-  for_taicol.csv         給 TaiCOL：尚未收錄 + 僅對到上階
+  unmatched_partner.csv  給夥伴：可由夥伴修正的學名（未對到各原因＋疑似錯字；含說明、來源階層、格式提醒）
+  for_taicol.csv         給 TaiCOL：尚未收錄 + 僅對到上階 + 字尾變化 + 拼寫不同（已對到但拼寫與 TaiCOL 不同）
   noname_records.zip     給夥伴：無學名（學名、中文名、原始名稱皆空白）且未對到的逐筆紀錄（有才產出）
   name_state.csv.gz      每個學名的分類與筆數（供下次學名層級比較）
   compare_category.csv   與前次快照的分類層級比較（有前次才產出）
@@ -40,6 +40,7 @@ from pathlib import Path
 
 from sqlalchemy import text, bindparam
 from app import engine  # datahub 既有的 DB 連線（同 tbn.py）
+from scripts.utils.match import RANK_PREFIX_RE   # 與比對端共用「學名前誤帶階層字樣」的判斷
 
 import matplotlib
 matplotlib.use("Agg")
@@ -58,35 +59,72 @@ TAXON_SOLR_URL = "http://solr:8983/solr/taxa"
 # 歸責：partner=夥伴可修, ours=本會/TaiCOL, both=視情況, review=內部檢討, info=僅計數
 CATEGORY_META = {
     "atrank":      ("matched",   "對到（來源階層）",             None),
+    "typo":        ("matched",   "對到（學名疑似錯字）",         "partner"),
     "higher":      ("matched",   "僅對到上階（較來源退階）",     "both"),
-    "fuzzy":       ("unmatched", "疑似錯字／格式",               "partner"),
     "multiple":    ("unmatched", "多個候選無法判斷",             "partner"),
     "nonstandard": ("unmatched", "非正規學名（sp./cf. 等）",     "partner"),
     "noname":      ("unmatched", "無學名（資料缺漏）",           "partner"),
     "placeholder": ("unmatched", "暫定名（GTDB 等資料庫編號）",  "info"),
+    "invalid":     ("unmatched", "非學名（代號、unknown 等）",   "partner"),
     "vetoed":      ("unmatched", "疑應可對到（比對保守否決）",   "review"),
+    "rank":        ("unmatched", "階層（rank）與學名不符",       "partner"),
+    "conflict":    ("unmatched", "上階層與 TaiCOL 不符",         "both"),
     "none":        ("unmatched", "TaiCOL 尚未收錄",              "ours"),
 }
 
 # 給夥伴 CSV 的補充說明（PNG 標籤空間有限，詳細說明放這裡）
 CATEGORY_NOTE = {
-    "fuzzy":       "學名與 TaiCOL 收錄名稱相近但不完全相同，請確認是否有錯字或格式問題。",
     "multiple":    "此學名對應到多個分類群（如同名異物），無法判斷是哪一個。"
-                   "建議增加上階層資訊（如界、綱、目、科）以利比對。",
+                   "建議在學名加上命名者（如 Polygonum chinense L.），"
+                   "或增加上階層資訊（如界、綱、目、科）以利比對。",
     "nonstandard": "學名含 sp.、cf. 等開放命名標記，且未找到可對應的名稱；"
                    "請確認標記前的屬名／科名是否正確，若已鑑定到種，請更新學名。",
+    "rank":        "TaiCOL 有收錄此學名，但階層與來源的 sourceTaxonRank 不一致"
+                   "（如三名法卻填「種」、雙名法卻填「科」），請確認階層欄位。",
+    "conflict":    "TaiCOL 有同名學名，但上階層（界／綱／目／科）與來源不符。"
+                   "請確認上階層是否正確；若確認無誤，可能是 TaiCOL 尚未收錄的同名異物。",
+    "placeholder": "此為 BOLD BIN 或 GTDB 等資料庫編號，非正式學名，無法對應 TaiCOL；"
+                   "若已鑑定，請提供學名。",
+    "invalid":     "學名欄位為代號、數字，或 unknown／未發現等字樣，並非學名。"
+                   "請確認是否為欄位錯位；若已鑑定，請填入學名。",
 }
 
-# 夥伴可修/需知的未對到類別（none→TaiCOL、vetoed→內部檢討、noname/placeholder 僅計數不列名）
-PARTNER_CATS = {"fuzzy", "multiple", "nonstandard"}
+# 已對到、但 rank 與學名形式不符（種／種下填錯）：只列在給夥伴的 CSV 提醒，不是分類、不影響比對率
+RANK_FORM_LABEL = "階層（rank）與學名不符（已依學名對到）"
+RANK_FORM_NOTE = ("學名為種下（三名法或含 var.／subsp. 等）卻填「種」，或為雙名法卻填種下階層，"
+                  "與 sourceTaxonRank 不一致。此筆已依學名本身的形式對到，請確認並修正階層欄位。")
+
+# 已對到、但學名與中文名都空白（只以科／目／綱對到）：只列在給夥伴的 CSV 提醒，算「對到（來源階層）」
+NAMELESS_LABEL = "學名空白（已依上階層欄位對到）"
+NAMELESS_NOTE = ("學名與中文名皆未填，僅依科／目／綱欄位對到該階層。"
+                 "若已鑑定到更細的階層，請補上學名或中文名。")
+
+# 夥伴可修/需知的未對到類別（none→TaiCOL、vetoed→內部檢討、noname 僅計數不列名、另產逐筆 zip）
+PARTNER_CATS = {"typo", "multiple", "nonstandard", "rank", "conflict", "placeholder", "invalid"}
+# 算進「對到來源階層」比例的分類（疑似錯字也是對到正確物種，只是拼寫不同）
+ATRANK_KEYS = {"atrank", "typo"}
 
 _STAGES = ",".join(f"stage_{i}" for i in range(1, 9))
 # 開放命名標記：句點可有可無，但須獨立成詞（避免誤判 sp019039055、species 等）
 _NONSTD_RE = r'(^|[[:space:]])(sp|spp|cf|aff|indet)\.?([[:space:]]|$)'
 # 開放命名中「只鑑定到前一個名稱」的標記（cf./aff. 為種階層的不確定，不包含在內）
 _OPEN_RANK_RE = r'(^|[[:space:]])(sp|spp|indet)\.?([[:space:]]|$)'
-# GTDB 等暫定名：sp 後接 6 位以上數字
-_PLACEHOLDER_RE = r'[[:space:]]sp[0-9]{6,}'
+# 暫定名：GTDB 等 sp 後接 6 位以上數字，或 BOLD BIN（BOLD:XXX0000）
+_PLACEHOLDER_RE = r'[[:space:]]sp[0-9]{6,}|^BOLD:'
+# 非學名：純數字／符號（6、18）、單一字母（X）、unknown／unidentified、中文的未發現等字樣。
+# 多為欄位錯位或代號，請原單位修正，不歸給 TaiCOL。（以 ~* 比對，不分大小寫）
+_INVALID_RE = (r'^[0-9[:space:][:punct:]]+$'
+               r'|^[A-Za-z]$'          # 只限拉丁字母；單字中文名（如「雞」）由 INVALID_NAMES 個別指定
+               r'|(^|[^[:alpha:]])(unknown|unidentified)'
+               r'|未發現|無發現|未調查|無法辨認|鑑定中|未鑑定|未知種'
+               r'|^no [a-z]+$')        # 「no bats」這類「沒有發現 X」的紀錄
+# 人工維護：regex 不好涵蓋的非學名（俗名、類群名等），整串完全相同才算。
+# 發現新的樣態時直接加在這裡；會列入給夥伴的清單，不回報 TaiCOL
+INVALID_NAMES = [
+    '雞', '羊', '牛',                  # 家畜俗名，請來源提供學名
+    '家蝠類群', 'Moss taxa',            # 類群名
+]
+_INVALID_NAMES_SQL = ", ".join("'" + n.replace("'", "''") + "'" for n in INVALID_NAMES) or "NULL"
 
 # 每筆紀錄的「學名」：依比對流程順序 學名(stage 1) → 中文名(stage 3) → 原始名稱(stage 5)，
 # 取第一個非空值（皆空為 NULL）
@@ -110,8 +148,11 @@ COALESCE(NULLIF(btrim(r."sourceScientificName"), ''),
 # 品質以「來源自己的階層」為基準：match_higher_taxon=True 才算較來源退階；
 # 但 sp./spp./indet. 以屬名（stage 4）對到時，對到的即為來源鑑定的階層，算 atrank。
 #   （2026-10 起比對端開放命名單名已不走 stage 4；此條保留給尚未重新比對的舊 match_log）
-# 未對到時，stage_1~8 多個 issue code 並存的優先序：vetoed > fuzzy > multiple > nonstandard > none
-#   比對端已給出具體原因者優先，沒有其他原因時才歸為非正規學名
+# 未對到時，先看名稱本身：無學名 > 非學名（代號、unknown）> 暫定名；
+# 再看 stage_1~8 的 issue code，多個並存的優先序：
+#   vetoed > rank > conflict > multiple > nonstandard > none
+#   比對端已給出具體原因者優先；rank / conflict 是來源自己的名稱有候選但被淘汰，
+#   比後段（如屬名 stage 4）的 multiple 更接近根本原因。沒有其他原因時才歸為非正規學名
 # （作用在已算好 name 欄的子查詢上）
 CATEGORY_CASE = f"""
 CASE
@@ -119,15 +160,20 @@ CASE
     CASE
       WHEN "match_higher_taxon" AND "match_stage" = 4
            AND name ~* '{_OPEN_RANK_RE}' THEN 'atrank'
+      -- 學名、中文名都沒有，只能用科／目／綱對到：來源本來就只到這一層，不算退階
+      WHEN "match_higher_taxon" AND name IS NULL THEN 'atrank'
       WHEN "match_higher_taxon" THEN 'higher'
       ELSE 'atrank'
     END
   ELSE
     CASE
       WHEN name IS NULL                    THEN 'noname'
+      WHEN name ~* '{_INVALID_RE}'
+        OR name IN ({_INVALID_NAMES_SQL})  THEN 'invalid'
       WHEN name ~  '{_PLACEHOLDER_RE}'     THEN 'placeholder'
       WHEN 'vetoed'   IN ({_STAGES}) THEN 'vetoed'
-      WHEN 'fuzzy'    IN ({_STAGES}) THEN 'fuzzy'
+      WHEN 'rank'     IN ({_STAGES}) THEN 'rank'
+      WHEN 'conflict' IN ({_STAGES}) THEN 'conflict'
       WHEN 'multiple' IN ({_STAGES}) THEN 'multiple'
       WHEN name ~* '{_NONSTD_RE}'          THEN 'nonstandard'
       ELSE 'none'
@@ -182,7 +228,7 @@ def warn_unknown_holders(conn):
 def prepare(conn, rhs):
     """一次掃描 match_log、records，建立暫存表供各資料庫使用（同一連線內有效）。
 
-    _mr_agg：依 (資料庫, 學名, 分類, taxonID[僅 higher], 逐筆欄位[僅 noname]) 彙總的筆數
+    _mr_agg：依 (資料庫, 學名, 分類, taxonID[僅 higher 與模糊對到], 逐筆欄位[僅 noname], 是否模糊對到) 彙總的筆數
     _mr_src：未對到紀錄的來源欄位，每個 (資料庫, 學名) 取一筆代表
     """
     conn.execute(text("SET work_mem = '256MB'"))
@@ -192,14 +238,21 @@ def prepare(conn, rhs):
     conn.execute(text(f"""
         CREATE TEMP TABLE _mr_agg AS
         SELECT rh, name, cat,
-               CASE WHEN cat = 'higher' THEN "taxonID" END        AS taxon_id,
+               CASE WHEN cat = 'higher' OR fz THEN "taxonID" END  AS taxon_id,
                CASE WHEN cat = 'noname' THEN "tbiaID" END         AS tbia_id,
                CASE WHEN cat = 'noname' THEN "occurrenceID" END   AS occurrence_id,
                CASE WHEN cat = 'noname' THEN "catalogNumber" END  AS catalog_number,
+               fz, rk,
                COUNT(*) AS records
         FROM (
             SELECT rh, name, "taxonID", "tbiaID", "occurrenceID", "catalogNumber",
-                   {CATEGORY_CASE} AS cat
+                   {CATEGORY_CASE} AS cat,
+                   -- 模糊對到（分數 < 1）；之後在 Python 依字串差異分成疑似錯字、字尾變化等
+                   COALESCE("is_matched" AND 'fuzzy' IN ({_STAGES}), false) AS fz,
+                   -- 已對到但 stage 有 rank:種／種下的 rank 與學名形式不符,比對端依學名形式對到
+                   -- (排除只對到上階者:那是 rank 不符被淘汰後退到屬,不是依學名形式對到)
+                   COALESCE("is_matched" AND NOT COALESCE("match_higher_taxon", false)
+                            AND 'rank' IN ({_STAGES}), false) AS rk
             FROM (
                 SELECT m."rights_holder" AS rh, {NAME_EXPR} AS name,
                        m."is_matched", m."match_higher_taxon", m."match_stage",
@@ -209,7 +262,7 @@ def prepare(conn, rhs):
                 WHERE m."rights_holder" = ANY(:rhs)
             ) a
         ) b
-        GROUP BY 1, 2, 3, 4, 5, 6, 7
+        GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
     """), {"rhs": list(rhs)})
     conn.execute(text("CREATE INDEX ON _mr_agg (rh, cat)"))
 
@@ -271,6 +324,59 @@ def higher_names(conn, rh):
 _SRC_EMPTY = {"vern": "", "rank": "", "fam": "", "ord": "", "cls": "", "kin": ""}
 
 
+def rank_form_names(conn, rh):
+    """已對到、但來源 rank 與學名形式不符(種／種下填錯)的學名:[(name, records)]。"""
+    sql = text("""
+        SELECT name, SUM(records) FROM _mr_agg
+        WHERE rh = :g AND rk AND name IS NOT NULL
+        GROUP BY name
+    """)
+    return [(r[0], int(r[1])) for r in conn.execute(sql, {"g": rh})]
+
+
+def rank_form_sources(conn, rights_holder, names):
+    """rank_form_names 的來源欄位(_mr_src 只有未對到的紀錄,這些另外查)。"""
+    if not names:
+        return {}
+    sql = text(f"""
+        SELECT DISTINCT ON (name) name, vern, rank, fam, ord, cls, kin FROM (
+            SELECT {NAME_EXPR_REC} AS name,
+                   r."sourceVernacularName" AS vern, r."sourceTaxonRank" AS rank,
+                   r."sourceFamily" AS fam, r."sourceOrder" AS ord,
+                   r."sourceClass" AS cls, r."sourceKingdom" AS kin
+            FROM records r WHERE r."rightsHolder" = :rh
+        ) s WHERE name = ANY(:names)
+        ORDER BY name
+    """)
+    return {r.name: {k: (getattr(r, k) or "") for k in _SRC_EMPTY}
+            for r in conn.execute(sql, {"rh": rights_holder, "names": list(names)})}
+
+
+def nameless_parent_rows(conn, rh):
+    """學名、中文名都空白，只以科／目／綱欄位對到的紀錄，依來源上階欄位彙總：[(src dict, records)]。
+    這些已算「對到（來源階層）」，另外列在給夥伴的 CSV 提醒補學名。"""
+    # 先用 _mr_agg 判斷有沒有這類紀錄（學名、中文名都空白又對到 = 只能是上階欄位對到），沒有就不掃 match_log
+    has = conn.execute(text("SELECT 1 FROM _mr_agg WHERE rh = :g AND name IS NULL AND cat = 'atrank' LIMIT 1"),
+                       {"g": rh}).first()
+    if not has:
+        return []
+    sql = text("""
+        SELECT r."sourceFamily" AS fam, r."sourceOrder" AS ord, r."sourceClass" AS cls,
+               r."sourceKingdom" AS kin, r."sourceTaxonRank" AS rank, COUNT(*) AS n
+        FROM match_log m JOIN records r ON r."tbiaID" = m."tbiaID"
+        WHERE m."rights_holder" = :g AND m."is_matched" AND m."match_higher_taxon"
+          AND NULLIF(btrim(m."sourceScientificName"), '') IS NULL
+          AND NULLIF(btrim(r."sourceVernacularName"), '') IS NULL
+          AND NULLIF(btrim(r."originalVernacularName"), '') IS NULL
+        GROUP BY 1, 2, 3, 4, 5
+    """)
+    out = []
+    for r in conn.execute(sql, {"g": rh}):
+        src = dict(_SRC_EMPTY, fam=r.fam or "", ord=r.ord or "", cls=r.cls or "", kin=r.kin or "", rank=r.rank or "")
+        out.append((src, int(r.n)))
+    return out
+
+
 def source_fields_of(conn, rh):
     """該資料庫每個未對到學名的代表來源欄位（中文名、階層、各上階）。"""
     sql = text("SELECT name, vern, rank, fam, ord, cls, kin FROM _mr_src WHERE rh = :g")
@@ -312,7 +418,7 @@ def _solr_lookup(field, values, fl, batch=100):
 
 # ── 格式判斷（與 SQL 的 regex 一致）────────────────────────────
 _NONSTD_PY = re.compile(r'(^|\s)(sp|spp|cf|aff|indet)\.?(\s|$)', re.IGNORECASE)
-_PLACEHOLDER_PY = re.compile(r'\ssp\d{6,}')
+_PLACEHOLDER_PY = re.compile(r'\ssp\d{6,}|^BOLD:')
 _CJK = re.compile(r'[\u4e00-\u9fff]')
 # 作者名/年份：括號、四位數年份、&、或結尾為縮寫（如 "Kuk."、"L."）
 _AUTHOR = re.compile(r'\(|\b\d{4}\b|&|\s[A-Z][A-Za-z\-]*\.\s*$')
@@ -337,6 +443,8 @@ def _format_hints(name, s):
         if not any(s.get(k) for k in ("fam", "ord", "cls", "kin")):
             hints.append("無上階層資訊")
         return "；".join(hints)
+    if RANK_PREFIX_RE.match(name):
+        hints.append("學名含階層字樣（如 Family）")
     if _AUTHOR.search(name):
         hints.append("學名含作者／年份")
     if _is_hybrid(name):
@@ -348,6 +456,121 @@ def _format_hints(name, s):
     if not any(s.get(k) for k in ("fam", "ord", "cls", "kin")):
         hints.append("無上階層資訊")
     return "；".join(hints)
+
+
+# ── 模糊對到的分類 ──────────────────────────────────────────
+# 比對端分數 < 1 但有對到的學名，依「來源學名」與「TaiCOL 學名」的字串差異分成：
+#   typo    疑似錯字：去掉作者與階層標記後只差 1～2 個字元（且 ≤ 15%）→ 給夥伴
+#   ending  種小名字尾性別變化（formosana↔formosanus）→ 給 TaiCOL（可收錄為異名）
+#   format  只差作者名、階層標記、自名亞種寫法、連字號 → 不列
+#   other   同物異名、改屬等 → 不列
+# 都算「對到」；typo 從 atrank 拆成獨立分類，ending／format／other 仍為 atrank。
+_RANK_MARK = {'var', 'subsp', 'ssp', 'f', 'forma', 'fo', 'cv', 'x', '\u00d7', 'subvar'}
+_ENDINGS = {'us', 'a', 'um', 'is', 'e', 'ii', 'i', 'ae', 'ensis', 'ense', 'es', 'ior', 'ius',
+            'os', 'on'}                                   # os/on：希臘字尾（heterocarpos、adenocaulon）
+# 單名的階層字尾（亞科 -inae、科 -idae 等）；只差這個不是錯字，是階層不同
+_RANK_SUFFIX = ('oideae', 'aceae', 'oidea', 'idae', 'inae', 'ales', 'ini', 'ina')
+
+
+def _sci_tokens(name):
+    """只留學名本體：屬名＋小寫的種小名／種下名；去掉作者、年份、階層標記。"""
+    toks = re.sub(r'[()\[\],]', ' ', name or '').split()
+    out = []
+    for i, t in enumerate(toks):
+        t2 = t.rstrip('.').lower()
+        if i == 0:
+            out.append(t2)
+            continue
+        if t2 in _RANK_MARK:
+            continue
+        if not re.fullmatch(r'[a-z\-]+', t.rstrip('.')):   # 遇到作者（大寫、縮寫、年份）就停
+            break
+        out.append(t2)
+    return out
+
+
+def _lev(a, b):
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def _ending_only(x, y):
+    """兩個種小名是否只差常見字尾：x = 字幹 + 字尾1、y = 字幹 + 字尾2，字幹至少 4 字元。
+    （逐一試字尾，避免共同字首吃掉字尾的一部分，如 immaculatum／immaculatus）"""
+    for e1 in _ENDINGS | {''}:
+        if not x.endswith(e1):
+            continue
+        stem = x[:len(x) - len(e1)]
+        if len(stem) >= 4 and y.startswith(stem) and (y[len(stem):] in _ENDINGS or y == stem):
+            return True
+    return False
+
+
+def _rank_suffix(w):
+    return next((suf for suf in _RANK_SUFFIX if w.endswith(suf)), None)
+
+
+def classify_fuzzy(src, tgt):
+    a, b = _sci_tokens(src), _sci_tokens(tgt)
+    if not a or not b:
+        return 'other'
+    if a == b:
+        return 'format'
+    if [t.replace('-', '') for t in a] == [t.replace('-', '') for t in b]:
+        return 'format'                                   # 只差連字號（rubro-pilosum→rubropilosum）：寫法標準化，不是錯字
+    if len(a) == len(b) + 1 and len(a) >= 3 and a[-1] == a[-2] and a[:-1] == b:
+        return 'format'                                   # 自名亞種 X y y → X y
+    if len(a) == len(b) and a[0] == b[0] and all(p == q or _ending_only(p, q) for p, q in zip(a[1:], b[1:])):
+        return 'ending'                                   # 屬名相同、種小名以下只差字尾
+    if len(a) == len(b) == 1 and _rank_suffix(a[0]) and _rank_suffix(b[0]) \
+            and _rank_suffix(a[0]) != _rank_suffix(b[0]):
+        return 'other'                                    # 單名階層字尾不同（Ardeinae→Ardeidae）：階層不同，不是錯字
+    sa, sb = ' '.join(a), ' '.join(b)
+    d = _lev(sa, sb)
+    if d <= 2 and d <= 0.15 * max(len(sa), len(sb)):
+        return 'typo'
+    return 'other'
+
+
+def split_fuzzy(conn, rh):
+    """把該資料庫模糊對到（且對到來源階層）的學名分類；typo 直接在 _mr_agg 改成 cat='typo'。
+    回傳 (typo_map {學名: TaiCOL 學名},
+          fuzzy_rows {'typo': [...], 'ending': [...]}，每筆為 (學名, taxonID, 筆數, TaiCOL taxa doc))。"""
+    rows = conn.execute(text("""
+        SELECT name, taxon_id, SUM(records) FROM _mr_agg
+        WHERE rh = :g AND cat = 'atrank' AND fz AND name IS NOT NULL AND taxon_id IS NOT NULL
+        GROUP BY 1, 2
+    """), {"g": rh}).fetchall()
+    if not rows:
+        return {}, {'typo': [], 'ending': []}
+    docs = _solr_lookup("id", [r[1] for r in rows],
+                        ["scientificName", "common_name_c", "family", "family_c"])
+    typo_pairs, typo_map, fuzzy_rows = [], {}, {'typo': [], 'ending': []}
+    for name, tid, records in rows:
+        d = docs.get(tid)
+        tname = _first(d.get("scientificName")) if d else ""
+        if not tname:
+            continue                                      # 查不到 TaiCOL 學名就不分類，維持 atrank
+        kind = classify_fuzzy(name, tname)
+        if kind == 'typo':
+            typo_pairs.append({"n": name, "t": tid})
+            typo_map[name] = tname
+        if kind in fuzzy_rows:
+            fuzzy_rows[kind].append((name, tid, int(records), d))
+    if typo_pairs:
+        # 用陣列一次更新（不用 executemany：連線可能被設成 stream_results，伺服器端游標不支援）
+        conn.execute(text("""
+            UPDATE _mr_agg a SET cat = 'typo'
+            FROM (SELECT unnest(CAST(:names AS text[])) AS n, unnest(CAST(:tids AS text[])) AS t) v
+            WHERE a.rh = :g AND a.cat = 'atrank' AND a.fz AND a.name = v.n AND a.taxon_id = v.t
+        """), {"g": rh, "names": [p["n"] for p in typo_pairs], "tids": [p["t"] for p in typo_pairs]})
+        conn.commit()
+    return typo_map, fuzzy_rows
 
 
 # ── 產出 ────────────────────────────────────────────────────
@@ -395,6 +618,8 @@ def write_noname_records(conn, rh, out_dir):
             w.writerows([[v if v is not None else "" for v in r] for r in rows])
             n += len(rows)
     finally:
+        result.close()
+        conn.execution_options(stream_results=False)   # 還原：execution_options 會改到整條連線
         if f:
             f.close()
         if zf:
@@ -402,9 +627,15 @@ def write_noname_records(conn, rh, out_dir):
     return n
 
 
-def write_csvs(conn, rh, rights_holder, out_dir):
+def name_sort_key(name):
+    """清單依學名字母排序（不分大小寫）；中文名等非拉丁字排在拉丁學名之後。"""
+    name = name or ""
+    return (name.casefold(), name)
+
+
+def write_csvs(conn, rh, rights_holder, out_dir, typo_map=None, fuzzy_rows=None):
     """拆兩份：unmatched_partner.csv（夥伴可修）＋ for_taicol.csv（回報 TaiCOL）。
-    兩份都附來源階層與格式提醒，方便判斷是否為格式問題。"""
+    兩份都附來源階層與格式提醒，方便判斷是否為格式問題；都依學名字母排序，方便閱讀。"""
     un = unmatched_names(conn, rh)      # (name, catkey, records)
     hi = higher_names(conn, rh)         # (name, taxon_id, records)
     label = {k: v[1] for k, v in CATEGORY_META.items()}
@@ -416,34 +647,61 @@ def write_csvs(conn, rh, rights_holder, out_dir):
     src_head = ["中文名(來源)", "階層(來源)", "科(來源)", "目(來源)", "綱(來源)", "界(來源)"]
     src_row = lambda s: [s["vern"], s["rank"], s["fam"], s["ord"], s["cls"], s["kin"]]
 
-    # 給夥伴：fuzzy / multiple / nonstandard，依影響筆數排序
+    # 給夥伴：PARTNER_CATS 各類別 ＋ 已對到但 rank 與學名形式不符（提醒，不影響比對率），依學名字母排序
+    out_rows = []
+    for name, cat, records in un:
+        if cat in PARTNER_CATS:
+            s = src.get(name, _SRC_EMPTY)
+            note = CATEGORY_NOTE.get(cat, "")
+            if cat == "typo":
+                note = (f"與 TaiCOL 收錄的學名「{(typo_map or {}).get(name, '')}」拼寫只差 1～2 個字元，"
+                        "請確認是否為錯字；若貴單位的拼寫才正確，請告知，我們會回報 TaiCOL。"
+                        "此筆已依 TaiCOL 學名對到。")
+            out_rows.append([name, label.get(cat, cat), note, records]
+                            + src_row(s) + [_format_hints(name, s)])
+    rf = rank_form_names(conn, rh)
+    rf_src = rank_form_sources(conn, rights_holder, [n for n, _ in rf])
+    for name, records in rf:
+        s = rf_src.get(name, _SRC_EMPTY)
+        out_rows.append([name, RANK_FORM_LABEL, RANK_FORM_NOTE, records]
+                        + src_row(s) + [_format_hints(name, s)])
+    for s, records in nameless_parent_rows(conn, rh):
+        out_rows.append(["", NAMELESS_LABEL, NAMELESS_NOTE, records] + src_row(s) + [""])
+    out_rows.sort(key=lambda r: (name_sort_key(r[0]), r[1]))
     with open(out_dir / "unmatched_partner.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(["學名", "原因分類", "說明", "影響筆數"] + src_head + ["格式提醒"])
-        for name, cat, records in un:
-            if cat in PARTNER_CATS:
-                s = src.get(name, _SRC_EMPTY)
-                w.writerow([name, label.get(cat, cat), CATEGORY_NOTE.get(cat, ""), records]
-                           + src_row(s) + [_format_hints(name, s)])
+        w.writerows(out_rows)
 
-    # 給 TaiCOL：未收錄（none）＋ 僅對到上階（higher）；排除非正規學名與暫定名
+    # 給 TaiCOL：未收錄（none）＋ 僅對到上階（higher）＋ 字尾變化 ＋ 拼寫不同；排除非正規學名與暫定名；依學名字母排序
+    rows = []
+    for name, cat, records in un:
+        if cat == "none" and not _is_nonstandard(name):
+            s = src.get(name, _SRC_EMPTY)
+            rows.append([name, "TaiCOL 尚未收錄", records, "", s["vern"], s["fam"],
+                         s["rank"], s["kin"], _format_hints(name, s), rights_holder])
+    for name, tid, records in hi:
+        if _is_nonstandard(name):
+            continue
+        d = by_tid.get(tid, {})
+        cn = _first(d.get("common_name_c"))
+        fam = _first(d.get("family_c")) or _first(d.get("family"))
+        rows.append([name, "僅對到上階", records, tid, cn, fam,
+                     "", "", "", rights_holder])
+    # 已對到、但拼寫與 TaiCOL 不同者，TaiCOL 也看一份：
+    #   字尾變化（formosana↔formosanus）：可評估收錄為異名
+    #   拼寫不同（疑似錯字，夥伴也會收到）：也可能是 TaiCOL 端拼錯，請 TaiCOL 一併確認
+    for kind, label_ in (("ending", "字尾變化"), ("typo", "拼寫不同")):
+        for name, tid, records, d in (fuzzy_rows or {}).get(kind, []):
+            rows.append([name, label_, records, tid, _first(d.get("common_name_c")),
+                         _first(d.get("family_c")) or _first(d.get("family")),
+                         "", "", f"TaiCOL 學名：{_first(d.get('scientificName'))}", rights_holder])
+    rows.sort(key=lambda r: (name_sort_key(r[0]), r[1]))
     with open(out_dir / "for_taicol.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(["學名", "類別", "影響筆數", "對到的taxonID", "中文名", "科",
                     "階層(來源)", "界(來源)", "格式提醒", "rights_holder"])
-        for name, cat, records in un:
-            if cat == "none" and not _is_nonstandard(name):
-                s = src.get(name, _SRC_EMPTY)
-                w.writerow([name, "TaiCOL 尚未收錄", records, "", s["vern"], s["fam"],
-                            s["rank"], s["kin"], _format_hints(name, s), rights_holder])
-        for name, tid, records in hi:
-            if _is_nonstandard(name):
-                continue
-            d = by_tid.get(tid, {})
-            cn = _first(d.get("common_name_c"))
-            fam = _first(d.get("family_c")) or _first(d.get("family"))
-            w.writerow([name, "僅對到上階", records, tid, cn, fam,
-                        "", "", "", rights_holder])
+        w.writerows(rows)
 
 
 # ── 前後比較 ────────────────────────────────────────────────
@@ -528,19 +786,21 @@ def write_compare(snapshot, states, prev_ym, prev_dir, out_dir):
     prev_states = read_name_state(prev_dir)
     if prev_states is None:
         return None
+    # 疑似錯字（typo）也是對到來源階層，比較時視同 atrank，避免 atrank→typo 被當成「變差」
+    same = lambda c: "atrank" if c in ATRANK_KEYS else c
     rows = []
     for name, (cat, rec) in states.items():
         old = prev_states.get(name)
         if old is None:
-            if cat != "atrank":                      # 新出現且未達來源階層才列
+            if same(cat) != "atrank":                # 新出現且未達來源階層才列
                 rows.append((name, "新增學名", "", cat, 0, rec))
             continue
         ocat, orec = old
-        if ocat == cat:
+        if same(ocat) == same(cat):
             continue
-        if cat == "atrank":
+        if same(cat) == "atrank":
             kind = "新對到來源階層"
-        elif ocat == "atrank":
+        elif same(ocat) == "atrank":
             kind = "變差（原本對到來源階層）"
         else:
             kind = "原因改變"
@@ -586,15 +846,19 @@ PAPER, INK, MUTED, ACCENT, GREEN, GREY = \
 # 品質光譜（以來源階層為基準）由好到差
 SPECTRUM = [
     ("對到（來源階層）", "對到來源階層", "#2f6b5e"),
+    ("對到（學名疑似錯字）", "對到但拼寫不同", "#5b9a86"),
     ("僅對到上階（較來源退階）", "較來源退階", "#a7c4b7"),
     ("__unmatched__", "未對到", "#c2cbc4"),
 ]
 
 
+def _is_atrank(r):
+    return r.get("category_key") in ATRANK_KEYS or r.get("category") == "對到（來源階層）"
+
+
 def _atrank_rate(rows):
     total = sum(r["records"] for r in rows) or 1
-    at = sum(r["records"] for r in rows
-             if r["axis"] == "matched" and r["category"] == "對到（來源階層）")
+    at = sum(r["records"] for r in rows if _is_atrank(r))
     return round(at / total * 100, 1)
 
 
@@ -634,7 +898,7 @@ def render_png(snapshot_rows, rights_holder, year_month, prev_atrank_rate, prev_
     ax.text(5, 89, f"學名比對狀況 · {year_month}", fontproperties=SANS, fontsize=9, color=MUTED)
 
     # 主數字：對到來源階層（以來源自己的階層為基準，非「種」）
-    atrank_n = prec.get("對到（來源階層）", 0)
+    atrank_n = sum(r["records"] for r in snapshot_rows if _is_atrank(r))   # 含疑似錯字
     ax.text(5, 74, _pct_text(atrank_n, total), fontproperties=BOLD, fontsize=38, color=INK)
     ax.text(5, 67.5, "對到來源提供的階層", fontproperties=SANS, fontsize=9.5, color=MUTED)
     ax.text(42, 77, f"整體對到 {_pct_text(matched, total)}", fontproperties=SANS, fontsize=9, color=MUTED)
@@ -701,12 +965,13 @@ def process_unit(conn, rh, group, info_id, year_month, show_delta=True):
     out_dir = OUT_BASE / year_month / unit
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    typo_map, fuzzy_rows = split_fuzzy(conn, rh)      # 先把疑似錯字從 atrank 拆出來
     agg = aggregate(conn, rh)
     if not agg:
         print(f"[{unit}] {rh}｜match_log 無資料，略過", file=sys.stderr)
         return
     snapshot = write_snapshot(agg, group, info_id, rh, year_month, out_dir)
-    write_csvs(conn, rh, rh, out_dir)
+    write_csvs(conn, rh, rh, out_dir, typo_map, fuzzy_rows)
     write_noname_records(conn, rh, out_dir)
 
     states = name_states(conn, rh)
@@ -725,7 +990,8 @@ def process_unit(conn, rh, group, info_id, year_month, show_delta=True):
     total = sum(r["records"] for r in snapshot)
     matched = sum(r["records"] for r in snapshot if r["axis"] == "matched")
     rate = round(matched / total * 100, 1) if total else 0.0
-    print(f"[{unit}] {rh}｜比對率 {rate}%｜{total} 筆｜前次 {prev_ym or '無'} → {out_dir}",
+    print(f"[{unit}] {rh}｜比對率 {rate}%｜{total} 筆｜疑似錯字 {len(typo_map)} 個、字尾變化 {len(fuzzy_rows['ending'])} 個學名"
+          f"｜前次 {prev_ym or '無'} → {out_dir}",
           file=sys.stderr)
 
 

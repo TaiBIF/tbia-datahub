@@ -47,7 +47,9 @@ match_issue_map = {
     2: 'none',
     3: 'fuzzy',
     4: 'multiple',
-    5: 'vetoed'
+    5: 'vetoed',
+    6: 'rank',      # 有候選,但 rank 與來源 sourceTaxonRank 不符而被淘汰
+    7: 'conflict',  # 有候選,但上階層與來源不符而被淘汰(fallback 也未放行)
 }
 
 # TODO rank map待新增47之後的
@@ -103,6 +105,35 @@ BELOW_SPECIES_RANKS = set(
     _rank_df.loc[(_rank_df['order'] > _species_order) &
                  (~_rank_df['key'].isin(_NOT_BELOW_SPECIES)), 'key']
 )
+_ANY_BELOW_SPECIES = 'subspecies' if 'subspecies' in BELOW_SPECIES_RANKS else sorted(BELOW_SPECIES_RANKS)[0]
+
+
+# 學名前誤帶階層字樣(如 "Family Cicadellidae"、"Order Acari"),比對前去除。
+# 階層由 TaiCOL 階層表動態取「種以上」(order < species)的 key 與英文名,
+# 只在其後剩「單一個首字大寫的學名」時才去除,避免誤傷
+def _build_rank_prefix_re(rank_df):
+    words = set()
+    for _, r in rank_df[rank_df['order'] < _species_order].iterrows():
+        cands = [r['key']]
+        try:
+            cands.append(json.loads(r['display']).get('en-us', ''))
+        except Exception:
+            pass
+        for c in cands:
+            c = _canon_rank_str(c)          # 小寫、- _ 轉空格
+            if c:
+                words.add(c)
+    # 長的放前面;字內空格允許寫成空格、- 或 _ 或連寫(super family / super-family / superfamily)
+    alt = '|'.join(re.escape(w).replace(r'\ ', r'[\s_-]?')
+                   for w in sorted(words, key=len, reverse=True))
+    return re.compile(rf'^(?i:{alt})\s*[:.]?\s+(?=[A-Z][a-z]+\s*$)')
+
+RANK_PREFIX_RE = _build_rank_prefix_re(_rank_df)
+
+def strip_rank_prefix(name):
+    if not isinstance(name, str):
+        return name
+    return RANK_PREFIX_RE.sub('', name.strip())
 
 def normalize_rank(v):
     """標準化 rank → 標準 key;無法對應或空值回 None"""
@@ -123,6 +154,50 @@ def _rank_match(source_rank, cand_rank):
     if source_rank in BELOW_SPECIES_RANKS or source_rank == BELOW_SPECIES_SENTINEL:
         return cand_rank in BELOW_SPECIES_RANKS
     return cand_rank == source_rank
+
+# 科級群名稱的字尾(動物 -oidea/-idae/-inae;植物 -aceae/-oideae),順序:長的先比
+_SUFFIX_RANK = [('oideae', 'subfamily'), ('aceae', 'family'), ('oidea', 'superfamily'),
+                ('idae', 'family'), ('inae', 'subfamily')]
+
+def _cand_rank(result):
+    """候選的階層。NomenMatch 回傳的 taxon_rank 是「接受名」的階層;候選是異名時
+    (如 Calocedrus formosana → 接受名 C. macrolepis var. formosana),改由對到的名稱本身
+    (simple_name)推斷:2 個字為種、3 個字以上為種下;單名依科級字尾推斷;其餘沿用 taxon_rank。"""
+    tr = normalize_rank(result.get('taxon_rank'))
+    if result.get('name_status') == 'accepted':
+        return tr
+    n = len(_sci_words(result.get('simple_name') or result.get('matched') or ''))
+    if n == 2:
+        return SPECIES_RANK
+    if n >= 3:
+        return tr if tr in BELOW_SPECIES_RANKS else _ANY_BELOW_SPECIES
+    # 單名異名:依命名規約的字尾推斷(如 Lymantriidae → 接受名為亞科 Lymantriinae)
+    nm = (result.get('simple_name') or '').strip().lower()
+    if n == 1 and ' ' not in nm:
+        for suf, rk in _SUFFIX_RANK:
+            if nm.endswith(suf) and rk in RANK_NORMALIZE_MAP.values():
+                return rk
+    return tr
+
+_INFRA_MARK_RE = re.compile(r'\s(?:var|subsp|ssp|f|fo|form|forma|subvar|nothosubsp|nothovar)\.?\s+(?!ex\b|et\b)[a-z][a-z\-]+')
+
+def _rank_by_name_form(src_rank, name, cand_ranks):
+    """種與種下之間,以來源學名本身的形式為準(2 個字為種、3 個字以上或帶 var./subsp. 為種下)。
+    來源 rank 是種或種下、但和學名形式不符時(如三名法卻填「種」),候選階層符合學名形式就放行;
+    放行的候選會在 stage 欄位留下 rank 代碼,供報告提醒來源修正 rank。其他階層不適用。"""
+    if not (src_rank == SPECIES_RANK or src_rank in BELOW_SPECIES_RANKS
+            or src_rank == BELOW_SPECIES_SENTINEL):
+        return False
+    # 帶 var./subsp./f. 等標記(後面接小寫種下名,排除作者的 "Hook. f. ex")即為種下
+    if _INFRA_MARK_RE.search(name or ''):
+        n = 3
+    else:
+        n = len(_sci_words(name or ''))
+    if n == 2:
+        return any(r == SPECIES_RANK for r in cand_ranks)
+    if n >= 3:
+        return any(r in BELOW_SPECIES_RANKS for r in cand_ranks)
+    return False
 
 def has_hybrid_marker(name):
     if not isinstance(name, str):
@@ -209,7 +284,7 @@ def _stage4_genus_transform(df):
 
 
 # ── 無上階層資訊時,用 COL 來源做同名/相似名歧義偵測 ──
-COL_MATCH_BASE_URL = 'https://match.taibif.tw/v2/'   # 測試用外部 endpoint;之後改本機
+COL_MATCH_BASE_URL = 'http://host.docker.internal:8080/'   # 本機 NomenMatch(與 TaiCOL 同一套,source=col)
 _col_ambiguity_cache = {}
 
 # 各階層的上下關係(數字越小越上階)
@@ -251,40 +326,210 @@ def _request_json_with_retry(url, tag, max_retries=3, backoff=2):
     return False, None
 
 
-def _col_is_ambiguous(name, specific_rank=None):
-    """用 COL 來源查同名/相似名:若指定 specific_rank,只計算同 rank 的結果,
-    再依 accepted_namecode 去重;去重後 > 1 筆 → 視為歧義(True)。
-    查詢失敗一律回 False(放行,沿用 TaiCOL 唯一候選)。"""
-    if not name or not isinstance(name, str):
-        return False
+# COL 歧義判斷用:name_status 分類
+_COL_ACCEPTED = {'accepted', 'provisionally accepted'}
+_COL_MISAPPLIED = {'misapplied'}
+_YEAR_RE = re.compile(r'\b(1[5-9]\d{2}|20\d{2})\b')
+
+
+# COL 2024 起把原核生物分成多個界(Bacillati、Pseudomonadati、Methanobacteriati…,字尾 -ati),
+# TaiCOL 仍用 Bacteria／Archaea:比較界時視為相同
+_PROKARYOTE = {'bacteria', 'archaea'}
+
+
+def _same_kingdom(taicol_k, col_k):
+    if taicol_k == col_k:
+        return True
+    return taicol_k in _PROKARYOTE and (col_k.endswith('ati') or col_k in _PROKARYOTE)
+
+
+_RANK_WORDS = {'var', 'subsp', 'ssp', 'f', 'fo', 'forma', 'subvar', 'cv'}
+
+
+def _sci_words(name):
+    """學名本體:屬名 + 小寫的種小名／種下名(去掉作者、年份、階層標記),小寫。"""
+    out = []
+    for i, t in enumerate(re.sub(r'[()\[\],]', ' ', name or '').split()):
+        t2 = t.rstrip('.')
+        if i == 0:
+            out.append(t2.lower())
+        elif t2.lower() in _RANK_WORDS:
+            continue
+        elif re.fullmatch(r'[a-z\-]+', t2):
+            out.append(t2)
+        else:
+            break
+    return out
+
+
+def _lev(a, b):
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def _col_pick(rows):
+    """一組 COL 結果是否指向唯一 taxon:有 accepted 只看 accepted;
+    沒有就看 synonym 類(misapplied 不計)。回傳指向的 taxon 數。"""
+    acc = {r.get('accepted_namecode') for r in rows if r.get('name_status') in _COL_ACCEPTED}
+    if acc:
+        return len(acc)
+    return len({r.get('accepted_namecode') for r in rows if r.get('name_status') not in _COL_MISAPPLIED})
+
+
+def _norm_full_name(s):
+    """學名(含作者)正規化,供比對作者用:去年份、Linn.→L.、et→&,
+    再去空白、句點、逗號並轉小寫。例:'(Hedw.) P. Beauv., 1805' 與 '(Hedw.) P.Beauv.' 相同。"""
+    if not isinstance(s, str):
+        return ''
+    s = _YEAR_RE.sub('', s)
+    s = re.sub(r'\bLinn\.?(?=\s|$|\))', 'L.', s)
+    s = re.sub(r'\s+et\s+', ' & ', s)
+    return re.sub(r'[\s.,]+', '', s).lower()
+
+
+def _col_results(name):
+    """查 COL(source=col)回傳 results;查詢失敗回 None(不寫入 cache,下次可重試)。"""
     key = name.strip()
-    if key == '':
-        return False
-    cache_key = f'{key}::{specific_rank}'
+    cache_key = f'results::{key}'
     if cache_key in _col_ambiguity_cache:
         return _col_ambiguity_cache[cache_key]
-    result = False
-    try:
-        url = f"{COL_MATCH_BASE_URL}api.php?names={urllib.parse.quote(key)}&format=json&source=col"
-        resp = requests.get(url, timeout=30)
-        if resp.status_code == 200:
-            data = resp.json()
-            rows = data.get('data')
-            if isinstance(rows, list) and rows and isinstance(rows[0], list) and rows[0]:
-                best = rows[0][0]
-                if isinstance(best, dict):
-                    rs = best.get('results', [])
-                    if isinstance(rs, list):
-                        # 只保留同 rank(有指定時)
-                        if specific_rank:
-                            rs = [r for r in rs if isinstance(r, dict) and r.get('taxon_rank') == specific_rank]
-                        # 依 accepted_namecode 去重,同一 taxon 不重複計數
-                        codes = {r.get('accepted_namecode') for r in rs if isinstance(r, dict)}
-                        result = len(codes) > 1
-    except Exception as e:
-        print(f"COL ambiguity check error for {key}: {e}")
-    _col_ambiguity_cache[cache_key] = result
+    url = f"{COL_MATCH_BASE_URL}api.php?names={urllib.parse.quote(key)}&format=json&source=col"
+    ok, data = _request_json_with_retry(url, f'COL ambiguity {key}')
+    if not ok:
+        return None
+    rs = []
+    rows = (data or {}).get('data')
+    if isinstance(rows, list) and rows and isinstance(rows[0], list) and rows[0]:
+        best = rows[0][0]
+        if isinstance(best, dict) and isinstance(best.get('results'), list):
+            rs = [r for r in best['results'] if isinstance(r, dict)]
+    _col_ambiguity_cache[cache_key] = rs
+    return rs
+
+
+# 每個名稱最後一次 COL 歧義判斷的原因(診斷用;不影響比對結果)
+col_reason_log = {}
+
+
+def _col_reason(key, reason, result):
+    col_reason_log[key] = reason
     return result
+
+
+def _col_is_ambiguous(name, specific_rank=None, src_rank=None, cand=None):
+    """來源無上階層、TaiCOL 只剩一個候選(cand)時,用 COL 判斷名稱是否有歧義。True = 歧義(標 multiple)。
+
+    TaiCOL 候選為模糊比對(score < 1):
+      - 中文名(stage 3、5):COL 無法佐證,沿用原本判斷(COL 結果去重後 > 1 → 歧義)
+      - 多字學名只差 1～2 個字元(拼寫差異)、或自名種下對到種:放行
+      - 其他:COL 結果中須有與 TaiCOL 候選同名的結果、且指向唯一 taxon,才放行
+    TaiCOL 候選為完全命中:COL 只留 score = 1,再依 specific_rank(沒有則用來源 rank)過濾;
+      COL 沒有任何完全命中 → 不算歧義。
+      A. 來源有作者,且 COL 有同作者的結果:
+         - TaiCOL 候選的作者對得上 COL 另一筆、且指向不同 taxon → 歧義(來源指的是另一個同名)
+         - 同作者結果指向唯一 taxon(有 accepted 只看 accepted)→ 放行,否則歧義
+      B. 來源沒有作者、或作者對不上:
+         - 有 accepted:只有 1 個且與 TaiCOL 候選同界才放行(原核生物 COL 新界名視同 Bacteria/Archaea)
+         - 沒有 accepted:synonym 類只指向 1 個 taxon → 放行,多個 → 歧義
+    查詢失敗一律回 False(放行,沿用 TaiCOL 唯一候選)。"""
+    if not name or not isinstance(name, str) or name.strip() == '':
+        return False
+    key = name.strip()
+    rs = _col_results(name)
+    if rs is None:
+        return _col_reason(key, 'COL 查詢失敗', False)
+    cand = cand or {}
+
+    def _rank_ok(r):
+        rr = normalize_rank(r.get('taxon_rank'))
+        if specific_rank:
+            return rr == specific_rank
+        if src_rank:
+            # COL 缺 rank 資訊時不當否定證據
+            return rr is None or _rank_match(src_rank, rr)
+        return True
+
+    # TaiCOL 候選為模糊比對(中文名 0.95 也會進來)
+    if float(cand.get('score') or 0) < 1.0:
+        if specific_rank:
+            rs = [r for r in rs if r.get('taxon_rank') == specific_rank]
+        if re.search(r'[\u4e00-\u9fff]', key):
+            # 中文名:COL 沒有中文名可佐證,維持原本的判斷
+            amb = len({r.get('accepted_namecode') for r in rs}) > 1
+            return _col_reason(key, '中文名（原規則）', amb)
+        # 學名:COL 也要(模糊或完全)對到與 TaiCOL 候選相同的名稱,才算佐證。
+        # 例:Arctiidae → TaiCOL 對到 Arcticidae(雙殼綱)、COL 對到 Arctiinae → 不同 → 歧義
+        # 多字學名(雙名以上)只差 1～2 個字元:拼寫差異(Mazus goodeniifolius／goodenifolius),
+        # 不會跳到別的生物,放行(之後報表歸為疑似錯字或拼寫不同)。單名不適用(Arctiidae／Arcticidae)
+        a, b = _sci_words(key), _sci_words(cand.get('simple_name'))
+        if len(a) >= 2 and len(a) == len(b) and _lev(' '.join(a), ' '.join(b)) <= 2:
+            return _col_reason(key, 'TaiCOL 模糊比對、多字名拼寫差異', False)
+        # 自名種下(Vigna unguiculata subsp. unguiculata)與種為同一分類群
+        if len(a) >= 3 and a[-1] == a[-2] and a[:-1] == b:
+            return _col_reason(key, 'TaiCOL 模糊比對、自名種下', False)
+        c_name = str(cand.get('simple_name') or '').strip().casefold()
+        same = [r for r in rs if str(r.get('simple_name') or '').strip().casefold() == c_name]
+        if not same:
+            return _col_reason(key, 'TaiCOL 模糊比對、COL 未對到相同名稱', True)
+        amb = _col_pick(same) > 1
+        return _col_reason(key, 'TaiCOL 模糊比對、COL 同名指向多個' if amb else 'TaiCOL 模糊比對、COL 佐證', amb)
+
+    exact = [r for r in rs if r.get('score') == 1 and _rank_ok(r)]
+    if not exact:
+        return _col_reason(key, 'COL 無完全命中', False)
+
+    # A. 以作者比對
+    src_full = _norm_full_name(name)
+    canon = _norm_full_name(exact[0].get('simple_name'))
+    if src_full and src_full != canon:            # 來源帶作者
+        same = [r for r in exact if _norm_full_name(r.get('matched')) == src_full]
+        same = [r for r in same if r.get('name_status') not in _COL_MISAPPLIED]
+        if same:
+            # TaiCOL 候選的作者對得上 COL 另一筆、且指向不同 taxon → 來源指的是另一個同名
+            # (作者寫法常有 ex、年份括號等差異,只看對得上的,對不上不當證據)
+            c_full = _norm_full_name(cand.get('matched'))
+            same_codes = {r.get('accepted_namecode') for r in same}
+            other = [r for r in exact if c_full and c_full != src_full
+                     and _norm_full_name(r.get('matched')) == c_full
+                     and r.get('name_status') not in _COL_MISAPPLIED]
+            if other and {r.get('accepted_namecode') for r in other} - same_codes:
+                return _col_reason(key, 'A:TaiCOL 候選是另一個同名', True)
+            amb = _col_pick(same) > 1
+            return _col_reason(key, 'A:同作者指向多個' if amb else 'A:同作者唯一', amb)
+
+    # B. 只計 accepted,且須與 TaiCOL 候選同界
+    acc = [r for r in exact if r.get('name_status') in _COL_ACCEPTED]
+    codes = {r.get('accepted_namecode') for r in acc}
+    if not codes:
+        # 沒有 accepted(只有 synonym 類):synonym 類只指向 1 個 taxon → 放行(舊名一對一);
+        # 指向多個 → 歧義(如不附作者的 Polygonum chinense)。misapplied 不計
+        syn_rows = [r for r in exact if r.get('name_status') not in _COL_MISAPPLIED]
+        syn = {r.get('accepted_namecode') for r in syn_rows}
+        if len(syn) <= 1:
+            return _col_reason(key, 'B:synonym 唯一' if syn else 'B:只有 misapplied', False)
+        # 指向多個 taxon:多為同屬內不同作者的同名(如 Sphyraena japonica Cuvier／Bloch & Schneider),
+        # TaiCOL 已依台灣用法選定 → 與 TaiCOL 候選同界就照 TaiCOL;跨界才算歧義。COL 缺界的不計
+        c_kingdom = str(cand.get('kingdom') or '').strip().casefold()
+        if not c_kingdom:
+            return _col_reason(key, 'B:synonym 指向多個、TaiCOL 候選沒有界', True)
+        syn_kingdoms = {k for k in (str(r.get('kingdom') or '').strip().casefold() for r in syn_rows) if k}
+        if all(_same_kingdom(c_kingdom, k) for k in syn_kingdoms):
+            return _col_reason(key, 'B:synonym 指向多個、同界照 TaiCOL', False)
+        return _col_reason(key, f'B:synonym 指向多個、跨界（TaiCOL {c_kingdom}／COL {"、".join(sorted(syn_kingdoms))}）', True)
+    if len(codes) > 1:
+        return _col_reason(key, 'B:多個 accepted', True)
+    c_kingdom = str(cand.get('kingdom') or '').strip().casefold()
+    col_kingdoms = {str(r.get('kingdom') or '').strip().casefold() for r in acc}
+    if not c_kingdom:
+        return _col_reason(key, 'B:TaiCOL 候選沒有界', True)
+    if not all(_same_kingdom(c_kingdom, k) for k in col_kingdoms):
+        return _col_reason(key, f'B:界不同（TaiCOL {c_kingdom}／COL {"、".join(sorted(col_kingdoms))}）', True)
+    return _col_reason(key, 'B:accepted 唯一且同界', False)
 
 
 def _col_has_exact(name):
@@ -546,6 +791,9 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
         # 清理 HTML tags
         no_taxon['now_matching_name'] = no_taxon['now_matching_name'].apply(clean_html_tags)
 
+        # 去除學名前的階層字樣(Family Xxx → Xxx);需在 transform_func 前,stage 4 才不會取到 "Family" 當屬名
+        no_taxon['now_matching_name'] = no_taxon['now_matching_name'].apply(strip_rank_prefix)
+
         # 應用轉換函數（如果有）
         if transform_func:
             no_taxon['now_matching_name'] = transform_func(no_taxon)
@@ -648,7 +896,8 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
             
             # 轉換為DataFrame進行向量化操作
             results_df = pd.DataFrame(filtered_rs)
-            required_cols = ['accepted_namecode', 'family', 'order', 'class', 'kingdom', 'name_status', 'score', 'taxon_rank']
+            required_cols = ['accepted_namecode', 'family', 'order', 'class', 'kingdom', 'name_status', 'score', 'taxon_rank',
+                             'matched', 'simple_name']   # matched / simple_name 供 COL 歧義判斷比對作者
             missing_cols = [col for col in required_cols if col not in results_df.columns]
             for col in missing_cols:
                 results_df[col] = None
@@ -718,6 +967,9 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
                     
                     if match_score < 1.0:
                         sci_names.loc[sci_names.sci_index == sci_idx, f'stage_{stage_num}'] = 3  # fuzzy
+                    elif best_match.get('_rank_form'):
+                        # 依學名形式對到(來源 rank 種／種下填錯):照常對到,留 rank 代碼供報告提醒
+                        sci_names.loc[sci_names.sci_index == sci_idx, f'stage_{stage_num}'] = 6  # rank
                     else:
                         sci_names.loc[sci_names.sci_index == sci_idx, f'stage_{stage_num}'] = None  # perfect match
                 
@@ -729,6 +981,11 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
             elif veto_reason == 'vetoed':
                 # 有候選但被單名 COL 否決(TaiCOL 候選疑似錯誤)→ 非「未收錄」
                 sci_names.loc[sci_names.sci_index == sci_idx, f'stage_{stage_num}'] = 5  # vetoed
+            elif veto_reason in ('rank', 'conflict') and not is_parent:
+                # 有候選但因 rank/上階層與來源不符被淘汰 → 非「未收錄」,請來源確認欄位。
+                # 上階 stage(4、6~8)不標:那是代查上階,同名衝突不代表來源填錯
+                sci_names.loc[sci_names.sci_index == sci_idx, f'stage_{stage_num}'] = \
+                    6 if veto_reason == 'rank' else 7
             elif len(results_dict) > 1:
                 # 有多個結果但階層不匹配
                 sci_names.loc[sci_names.sci_index == sci_idx, f'stage_{stage_num}'] = 4  # multiple
@@ -770,10 +1027,29 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
         unverifiable = []   # (a) 候選無任何可比較層
         conflicting = []    # (b) 有可比較層但全不符
         vetoed = False      # 曾因單名 COL 否決主動否決候選
+        rank_rejected = False   # 曾有候選因 rank 與來源不符被淘汰
+
+        def _fail_reason():
+            """全數淘汰時的原因:vetoed > conflict(上階層不符)> rank > None"""
+            if vetoed:
+                return 'vetoed'
+            if conflicting:
+                return 'conflict'
+            if rank_rejected:
+                return 'rank'
+            return None
 
         for result in results_dict:
-            if src_rank and not _rank_match(src_rank, normalize_rank(result.get('taxon_rank'))):
-                continue
+            # 原本的 taxon_rank 或對到名稱本身的階層,任一符合即通過(只會多放行、不會多淘汰)
+            if src_rank:
+                c_ranks = (normalize_rank(result.get('taxon_rank')), _cand_rank(result))
+                if not any(_rank_match(src_rank, r) for r in c_ranks):
+                    # 種／種下填錯:依學名形式放行,並標記供報告提醒
+                    if _rank_by_name_form(src_rank, row.get('now_matching_name'), c_ranks):
+                        result['_rank_form'] = True
+                    else:
+                        rank_rejected = True
+                        continue
 
             comparable = [
                 (sv, _norm(result.get(_FIELD_TO_CAND[f])))
@@ -808,6 +1084,10 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
             result['_higher_partial'] = is_partial
             matched.append(result)
 
+        # 依學名形式放行的候選只在「沒有 rank 正確的候選」時才用,避免多出候選變成 multiple
+        if any(not m.get('_rank_form') for m in matched):
+            matched = [m for m in matched if not m.get('_rank_form')]
+
         # 來源有上階層資訊
         if has_any_src:
             if matched:
@@ -819,9 +1099,9 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
                 pool += conflicting
             pool = [p for p in pool if float(p.get('score') or 0) >= 1.0]
             if len(pool) != 1:
-                return [], ('vetoed' if vetoed else None)
+                return [], _fail_reason()
             if _col_single_exact(row.get('now_matching_name'), specific_rank) != 'single':
-                return [], ('vetoed' if vetoed else None)
+                return [], _fail_reason()
             pool[0]['_higher_partial'] = True   # 未經階層驗證,標記供稽核
             return pool, None
 
@@ -835,10 +1115,11 @@ def matching_flow_new_optimized(sci_names, batch_size=50, max_workers=4):
                 matched = [m for m in matched if m.get('name_status') == 'not-accepted']
 
         if len(matched) != 1:
-            return [], ('vetoed' if vetoed else None)
+            # 0 個:全被 rank 淘汰時回 'rank';多個:交給後面標 multiple
+            return [], (None if matched else _fail_reason())
         # COL 有同名多筆、來源又無上階層可分辨 → 等同 multiple(來源補上階層即可解決),
         # 與「單名 COL 否決」(TaiCOL 候選疑似錯誤)區分
-        if _col_is_ambiguous(row.get('now_matching_name'), specific_rank):
+        if _col_is_ambiguous(row.get('now_matching_name'), specific_rank, src_rank, matched[0]):
             return [], 'ambiguous'
         return matched, None
     
@@ -1065,8 +1346,9 @@ class OptimizedMatchLogProcessor:
         
         # match_log 的固定欄位類型（相對單純）
         timestamp_cols = ['modified', 'created']
-        numeric_cols = ['match_stage', 'stage_1', 'stage_2', 'stage_3', 'stage_4', 
-                       'stage_5', 'stage_6', 'stage_7', 'stage_8']
+        # stage_1~8 在 create_match_log_df 已轉成 'multiple' 等字串(DB 為文字欄位),
+        # 不可列為 numeric,否則 UPDATE 時會被寫成 NULL
+        numeric_cols = ['match_stage']
         boolean_cols = ['match_higher_taxon', 'match_higher_partial', 'is_matched']
         
         # 使用大批次處理

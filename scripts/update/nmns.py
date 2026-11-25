@@ -16,6 +16,7 @@ from tqdm import tqdm
 from scripts.utils.progress import timer
 import atexit
 import os
+from sqlalchemy import text
 
 # 比對學名時使用的欄位
 sci_cols = ['sourceScientificName', 'sourceVernacularName', 'sourceOrder', 'sourceFamily', 'sourceClass', 'sourceKingdom']
@@ -134,6 +135,81 @@ field_map = {
 field_list = list(set(field_map.values()))
 
 
+# ── API 防護：避免 API 不穩定時資料抓不完整，最後 delete_records 把沒抓到的舊資料刪掉 ──
+# 每個學門抓到最後一頁時，和本次更新開始前 DB 的筆數比較；
+# 少於 MIN_RATIO 視為 API 異常 → 等待後重抓同一頁，重試 SHORT_RETRIES 次仍不足就中止整個更新
+# （中止時不會執行 delete_records，舊資料保留；斷點已存在 update_version.note，修復後重跑會接續）
+MIN_RATIO = 0.9            # 本次筆數 < 上次 × 0.9 視為異常
+MIN_BASELINE = 100         # 上次筆數太少的學門不檢查（避免小學門正常增減被誤判）
+SHORT_RETRIES = 5          # 筆數不足時重抓最後一頁的次數
+SHORT_RETRY_WAIT = 300     # 每次重抓前等待秒數（5 分鐘）
+REQUEST_RETRIES = 3        # 單次請求失敗（非 200、JSON 錯誤、連線錯誤）的重試次數
+# 確認來源真的下架資料時，把學門加進這裡，該學門就不做筆數檢查
+ALLOW_DECREASE = []
+
+
+def fetch_page(category, offset):
+    """抓一頁；失敗時重試，重試用盡才 raise（raise 會中止更新，不會刪資料）。"""
+    url = ('https://collections.culture.tw/getMetadataList.aspx?FORMAT=NMNS'
+           f'&DEPARTMENT={category}&LIMIT=100&OFFSET={offset}')
+    last = None
+    for attempt in range(1, REQUEST_RETRIES + 1):
+        try:
+            r = requests.get(url, timeout=120)
+            if r.status_code != 200:
+                raise Exception(f"API failed: {r.status_code}")
+            data = r.json()
+            if not isinstance(data, list):
+                raise Exception("invalid JSON response (not a list)")
+            return data
+        except Exception as e:
+            last = e
+            print(f"[{category}] offset={offset} 第 {attempt}/{REQUEST_RETRIES} 次請求失敗：{e}", flush=True)
+            time.sleep(10 * attempt)
+    raise Exception(f"API 請求重試 {REQUEST_RETRIES} 次仍失敗：{last} - {url}")
+
+
+def baseline_counts():
+    """本次更新開始前，各學門的筆數：取 dataset 表的 occurrenceCount（name = rights_holder-學門）。
+    不排除 deprecated：學門若曾因 API 異常被整批刪光而標為 deprecated，仍要拿它的筆數當基準。"""
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT name, COALESCE(SUM("occurrenceCount"), 0) FROM dataset
+            WHERE rights_holder = :rh GROUP BY 1
+        """), {'rh': rights_holder}).fetchall()
+    prefix = rights_holder + '-'
+    return {name[len(prefix):]: int(n) for name, n in rows if name and name.startswith(prefix)}
+
+
+BASELINE = baseline_counts()
+print('更新前 DB 各學門筆數：' + '、'.join(f'{k} {v:,}' for k, v in BASELINE.items()), flush=True)
+
+
+def check_last_page(category, offset, resp):
+    """resp 不滿 100 筆（最後一頁）時檢查本學門總數；不足就重抓同一頁，回傳最終的 resp。"""
+    base = BASELINE.get(category, 0)
+    if category in ALLOW_DECREASE or base < MIN_BASELINE:
+        return resp
+    for attempt in range(1, SHORT_RETRIES + 1):
+        total = offset + len(resp)          # offset 為本頁起點，含續跑前已抓的部分
+        if total >= base * MIN_RATIO:
+            return resp
+        print(f"⚠️ [{category}] 本次 {total:,} 筆，更新前 {base:,} 筆（< {MIN_RATIO:.0%}），"
+              f"疑似 API 異常；{SHORT_RETRY_WAIT} 秒後重抓 offset={offset}"
+              f"（{attempt}/{SHORT_RETRIES}）", flush=True)
+        time.sleep(SHORT_RETRY_WAIT)
+        resp = fetch_page(category, offset)
+        if len(resp) >= 100:                # 重抓後資料恢復 → 繼續往下抓
+            return resp
+    total = offset + len(resp)
+    if total >= base * MIN_RATIO:
+        return resp
+    raise Exception(
+        f"[{category}] 重試 {SHORT_RETRIES} 次後仍只有 {total:,} 筆（更新前 {base:,} 筆），"
+        "判定 API 異常，中止更新（未刪除任何資料，修復後重跑會從斷點接續）。"
+        "若確認來源確實下架資料，請把該學門加入 ALLOW_DECREASE。")
+
+
 for now_category in category_list[category_index:]:
     has_more_data = True
     data = []
@@ -143,14 +219,10 @@ for now_category in category_list[category_index:]:
         pbar.update(offset)   # resume 快進
     while has_more_data:
         # 須在server上執行
-        url = 'https://collections.culture.tw/getMetadataList.aspx?FORMAT=NMNS&DEPARTMENT={}&LIMIT=100&OFFSET={}'.format(now_category, offset)
-        resp = requests.get(url)
-        if resp.status_code != 200:
-            raise Exception(f"API failed: {resp.status_code} - {url}")
-        try:
-            resp = resp.json()
-        except Exception:
-            raise Exception(f"invalid JSON response (HTTP 200) - {url}")
+        resp = fetch_page(now_category, offset)
+        if len(resp) < 100:
+            # 最後一頁：先確認本學門筆數沒有異常減少，不足會重抓或中止
+            resp = check_last_page(now_category, offset, resp)
         all_count += len(resp)
         pbar.update(len(resp))
         if len(resp) < 100:
