@@ -40,7 +40,7 @@ from app import engine
 from scripts.utils.records import records_cols
 from scripts.utils.match import (matching_flow_new_optimized, create_match_log_df, zip_match_log,
                                  match_cols, deleted_taxon_ids)
-from scripts.utils.export import fetch_taxon_df
+from scripts.utils.export import fetch_taxon_df, to_v2   # v2：輸出改用 to_v2（與 export_records_with_taxon 相同）
 
 # ── 比對欄位 ──
 SS, SV, OV, SID = 'sourceScientificName', 'sourceVernacularName', 'originalVernacularName', 'scientificNameID'
@@ -396,7 +396,7 @@ def normalize_db_df(df):
 
 
 def export_with_taxon_checked(df, output_path, max_retries=3):
-    """同 export_records_with_taxon（合併 taxa 欄位後輸出），但 taxa 缺漏時會重試，
+    """同 export_records_with_taxon（合併 taxa 欄位、以 v2 欄位輸出），但 taxa 缺漏時會重試，
     重試後仍缺的 taxonID 記錄到 log，避免 Solr 暫時錯誤造成匯出資料缺少 taxa 欄位"""
     ids = set(df['taxonID'].dropna())
     taxon_df, missing = pd.DataFrame(), ids
@@ -410,12 +410,10 @@ def export_with_taxon_checked(df, output_path, max_retries=3):
         with open(f'{CACHE_DIR}/missing_taxa.log', 'a') as f:
             f.write(f'{os.path.basename(output_path)}\t{",".join(sorted(missing))}\n')
 
-    export_df = df.rename(columns={'tbiaID': 'id'})
-    if len(taxon_df):
-        export_df = export_df.merge(taxon_df, on='taxonID', how='left')
-        if len(export_df) != len(df):
-            raise RuntimeError(f'taxa merge 筆數不符: {len(df)} -> {len(export_df)} ({output_path})')
-    export_df = export_df.rename(columns={'originalVernacularName': 'originalScientificName'})
+    # v2：tbiaID → id、舊欄位名 → v2、taxa 合併、模糊化文字與衍生欄位都由 to_v2 處理（scripts/utils/export.py）
+    export_df = to_v2(df, taxon_df)
+    if len(export_df) != len(df):
+        raise RuntimeError(f'taxa merge 筆數不符: {len(df)} -> {len(export_df)} ({output_path})')
     export_df.to_csv(output_path, index=None)
 
 
