@@ -1186,9 +1186,13 @@
     </lst>
   </updateProcessor>
 
-  <!-- The update.autoCreateFields property can be turned to false to disable schemaless mode -->
-  <updateRequestProcessorChain name="add-unknown-fields-to-the-schema" default="${update.autoCreateFields:true}"
-           processor="uuid,remove-blank,field-name-mutating,parse-boolean,parse-long,parse-double,parse-date,add-schema-fields">
+  <!-- v2（8.0，11/27）：關閉 schemaless，只拿掉 add-schema-fields。
+       其餘處理器必須保留：CSV 的 created / modified 等是 'YYYY-MM-DD HH:MM:SS'，要靠 parse-date 才能寫入 pdate；
+       remove-blank 去掉空字串。整條 chain 關掉（update.autoCreateFields=false）會讓所有匯入失敗，不可使用。
+       未定義在 managed-schema 的欄位現在會直接回 400（unknown field），不再自動建成多值欄位。
+       chain 名稱沿用，避免外部參照失效。 -->
+  <updateRequestProcessorChain name="add-unknown-fields-to-the-schema" default="true"
+           processor="uuid,remove-blank,field-name-mutating,parse-boolean,parse-long,parse-double,parse-date">
     <processor class="solr.LogUpdateProcessorFactory"/>
     <processor class="solr.DistributedUpdateProcessorFactory"/>
     <processor class="solr.RunUpdateProcessorFactory"/>
